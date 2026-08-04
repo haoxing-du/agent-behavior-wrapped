@@ -1,0 +1,440 @@
+import { useEffect, useMemo, useState } from "react";
+
+type Project = { id: string; name: string; sessionCount: number; latestAt: string };
+type Session = { id: string; projectId: string; projectName: string; startedAt: string; endedAt: string; promptCount: number; recordCount: number; sizeBytes: number; synthetic: boolean; label: string };
+type Catalog = { rootAvailable: boolean; demo: boolean; projects: Project[]; sessions: Session[]; privacy: { canonicalDirectory: string; networkRequests: boolean } };
+type Finding = { id: string; kind: string; title: string; summary: string; method: string; confidence: { score: number; label: string }; evidence: { id: string; sessionId: string; lines: { role: string; text: string }[] } };
+type Report = { stats: { sessions: number; activeDays: number; durationMinutes: number; prompts: number; toolCalls: number; interruptions: number; tokens: number; tools: { name: string; count: number }[] }; findings: Finding[] };
+type DonationMessage = { role: string; timestamp: string | null; text: string };
+type DonationSession = { sessionId: string; label: string; messages: DonationMessage[] };
+type Donation = { format: string; createdLocally: boolean; detectionCount: number; sessions: DonationSession[] };
+type Stage = "select" | "report" | "donate";
+type SavedReport = Report & { id: string; createdAt: string; rangeLabel: string; source: string; privacy: { shareSafe: boolean; containsTranscriptText: boolean; externalTransmission: boolean } };
+type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; cta?: boolean };
+
+const dateFormat = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" });
+
+function fmtDate(value: string) { return dateFormat.format(new Date(value)); }
+function fmtDuration(minutes: number) {
+  if (minutes < 60) return `${minutes}m`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+function fmtCompact(value: number) {
+  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`;
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+  return String(value);
+}
+
+function download(filename: string, content: string, type = "application/json") {
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportShareCard(report: Report) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1200; canvas.height = 630;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const gradient = ctx.createRadialGradient(900, 150, 20, 820, 260, 700);
+  gradient.addColorStop(0, "#4d248d"); gradient.addColorStop(.5, "#19122f"); gradient.addColorStop(1, "#0d0b1b");
+  ctx.fillStyle = gradient; ctx.fillRect(0, 0, 1200, 630);
+  ctx.fillStyle = "#c9f24b"; ctx.font = "800 18px system-ui"; ctx.fillText("BEHAVIOR WRAPPED · SHARE-SAFE", 74, 70);
+  ctx.fillStyle = "#f8f5ff"; ctx.font = "800 64px system-ui"; ctx.fillText("How my agent showed up", 72, 150);
+  ctx.fillStyle = "#aaa3ba"; ctx.font = "400 23px system-ui"; ctx.fillText("Local analysis · generalized signals · no transcript excerpts", 74, 194);
+  const stats = [[report.stats.sessions, "SESSIONS"], [report.stats.activeDays, "ACTIVE DAYS"], [report.stats.toolCalls, "TOOL CALLS"], [report.stats.prompts, "PROMPTS"]];
+  stats.forEach(([value, label], index) => {
+    const x = 74 + index * 265;
+    ctx.fillStyle = index % 2 ? "#c9f24b" : "#8d5cff"; ctx.beginPath(); ctx.roundRect(x, 240, 235, 142, 22); ctx.fill();
+    ctx.fillStyle = index % 2 ? "#12101f" : "#ffffff"; ctx.font = "850 52px system-ui"; ctx.fillText(String(value), x + 22, 305);
+    ctx.font = "800 14px system-ui"; ctx.fillText(String(label), x + 23, 348);
+  });
+  ctx.fillStyle = "#f8f5ff"; ctx.font = "750 21px system-ui"; ctx.fillText("Top behavior signals", 74, 438);
+  ctx.font = "600 19px system-ui";
+  report.findings.slice(0, 3).forEach((item, index) => {
+    ctx.fillStyle = ["#c9f24b", "#ff7dbe", "#6ac8ff"][index]; ctx.fillText("✦", 76, 482 + index * 41);
+    ctx.fillStyle = "#d9d4e4"; ctx.fillText(item.title.slice(0, 78), 108, 482 + index * 41);
+  });
+  if (!report.findings.length) { ctx.fillStyle = "#d9d4e4"; ctx.fillText("No strong heuristic signals found", 76, 482); }
+  ctx.fillStyle = "#777083"; ctx.font = "500 15px system-ui"; ctx.fillText("Heuristic signals, not factual judgments · Evidence omitted", 74, 598);
+  const anchor = document.createElement("a");
+  anchor.href = canvas.toDataURL("image/png");
+  anchor.download = "behavior-wrapped-share-card.png";
+  anchor.click();
+}
+
+function ShieldIcon() {
+  return <span className="shield" aria-hidden="true">◆</span>;
+}
+
+function downloadSlide(report: SavedReport, slide: number, headline: string, detail: string) {
+  const canvas = document.createElement("canvas"); canvas.width = 1200; canvas.height = 630;
+  const ctx = canvas.getContext("2d"); if (!ctx) return;
+  const palettes = [["#17151a", "#ff6b38", "#f7f3ed"], ["#eaf2f8", "#376579", "#221f1a"], ["#8d5cff", "#c9f24b", "#ffffff"], ["#c9f24b", "#0d0b1b", "#12101f"]];
+  const [bg, accent, ink] = palettes[slide % palettes.length]; ctx.fillStyle = bg; ctx.fillRect(0, 0, 1200, 630);
+  ctx.fillStyle = accent; ctx.fillRect(0, 0, 16, 630); ctx.fillStyle = ink;
+  ctx.font = "800 26px system-ui"; ctx.fillText("BEHAVIOR WRAPPED", 74, 78);
+  ctx.globalAlpha = .58; ctx.font = "500 24px system-ui"; ctx.fillText(report.rangeLabel, 74, 142); ctx.globalAlpha = 1;
+  ctx.font = "800 68px system-ui";
+  const words = headline.split(" "); let line = ""; let y = 245;
+  for (const word of words) { const candidate = `${line}${word} `; if (ctx.measureText(candidate).width > 1020 && line) { ctx.fillText(line.trim(), 74, y); line = `${word} `; y += 78; } else line = candidate; }
+  ctx.fillText(line.trim(), 74, y);
+  ctx.globalAlpha = .72; ctx.font = "500 28px system-ui"; ctx.fillText(detail.slice(0, 96), 74, Math.min(520, y + 72)); ctx.globalAlpha = 1;
+  ctx.font = "700 19px system-ui"; ctx.fillText("#behaviorwrapped  ·  share-safe", 74, 580);
+  const anchor = document.createElement("a"); anchor.href = canvas.toDataURL("image/png"); anchor.download = `behavior-wrapped-${slide + 1}.png`; anchor.click();
+}
+
+function SharedWrapped({ id }: { id: string }) {
+  const [report, setReport] = useState<SavedReport | null>(null);
+  const [error, setError] = useState("");
+  const [slide, setSlide] = useState(0);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => { fetch(`/api/reports/${id}`).then(async (response) => { if (!response.ok) throw new Error("This local Wrapped was not found."); return response.json(); }).then(setReport).catch((e) => setError(e.message)); }, [id]);
+  const slides = useMemo<StorySlide[]>(() => report ? [
+    { kicker: report.rangeLabel, headline: `You and Claude had ${report.stats.sessions === 1 ? "a session" : "a run"}.`, detail: `${report.stats.sessions} sessions, ${fmtDuration(report.stats.durationMinutes)} from first message to last.`, tone: "midnight" },
+    { kicker: "Your context window got a workout", headline: fmtCompact(report.stats.tokens || 0), detail: "tokens processed locally across selected Claude Code sessions.", tone: "ice", metric: true },
+    { kicker: "Claude reached for tools", headline: `${report.stats.toolCalls} times.`, detail: report.stats.tools.slice(0, 3).map((tool) => `${tool.name} × ${tool.count}`).join("  ·  ") || "No visible tool-use records.", tone: "violet" },
+    ...(report.findings.length ? report.findings.slice(0, 2).map((finding) => ({ kicker: `${finding.confidence.label} confidence · ${Math.round(finding.confidence.score * 100)}%`, headline: finding.title, detail: finding.summary, tone: "lime" })) : [{ kicker: "Behavior check", headline: "No strong signals found.", detail: "These prototype heuristics did not find enough visible evidence.", tone: "lime" }]),
+    { kicker: "The share-safe ending", headline: "The patterns can travel. Your work stays home.", detail: "No transcript excerpts, project names, paths, code, or tool outputs are in this Wrapped.", tone: "coral" },
+    { kicker: "Optional research donation", headline: "Want to help researchers understand coding agents?", detail: "Review every proposed line, redact anything you want, then decide whether to export a local donation bundle.", tone: "research", cta: true },
+  ] : [], [report]);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === "ArrowRight") setSlide((value) => Math.min(slides.length - 1, value + 1)); if (event.key === "ArrowLeft") setSlide((value) => Math.max(0, value - 1)); };
+    window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
+  }, [slides.length]);
+  if (error) return <main className="shared-error"><h1>Wrapped not found</h1><p>{error}</p><a href="/">Create a new local Wrapped</a></main>;
+  if (!report || !slides.length) return <main className="shared-loading"><div className="orb" /><p>Opening your local Wrapped…</p></main>;
+  const current = slides[slide];
+  async function copyLink() { await navigator.clipboard.writeText(window.location.href); setCopied(true); window.setTimeout(() => setCopied(false), 1600); }
+  return <main className="shared-page">
+    <div className="story-progress" aria-label={`Slide ${slide + 1} of ${slides.length}`}>{slides.map((_, index) => <button key={index} className={index <= slide ? "seen" : ""} onClick={() => setSlide(index)} aria-label={`Go to slide ${index + 1}`} />)}</div>
+    <section className={`story-card story-${current.tone}`} aria-live="polite">
+      <div className="story-brand"><span className="brand-mark">B</span><strong>Behavior Wrapped</strong><i /> <span>Claude Code</span></div>
+      <div className="story-copy"><span>{current.kicker}</span><h1 className={current.metric ? "giant" : ""}>{current.headline}</h1><p>{current.detail}</p></div>
+      {current.cta ? <a className="story-cta" href={`/donate/${report.id}`}>Review redactions <span>→</span></a> : <div className="story-tag">#behaviorwrapped</div>}
+      <button className="story-arrow prev" disabled={slide === 0} onClick={() => setSlide(slide - 1)} aria-label="Previous slide">‹</button>
+      <button className="story-arrow next" disabled={slide === slides.length - 1} onClick={() => setSlide(slide + 1)} aria-label="Next slide">›</button>
+    </section>
+    <div className="story-actions"><button onClick={copyLink}>{copied ? "Copied" : "Copy local link"}</button><button onClick={() => downloadSlide(report, slide, current.headline, current.detail)}>Download image</button><a href="/">Refine privately</a></div>
+    <p className="story-foot"><ShieldIcon /> Share-safe local page · no transcript text · nothing uploaded</p>
+  </main>;
+}
+
+function SavedDonationRoute({ id }: { id: string }) {
+  const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const [selection, setSelection] = useState<Set<string> | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    Promise.all([
+      fetch("/api/discover").then((response) => { if (!response.ok) throw new Error("Could not read the local Claude Code catalog."); return response.json(); }),
+      fetch(`/api/reports/${id}/selection`).then((response) => { if (!response.ok) throw new Error("This saved Wrapped was not found."); return response.json(); }),
+    ]).then(([nextCatalog, saved]) => { setCatalog(nextCatalog); setSelection(new Set(saved.sessionIds)); }).catch((e) => setError(e.message));
+  }, [id]);
+  if (error) return <main className="shared-error"><h1>Donation review unavailable</h1><p>{error}</p><a href={`/w/${id}`}>Back to Wrapped</a></main>;
+  if (!catalog || !selection) return <main className="shared-loading"><div className="orb" /><p>Preparing the private redaction review…</p></main>;
+  return <div className="app-shell">
+    <Header stage="donate" setStage={(next) => { window.location.href = next === "report" ? `/w/${id}` : next === "select" ? "/" : `/donate/${id}`; }} />
+    <DonationView sessions={catalog.sessions} initialSelected={selection} onBack={() => { window.location.href = `/w/${id}`; }} />
+    <footer><span>Behavior Wrapped <b>v0.1</b></span><span>Local research preview · Nothing sent</span></footer>
+  </div>;
+}
+
+function Header({ stage, setStage }: { stage: Stage; setStage: (stage: Stage) => void }) {
+  return <header className="topbar">
+    <button className="brand" onClick={() => setStage("select")} aria-label="Behavior Wrapped home">
+      <span className="brand-mark">B</span><span>Behavior Wrapped</span>
+    </button>
+    <div className="local-pill"><span className="pulse" /> Local only</div>
+    {stage !== "select" && <nav aria-label="Report navigation">
+      <button className={stage === "report" ? "active" : ""} onClick={() => setStage("report")}>Wrapped</button>
+      <button className={stage === "donate" ? "active" : ""} onClick={() => setStage("donate")}>Research preview</button>
+    </nav>}
+  </header>;
+}
+
+function PrivacyPanel() {
+  return <aside className="privacy-panel">
+    <div className="privacy-icon"><ShieldIcon /></div>
+    <div>
+      <span className="eyebrow">Privacy, by construction</span>
+      <h3>Your transcripts stay on this Mac.</h3>
+      <p>Analysis runs inside this local app. No transcript text is sent anywhere. Private evidence never appears in share exports, and raw tool outputs and code are excluded from evidence views.</p>
+      <div className="privacy-facts"><span>✓ No account</span><span>✓ No telemetry</span><span>✓ No external requests</span></div>
+    </div>
+  </aside>;
+}
+
+function Selection({ catalog, selected, setSelected, onAnalyze, loading, error }: { catalog: Catalog | null; selected: Set<string>; setSelected: (next: Set<string>) => void; onAnalyze: (ids: string[]) => void; loading: boolean; error: string }) {
+  const allDates = catalog?.sessions.map((s) => s.startedAt.slice(0, 10)) || [];
+  const [from, setFrom] = useState(allDates.length ? [...allDates].sort()[0] : "");
+  const [to, setTo] = useState(allDates.length ? [...allDates].sort().at(-1)! : "");
+  const [projects, setProjects] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!catalog) return;
+    setProjects(new Set(catalog.projects.map((p) => p.id)));
+    setSelected(new Set(catalog.sessions.map((s) => s.id)));
+    const dates = catalog.sessions.map((s) => s.startedAt.slice(0, 10)).sort();
+    if (dates.length) { setFrom(dates[0]); setTo(dates.at(-1)!); }
+  }, [catalog]);
+
+  const visible = useMemo(() => (catalog?.sessions || []).filter((s) => projects.has(s.projectId) && (!from || s.startedAt.slice(0, 10) >= from) && (!to || s.startedAt.slice(0, 10) <= to)), [catalog, projects, from, to]);
+  const visibleIds = new Set(visible.map((s) => s.id));
+  const chosenVisible = visible.filter((s) => selected.has(s.id));
+
+  function toggleProject(id: string) {
+    const next = new Set(projects);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setProjects(next);
+  }
+
+  function toggleSession(id: string) {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setSelected(next);
+  }
+
+  if (!catalog) return <main className="loading-screen"><div className="orb" /><p>Looking for local Claude Code sessions…</p></main>;
+
+  return <main>
+    <section className="hero">
+      <div className="hero-glow glow-one" /><div className="hero-glow glow-two" />
+      <div className="hero-copy">
+        <span className="eyebrow">Your Claude Code year in review</span>
+        <h1>See how your agent<br /><em>really</em> showed up.</h1>
+        <p>Private, explainable behavior insights from the sessions already on your Mac.</p>
+      </div>
+      <div className="hero-card" aria-hidden="true">
+        <span className="hero-card-label">THE VIBE CHECK</span>
+        <div className="hero-number">87<span>%</span></div>
+        <p>follow-through energy</p>
+        <div className="spark"><i /><i /><i /><i /><i /><i /><i /></div>
+      </div>
+    </section>
+
+    <section className="workspace" aria-labelledby="select-title">
+      <div className="section-heading">
+        <div><span className="step">01</span><h2 id="select-title">Choose your sessions</h2><p>Nothing is analyzed until you say so.</p></div>
+        {catalog.demo && <span className="demo-badge">Synthetic demo data</span>}
+      </div>
+
+      {!catalog.rootAvailable || catalog.sessions.length === 0 ? <div className="empty-state">
+        <h3>No Claude Code sessions found</h3>
+        <p>Behavior Wrapped looked in <code>~/.claude/projects</code>. Try the synthetic demo with <code>npm run demo</code>.</p>
+      </div> : <>
+        <div className="filters">
+          <label>From<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
+          <label>To<input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
+          <div className="filter-stat"><strong>{chosenVisible.length}</strong><span>sessions selected</span></div>
+        </div>
+
+        <div className="project-chips" aria-label="Filter by project">
+          {catalog.projects.map((project) => <button key={project.id} className={projects.has(project.id) ? "selected" : ""} onClick={() => toggleProject(project.id)}>
+            <span>{projects.has(project.id) ? "✓" : "+"}</span>{project.name}<small>{project.sessionCount}</small>
+          </button>)}
+        </div>
+
+        <div className="session-list">
+          <div className="list-head"><span>Session</span><span>Prompts</span><span>Size</span><span />
+            <button onClick={() => {
+              const next = new Set(selected);
+              const allChosen = visible.every((s) => next.has(s.id));
+              visible.forEach((s) => allChosen ? next.delete(s.id) : next.add(s.id));
+              setSelected(next);
+            }}>{visible.every((s) => selected.has(s.id)) ? "Clear visible" : "Select visible"}</button>
+          </div>
+          {visible.map((session) => <label className="session-row" key={session.id}>
+            <input type="checkbox" checked={selected.has(session.id)} onChange={() => toggleSession(session.id)} />
+            <span className="custom-check">✓</span>
+            <span className="session-title"><strong>{session.label}</strong><small>{session.projectName} · {fmtDate(session.startedAt)}</small></span>
+            <span>{session.promptCount}</span><span>{Math.max(1, Math.round(session.sizeBytes / 1024))} KB</span><span className="chevron">›</span>
+          </label>)}
+          {!visible.length && <div className="no-results">No sessions match this date and project selection.</div>}
+        </div>
+
+        <div className="analyze-bar">
+          <div><ShieldIcon /><span><strong>Runs locally</strong><small>Only selected sessions are read</small></span></div>
+          <button className="primary" disabled={!chosenVisible.length || loading} onClick={() => onAnalyze(chosenVisible.map((s) => s.id))}>{loading ? "Analyzing…" : "Make my Wrapped"}<span>→</span></button>
+        </div>
+        {error && <p className="error" role="alert">{error}</p>}
+      </>}
+    </section>
+    <PrivacyPanel />
+  </main>;
+}
+
+function StatCard({ label, value, note, tone }: { label: string; value: string | number; note: string; tone: string }) {
+  return <article className={`stat-card ${tone}`}><span>{label}</span><strong>{value}</strong><p>{note}</p></article>;
+}
+
+function ReportView({ report, onEvidence, onDonate }: { report: Report; onEvidence: (finding: Finding) => void; onDonate: () => void }) {
+  const [mode, setMode] = useState<"private" | "public">("private");
+  return <main className="report-page">
+    <section className="report-intro">
+      <span className="eyebrow">Analysis complete · heuristic, not a verdict</span>
+      <h1>Your agent had<br />a <em>year.</em></h1>
+      <p>{report.stats.sessions} local sessions became a transparent snapshot of how the work unfolded.</p>
+      <div className="mode-toggle" role="group" aria-label="Report privacy mode">
+        <button className={mode === "private" ? "active" : ""} onClick={() => setMode("private")}><ShieldIcon /> Private view</button>
+        <button className={mode === "public" ? "active" : ""} onClick={() => setMode("public")}>✦ Share-safe view</button>
+      </div>
+      <p className="mode-note">{mode === "private" ? "Evidence links are visible only on this device." : "Evidence, project names, excerpts, and dates are hidden."}</p>
+    </section>
+
+    <section className="stat-grid" aria-label="Usage statistics">
+      <StatCard label="Sessions together" value={report.stats.sessions} note="selected conversations" tone="purple" />
+      <StatCard label="Active days" value={report.stats.activeDays} note="days you paired up" tone="lime" />
+      <StatCard label="Time in session" value={fmtDuration(report.stats.durationMinutes)} note="approximate elapsed time" tone="orange" />
+      <StatCard label="Your prompts" value={report.stats.prompts} note="turns that moved work forward" tone="blue" />
+      <StatCard label="Tool calls" value={report.stats.toolCalls} note="actions taken by Claude" tone="pink" />
+      <StatCard label="Interruptions" value={report.stats.interruptions} note="explicit stop events" tone="yellow" />
+    </section>
+
+    <section className="wrapped-card tools-card">
+      <div><span className="card-kicker">THE TOOLKIT</span><h2>Your agent’s<br />greatest hits.</h2><p>Deterministic counts from visible tool-use records.</p></div>
+      <div className="tool-chart">
+        {(report.stats.tools.length ? report.stats.tools : [{ name: "No tools recorded", count: 0 }]).map((tool, i) => <div className="tool-row" key={tool.name}>
+          <span className="rank">{String(i + 1).padStart(2, "0")}</span><strong>{tool.name}</strong><div><i style={{ width: `${Math.max(8, tool.count / Math.max(...report.stats.tools.map((t) => t.count), 1) * 100)}%` }} /></div><b>{tool.count}</b>
+        </div>)}
+      </div>
+    </section>
+
+    <section className="findings-section">
+      <div className="section-heading light"><div><span className="step">02</span><h2>Behavior, with receipts</h2><p>Signals detected by inspectable heuristics—not personality scores or facts.</p></div></div>
+      {report.findings.length ? <div className="finding-grid">{report.findings.map((item, index) => <article className={`finding-card kind-${item.kind}`} key={item.id}>
+        <div className="finding-top"><span className="finding-index">0{index + 1}</span><span className={`confidence c-${item.confidence.label.toLowerCase()}`}>{item.confidence.label} · {Math.round(item.confidence.score * 100)}%</span></div>
+        <h3>{item.title}</h3><p>{item.summary}</p>
+        <details><summary>How this was detected</summary><p>{item.method}</p></details>
+        {mode === "private" && <button className="evidence-link" onClick={() => onEvidence(item)}>View private evidence <span>↗</span></button>}
+        {mode === "public" && <div className="share-safe">✓ Safe aggregate—no excerpts included</div>}
+      </article>)}</div> : <div className="quiet-card"><span>◎</span><h3>No strong behavior signals found</h3><p>That does not mean the behaviors never occurred—only that these prototype heuristics did not find visible evidence.</p></div>}
+    </section>
+
+    <section className="share-section">
+      <div><span className="eyebrow">Keep the good parts</span><h2>Share the pattern.<br />Keep the work private.</h2><p>The share export contains aggregate counts and generalized findings only—never evidence, dates, project names, tool output, or code.</p></div>
+      <button className="share-button" onClick={() => exportShareCard(report)}>Download share-safe card <span>↓</span></button>
+    </section>
+
+    <section className="research-cta">
+      <span className="research-star">✦</span><div><span className="eyebrow">Optional research preview</span><h2>Could these sessions help us understand agents better?</h2><p>Preview a redacted donation bundle. Nothing will be sent—the prototype only exports a local file after separate consent.</p></div><button onClick={onDonate}>Preview donation flow <span>→</span></button>
+    </section>
+  </main>;
+}
+
+function EvidenceModal({ finding, onClose }: { finding: Finding; onClose: () => void }) {
+  return <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()} role="presentation">
+    <section className="modal" role="dialog" aria-modal="true" aria-labelledby="evidence-title">
+      <button className="modal-close" onClick={onClose} aria-label="Close evidence">×</button>
+      <span className="private-label"><ShieldIcon /> Private evidence · never exported</span>
+      <h2 id="evidence-title">{finding.title}</h2>
+      <p className="modal-method">{finding.method}</p>
+      <div className="transcript-excerpt">{finding.evidence.lines.map((line, i) => <div className={`excerpt-line ${line.role}`} key={i}><span>{line.role === "assistant" ? "Claude" : "You"}</span><p>{line.text}</p></div>)}</div>
+      <div className="modal-foot"><span>Confidence</span><strong>{finding.confidence.label} · {Math.round(finding.confidence.score * 100)}%</strong><small>This is a heuristic signal. Review the evidence and draw your own conclusion.</small></div>
+    </section>
+  </div>;
+}
+
+function DonationView({ sessions, initialSelected, onBack }: { sessions: Session[]; initialSelected: Set<string>; onBack: () => void }) {
+  const [chosen, setChosen] = useState(new Set(initialSelected));
+  const [bundle, setBundle] = useState<Donation | null>(null);
+  const [manualTerm, setManualTerm] = useState("");
+  const [consent, setConsent] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function preview() {
+    setLoading(true); setError(""); setConsent(false);
+    try {
+      const response = await fetch("/api/donation-preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionIds: [...chosen] }) });
+      if (!response.ok) throw new Error((await response.json()).error || "Preview failed");
+      setBundle(await response.json());
+    } catch (e) { setError(e instanceof Error ? e.message : "Preview failed"); } finally { setLoading(false); }
+  }
+
+  function removeTerm() {
+    if (!bundle || !manualTerm.trim()) return;
+    const escaped = manualTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = new RegExp(escaped, "gi");
+    setBundle({ ...bundle, sessions: bundle.sessions.map((s) => ({ ...s, messages: s.messages.map((m) => ({ ...m, text: m.text.replace(pattern, "[REMOVED BY USER]") })) })) });
+    setManualTerm(""); setConsent(false);
+  }
+
+  function editMessage(si: number, mi: number, text: string) {
+    if (!bundle) return;
+    setBundle({ ...bundle, sessions: bundle.sessions.map((s, sIndex) => sIndex !== si ? s : ({ ...s, messages: s.messages.map((m, mIndex) => mIndex === mi ? { ...m, text } : m) })) });
+    setConsent(false);
+  }
+
+  function exportBundle() {
+    if (!bundle || !consent) return;
+    download("behavior-wrapped-research-donation.json", JSON.stringify({ ...bundle, consent: { researchDonation: true, consentedAt: new Date().toISOString(), transmission: "none-local-export-only" } }, null, 2));
+  }
+
+  return <main className="donation-page">
+    <button className="back-link" onClick={onBack}>← Back to Wrapped</button>
+    <section className="donation-hero"><span className="eyebrow">Research donation · prototype</span><h1>You decide what leaves<br />your machine.</h1><p>This flow does not transmit data. It creates a local JSON bundle only after you review, redact, edit, and consent.</p></section>
+    <div className="donation-layout">
+      <section className="donation-controls">
+        <div className="donation-step"><span>1</span><div><h2>Choose sessions</h2><p>Selection is independent from your Wrapped report.</p></div></div>
+        <div className="donation-sessions">{sessions.filter((s) => initialSelected.has(s.id)).map((session) => <label key={session.id}><input type="checkbox" checked={chosen.has(session.id)} onChange={() => { const next = new Set(chosen); next.has(session.id) ? next.delete(session.id) : next.add(session.id); setChosen(next); setBundle(null); setConsent(false); }} /><span>{session.label}<small>{session.projectName} · {fmtDate(session.startedAt)}</small></span></label>)}</div>
+        <button className="primary full" disabled={!chosen.size || loading} onClick={preview}>{loading ? "Building preview…" : bundle ? "Rebuild redacted preview" : "Build redacted preview"}</button>
+        {error && <p className="error">{error}</p>}
+      </section>
+      <section className={`donation-preview ${bundle ? "ready" : ""}`}>
+        <div className="donation-step"><span>2</span><div><h2>Review every line</h2><p>Automated detection is imperfect. Edit any message directly.</p></div></div>
+        {!bundle ? <div className="preview-placeholder"><span>⌁</span><p>Your exact redacted bundle will appear here.</p></div> : <>
+          <div className="redaction-banner"><strong>{bundle.detectionCount} likely sensitive item{bundle.detectionCount === 1 ? "" : "s"} removed</strong><span>Secrets, emails, phone numbers, home paths, and code blocks</span></div>
+          <div className="manual-redact"><input value={manualTerm} onChange={(e) => setManualTerm(e.target.value)} placeholder="Text to remove everywhere" aria-label="Text to remove" /><button onClick={removeTerm}>Remove text</button></div>
+          <div className="bundle-preview">{bundle.sessions.map((session, si) => <div className="bundle-session" key={session.sessionId}><h3>{session.label}<small>{session.messages.length} messages</small></h3>{session.messages.map((message, mi) => <label key={mi}><span>{message.role === "assistant" ? "Claude" : "You"}</span><textarea value={message.text} onChange={(e) => editMessage(si, mi, e.target.value)} rows={Math.min(6, Math.max(2, Math.ceil(message.text.length / 90)))} /></label>)}</div>)}</div>
+          <div className="donation-step consent-step"><span>3</span><div><h2>Consent separately</h2><p>This consent applies only to the file you reviewed above.</p></div></div>
+          <label className="consent"><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} /><span>I consent to donate this reviewed, redacted bundle for AI-behavior research. I understand this prototype only saves it locally and does not transmit it.</span></label>
+          <button className="export-button" disabled={!consent} onClick={exportBundle}>Export donation bundle locally <span>↓</span></button>
+        </>}
+      </section>
+    </div>
+  </main>;
+}
+
+export default function App() {
+  const donationId = window.location.pathname.match(/^\/donate\/([A-Za-z0-9_-]{8,32})$/)?.[1];
+  if (donationId) return <SavedDonationRoute id={donationId} />;
+  const sharedId = window.location.pathname.match(/^\/w\/([A-Za-z0-9_-]{8,32})$/)?.[1];
+  if (sharedId) return <SharedWrapped id={sharedId} />;
+  const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [analyzedIds, setAnalyzedIds] = useState<Set<string>>(new Set());
+  const [report, setReport] = useState<Report | null>(null);
+  const [stage, setStage] = useState<Stage>("select");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [evidence, setEvidence] = useState<Finding | null>(null);
+
+  useEffect(() => { fetch("/api/discover").then((r) => r.json()).then(setCatalog).catch(() => setError("Could not connect to the local launcher.")); }, []);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setEvidence(null); };
+    window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  async function analyze(ids: string[]) {
+    setLoading(true); setError("");
+    try {
+      const response = await fetch("/api/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionIds: ids }) });
+      if (!response.ok) throw new Error((await response.json()).error || "Analysis failed");
+      setReport(await response.json()); setAnalyzedIds(new Set(ids)); setStage("report"); window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (e) { setError(e instanceof Error ? e.message : "Analysis failed"); } finally { setLoading(false); }
+  }
+
+  const safeStage = stage === "report" && !report ? "select" : stage === "donate" && !report ? "select" : stage;
+  return <div className="app-shell">
+    <Header stage={safeStage} setStage={setStage} />
+    {safeStage === "select" && <Selection catalog={catalog} selected={selected} setSelected={setSelected} onAnalyze={analyze} loading={loading} error={error} />}
+    {safeStage === "report" && report && <ReportView report={report} onEvidence={setEvidence} onDonate={() => { setStage("donate"); window.scrollTo(0, 0); }} />}
+    {safeStage === "donate" && catalog && <DonationView sessions={catalog.sessions} initialSelected={analyzedIds} onBack={() => { setStage("report"); window.scrollTo(0, 0); }} />}
+    <footer><span>Behavior Wrapped <b>v0.1</b></span><span>Localhost · Open source prototype · Nothing sent</span></footer>
+    {evidence && <EvidenceModal finding={evidence} onClose={() => setEvidence(null)} />}
+  </div>;
+}
