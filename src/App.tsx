@@ -296,7 +296,7 @@ function Selection({ catalog, selected, setSelected, onAnalyze, loading, error }
 
         <div className="analyze-bar">
           <div><ShieldIcon /><span><strong>Runs locally</strong><small>Only selected sessions are read</small></span></div>
-          <button className="primary" disabled={!chosenVisible.length || loading || !catalog.phraseJudge?.available} onClick={() => onAnalyze(chosenVisible.map((s) => s.id))}>{loading ? "Analyzing + asking Nemotron…" : "Make my Wrapped"}<span>→</span></button>
+          <button className="primary" disabled={!chosenVisible.length || loading || !catalog.phraseJudge?.available} onClick={() => onAnalyze(chosenVisible.map((s) => s.id))}>{loading ? "Scanning corpus for the agent’s favorite phrase…" : "Make my Wrapped"}<span>→</span></button>
         </div>
         {error && <p className="error" role="alert">{error}</p>}
       </>}

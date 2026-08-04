@@ -56,6 +56,8 @@ test("resolves Nemotron's candidate ID locally instead of accepting invented wor
   assert.equal(authorization, "Bearer test-key-never-serialized");
   assert.equal(outbound.model, OPENROUTER_MODEL);
   assert.equal(outbound.tools, undefined);
+  assert.equal(outbound.max_tokens, undefined);
+  assert.deepEqual(outbound.reasoning, { exclude: true });
   assert.equal(outbound.response_format.json_schema.strict, true);
   assert.deepEqual(outbound.response_format.json_schema.schema.properties.candidate_id.enum, [candidate.candidate_id]);
   assert.equal(result.provider, "OpenRouter");

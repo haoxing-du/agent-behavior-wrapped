@@ -99,7 +99,7 @@ async function createWrapped() {
   const analyzed = analyzeSessions(sessionRecords);
   if (!process.env.OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY is required to create the standard phrase card.");
   const candidates = buildPhraseCandidates(sessionRecords);
-  process.stdout.write(`${muted}◇  Asking ${PHRASE_JUDGE_NAME} via OpenRouter to pick from ${candidates.length} redacted aggregate phrases…${reset}\r`);
+  process.stdout.write(`${muted}◇  Scanning corpus for the agent's favorite phrase…${reset}\r`);
   analyzed.phraseCard = await judgePhraseCard(candidates, process.env.OPENROUTER_API_KEY);
   const id = createReportId();
   const safeFindings = analyzed.findings.map(({ evidence, method, ...finding }) => finding);

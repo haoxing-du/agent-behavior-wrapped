@@ -130,8 +130,8 @@ export async function judgePhraseCard(candidates, apiKey, { fetchImpl = fetch, m
     headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}`, "x-title": "Behavior Wrapped" },
     body: JSON.stringify({
       model,
-      max_tokens: 256,
       temperature: 0,
+      reasoning: { exclude: true },
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: `Choose one candidate from this redacted aggregate list:\n\n${payload}` },
