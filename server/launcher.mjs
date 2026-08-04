@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { discoverSessions, readRecords, opaqueId } from "./discovery.mjs";
 import { analyzeSessions, makeDonationPreview } from "./analysis.mjs";
+import { buildPhraseCandidates, HAIKU_MODEL, judgePhraseCard } from "./phrase-card.mjs";
 import { loadReport } from "./store.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -54,6 +55,7 @@ function publicCatalog() {
     projects: catalog.projects,
     sessions: catalog.sessions.map((s, index) => ({ ...s, label: s.label || `Session ${index + 1}` })),
     privacy: { canonicalDirectory: "~/.claude/projects", networkRequests: false },
+    phraseJudge: { available: Boolean(process.env.ANTHROPIC_API_KEY), model: HAIKU_MODEL, requiresExplicitOptIn: true },
   };
 }
 
@@ -95,7 +97,15 @@ const server = http.createServer(async (request, response) => {
       const ids = Array.isArray(body.sessionIds) ? body.sessionIds.filter((id) => catalog.index.has(id)).slice(0, 250) : [];
       const records = chosenRecords(ids);
       if (!records.length) return json(response, 400, { error: "Choose at least one available session." });
-      if (url.pathname === "/api/analyze") return json(response, 200, analyzeSessions(records));
+      if (url.pathname === "/api/analyze") {
+        const analyzed = analyzeSessions(records);
+        if (body.includePhraseCard === true) {
+          if (!process.env.ANTHROPIC_API_KEY) return json(response, 400, { error: "Restart with ANTHROPIC_API_KEY set to add the optional Haiku phrase card." });
+          const candidates = buildPhraseCandidates(records);
+          analyzed.phraseCard = await judgePhraseCard(candidates, process.env.ANTHROPIC_API_KEY);
+        }
+        return json(response, 200, analyzed);
+      }
       const labels = new Map(publicCatalog().sessions.map((s) => [s.id, s]));
       return json(response, 200, makeDonationPreview(records, labels));
     }

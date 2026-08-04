@@ -12,11 +12,19 @@ npm run build
 npm run wrapped
 ```
 
-The command automatically scans Claude Code, creates a share-safe snapshot, prints a stable local URL such as `http://127.0.0.1:4317/w/…`, starts the local viewer when needed, and opens the Wrapped slideshow. Nothing is uploaded.
+The command automatically scans Claude Code, creates a share-safe snapshot, prints a stable local URL such as `http://127.0.0.1:4317/w/…`, starts the local viewer when needed, and opens the Wrapped slideshow. The default flow makes no network requests.
 
 The final slideshow card offers an optional research-donation review. It opens a private page with the Wrapped's sessions preselected, automatic redactions, editable message text, separate consent, and local-only bundle export.
 
 Use `npm run wrapped -- --demo` to generate a Wrapped from synthetic fixtures. Add `--no-open` to leave the browser closed.
+
+To add an optional “Your agent said … N times” slide, provide an Anthropic API key and opt in explicitly:
+
+```bash
+npm run wrapped -- --with-phrase-card
+```
+
+Exact phrase counts are computed locally. Only redacted aggregate phrase candidates and counts are sent to Haiku 4.5; transcripts, tool output, code, and the API key are not included. The private dashboard exposes the same workflow as an unchecked opt-in control.
 
 Saved reports are managed with:
 
@@ -37,7 +45,7 @@ For UI development, run the local API with `npm run demo -- --no-open`, then run
 ## Privacy model
 
 - The launcher reads only selected JSONL files from the canonical Claude Code directory.
-- Analysis and redaction run locally. The application contains no analytics or external assets and makes no network requests during its normal launcher, dashboard, report, or donation-preview flows.
+- Analysis and redaction run locally. The application contains no analytics or external assets and makes no network requests unless the user opts into the Haiku phrase-card workflow.
 - Browser payloads never include source file paths or raw tool outputs.
 - Private evidence is made from redacted user/assistant prose; code blocks are omitted.
 - Share-card PNG exports contain only aggregates and generalized findings.

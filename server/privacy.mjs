@@ -15,6 +15,24 @@ const PII_PATTERNS = [
   [/\b(?:\d[ -]*?){13,19}\b/g, "[REDACTED NUMBER]"],
 ];
 
+const NON_PERSON_WORDS = new Set("agent assistant user system model tool team claude zulip github person someone anyone everyone nobody only the this that new latest direct explicit online private prior session status handoff instruction instructions message messages ping pings task work context state directory window".split(" "));
+
+function replaceLikelyPersonNames(value) {
+  return String(value)
+    .replace(/\b([A-Za-z][A-Za-z'-]{2,})(?=\s+(?:(?:directly|explicitly)\s+)?(?:said|says|asked|asks|ordered|requested|told|wants|needs|returns?|responds?|pinged|pings|messaged|reaffirmed))\b/gi,
+      (match, word) => NON_PERSON_WORDS.has(word.toLowerCase()) ? match : "person")
+    .replace(/\b(from)\s+([A-Za-z][A-Za-z'-]{2,})\b/gi,
+      (match, relation, word) => NON_PERSON_WORDS.has(word.toLowerCase()) ? match : `${relation} person`)
+    .replace(/\b(by)\s+([A-Za-z][A-Za-z'-]{2,})(?=\s+(?:just\s+)?(?:on|at|today|yesterday|who|and)\b)/gi,
+      (match, relation, word) => NON_PERSON_WORDS.has(word.toLowerCase()) ? match : `${relation} person`)
+    .replace(/\b([A-Za-z][A-Za-z'-]{2,})(?=\s+(?:messages?|pings?)\b)/gi,
+      (match, word) => NON_PERSON_WORDS.has(word.toLowerCase()) ? match : "person")
+    .replace(/\b(if|when|unless)\s+([A-Za-z][A-Za-z'-]{2,})(?=\s+(?:(?:directly|explicitly)\s+)?(?:pings?|pinged|messages?|messaged)\b)/gi,
+      (match, relation, word) => NON_PERSON_WORDS.has(word.toLowerCase()) ? match : `${relation} person`)
+    .replace(/\b((?:ping|message|tell|ask|notify)(?:s|ed|ing)?\s+)([A-Z][a-z'-]{2,})\b/g,
+      (match, action, word) => NON_PERSON_WORDS.has(word.toLowerCase()) ? match : `${action}person`);
+}
+
 export function redactText(input, manualTerms = []) {
   let text = String(input ?? "");
   const detections = [];
@@ -29,6 +47,10 @@ export function redactText(input, manualTerms = []) {
     text = text.replace(new RegExp(escaped, "gi"), "[REMOVED BY USER]");
   }
   return { text, detections };
+}
+
+export function redactAggregateText(input) {
+  return redactText(replaceLikelyPersonNames(input)).text;
 }
 
 export function safeEvidenceText(input) {

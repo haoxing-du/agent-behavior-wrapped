@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 
 type Project = { id: string; name: string; sessionCount: number; latestAt: string };
 type Session = { id: string; projectId: string; projectName: string; startedAt: string; endedAt: string; promptCount: number; recordCount: number; sizeBytes: number; synthetic: boolean; label: string };
-type Catalog = { rootAvailable: boolean; demo: boolean; projects: Project[]; sessions: Session[]; privacy: { canonicalDirectory: string; networkRequests: boolean } };
+type Catalog = { rootAvailable: boolean; demo: boolean; projects: Project[]; sessions: Session[]; privacy: { canonicalDirectory: string; networkRequests: boolean }; phraseJudge?: { available: boolean; model: string; requiresExplicitOptIn: boolean } };
 type Finding = { id: string; kind: string; title: string; summary: string; method: string; confidence: { score: number; label: string }; evidence: { id: string; sessionId: string; lines: { role: string; text: string }[] } };
-type Report = { stats: { sessions: number; activeDays: number; durationMinutes: number; prompts: number; toolCalls: number; interruptions: number; tokens: number; tools: { name: string; count: number }[] }; findings: Finding[] };
+type PhraseCard = { phrase: string; occurrences: number; distinctSessions: number; model: string; interestingnessScore: number; method: string; candidateCount: number };
+type Report = { stats: { sessions: number; activeDays: number; durationMinutes: number; prompts: number; toolCalls: number; interruptions: number; tokens: number; tools: { name: string; count: number }[] }; findings: Finding[]; phraseCard?: PhraseCard | null };
 type DonationMessage = { role: string; timestamp: string | null; text: string };
 type DonationSession = { sessionId: string; label: string; messages: DonationMessage[] };
 type Donation = { format: string; createdLocally: boolean; detectionCount: number; sessions: DonationSession[] };
@@ -98,6 +99,7 @@ function SharedWrapped({ id }: { id: string }) {
     { kicker: report.rangeLabel, headline: `You and Claude had ${report.stats.sessions === 1 ? "a session" : "a run"}.`, detail: `${report.stats.sessions} sessions, ${fmtDuration(report.stats.durationMinutes)} from first message to last.`, tone: "midnight" },
     { kicker: "Your context window got a workout", headline: fmtCompact(report.stats.tokens || 0), detail: "tokens processed locally across selected Claude Code sessions.", tone: "ice", metric: true },
     { kicker: "Claude reached for tools", headline: `${report.stats.toolCalls} times.`, detail: report.stats.tools.slice(0, 3).map((tool) => `${tool.name} × ${tool.count}`).join("  ·  ") || "No visible tool-use records.", tone: "violet" },
+    ...(report.phraseCard ? [{ kicker: `YOUR AGENT SAID THIS ${report.phraseCard.occurrences} TIMES`, headline: `“${report.phraseCard.phrase}”`, detail: `Seen across ${report.phraseCard.distinctSessions} session${report.phraseCard.distinctSessions === 1 ? "" : "s"} · picked by Haiku from redacted aggregate phrases.`, tone: "quote" }] : []),
     ...(report.findings.length ? report.findings.slice(0, 2).map((finding) => ({ kicker: `${finding.confidence.label} confidence · ${Math.round(finding.confidence.score * 100)}%`, headline: finding.title, detail: finding.summary, tone: "lime" })) : [{ kicker: "Behavior check", headline: "No strong signals found.", detail: "These prototype heuristics did not find enough visible evidence.", tone: "lime" }]),
     { kicker: "The share-safe ending", headline: "The patterns can travel. Your work stays home.", detail: "No transcript excerpts, project names, paths, code, or tool outputs are in this Wrapped.", tone: "coral" },
     { kicker: "Optional research donation", headline: "Want to help researchers understand coding agents?", detail: "Review every proposed line, redact anything you want, then decide whether to export a local donation bundle.", tone: "research", cta: true },
@@ -120,7 +122,7 @@ function SharedWrapped({ id }: { id: string }) {
       <button className="story-arrow next" disabled={slide === slides.length - 1} onClick={() => setSlide(slide + 1)} aria-label="Next slide">›</button>
     </section>
     <div className="story-actions"><button onClick={copyLink}>{copied ? "Copied" : "Copy local link"}</button><button onClick={() => downloadSlide(report, slide, current.headline, current.detail)}>Download image</button><a href="/">Refine privately</a></div>
-    <p className="story-foot"><ShieldIcon /> Share-safe local page · no transcript text · nothing uploaded</p>
+    <p className="story-foot"><ShieldIcon /> Share-safe local page · no transcript text · nothing published</p>
   </main>;
 }
 
@@ -148,7 +150,7 @@ function Header({ stage, setStage }: { stage: Stage; setStage: (stage: Stage) =>
     <button className="brand" onClick={() => setStage("select")} aria-label="Behavior Wrapped home">
       <span className="brand-mark">B</span><span>Behavior Wrapped</span>
     </button>
-    <div className="local-pill"><span className="pulse" /> Local only</div>
+    <div className="local-pill"><span className="pulse" /> Local-first</div>
     {stage !== "select" && <nav aria-label="Report navigation">
       <button className={stage === "report" ? "active" : ""} onClick={() => setStage("report")}>Wrapped</button>
       <button className={stage === "donate" ? "active" : ""} onClick={() => setStage("donate")}>Research preview</button>
@@ -163,16 +165,17 @@ function PrivacyPanel() {
       <span className="eyebrow">Privacy, by construction</span>
       <h3>Your transcripts stay on this Mac.</h3>
       <p>Analysis runs inside this local app. No transcript text is sent anywhere. Private evidence never appears in share exports, and raw tool outputs and code are excluded from evidence views.</p>
-      <div className="privacy-facts"><span>✓ No account</span><span>✓ No telemetry</span><span>✓ No external requests</span></div>
+      <div className="privacy-facts"><span>✓ No account</span><span>✓ No telemetry</span><span>✓ Network opt-in is explicit</span></div>
     </div>
   </aside>;
 }
 
-function Selection({ catalog, selected, setSelected, onAnalyze, loading, error }: { catalog: Catalog | null; selected: Set<string>; setSelected: (next: Set<string>) => void; onAnalyze: (ids: string[]) => void; loading: boolean; error: string }) {
+function Selection({ catalog, selected, setSelected, onAnalyze, loading, error }: { catalog: Catalog | null; selected: Set<string>; setSelected: (next: Set<string>) => void; onAnalyze: (ids: string[], includePhraseCard: boolean) => void; loading: boolean; error: string }) {
   const allDates = catalog?.sessions.map((s) => s.startedAt.slice(0, 10)) || [];
   const [from, setFrom] = useState(allDates.length ? [...allDates].sort()[0] : "");
   const [to, setTo] = useState(allDates.length ? [...allDates].sort().at(-1)! : "");
   const [projects, setProjects] = useState<Set<string>>(new Set());
+  const [includePhraseCard, setIncludePhraseCard] = useState(false);
 
   useEffect(() => {
     if (!catalog) return;
@@ -256,9 +259,16 @@ function Selection({ catalog, selected, setSelected, onAnalyze, loading, error }
           {!visible.length && <div className="no-results">No sessions match this date and project selection.</div>}
         </div>
 
+        <label className={`judge-option ${catalog.phraseJudge?.available ? "" : "unavailable"}`}>
+          <input type="checkbox" checked={includePhraseCard} disabled={!catalog.phraseJudge?.available} onChange={(event) => setIncludePhraseCard(event.target.checked)} />
+          <span className="custom-check">✓</span>
+          <span><strong>Add a “Your agent said…” card</strong><small>Explicit opt-in: sends only redacted aggregate phrase counts to Anthropic Haiku—never transcripts.</small></span>
+          <em>{catalog.phraseJudge?.available ? "Haiku 4.5" : "Set ANTHROPIC_API_KEY and restart"}</em>
+        </label>
+
         <div className="analyze-bar">
           <div><ShieldIcon /><span><strong>Runs locally</strong><small>Only selected sessions are read</small></span></div>
-          <button className="primary" disabled={!chosenVisible.length || loading} onClick={() => onAnalyze(chosenVisible.map((s) => s.id))}>{loading ? "Analyzing…" : "Make my Wrapped"}<span>→</span></button>
+          <button className="primary" disabled={!chosenVisible.length || loading} onClick={() => onAnalyze(chosenVisible.map((s) => s.id), includePhraseCard)}>{loading ? includePhraseCard ? "Analyzing + asking Haiku…" : "Analyzing…" : "Make my Wrapped"}<span>→</span></button>
         </div>
         {error && <p className="error" role="alert">{error}</p>}
       </>}
@@ -293,6 +303,11 @@ function ReportView({ report, onEvidence, onDonate }: { report: Report; onEviden
       <StatCard label="Tool calls" value={report.stats.toolCalls} note="actions taken by Claude" tone="pink" />
       <StatCard label="Interruptions" value={report.stats.interruptions} note="explicit stop events" tone="yellow" />
     </section>
+
+    {report.phraseCard && <section className="wrapped-card catchphrase-card">
+      <div><span className="card-kicker">HAIKU'S PICK · SHARE-SAFE</span><h2>“{report.phraseCard.phrase}”</h2><p>{report.phraseCard.method}</p></div>
+      <div className="catchphrase-count"><strong>{report.phraseCard.occurrences}</strong><span>times</span><small>across {report.phraseCard.distinctSessions} session{report.phraseCard.distinctSessions === 1 ? "" : "s"}</small></div>
+    </section>}
 
     <section className="wrapped-card tools-card">
       <div><span className="card-kicker">THE TOOLKIT</span><h2>Your agent’s<br />greatest hits.</h2><p>Deterministic counts from visible tool-use records.</p></div>
@@ -419,10 +434,10 @@ export default function App() {
     window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  async function analyze(ids: string[]) {
+  async function analyze(ids: string[], includePhraseCard: boolean) {
     setLoading(true); setError("");
     try {
-      const response = await fetch("/api/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionIds: ids }) });
+      const response = await fetch("/api/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionIds: ids, includePhraseCard }) });
       if (!response.ok) throw new Error((await response.json()).error || "Analysis failed");
       setReport(await response.json()); setAnalyzedIds(new Set(ids)); setStage("report"); window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e) { setError(e instanceof Error ? e.message : "Analysis failed"); } finally { setLoading(false); }
@@ -434,7 +449,7 @@ export default function App() {
     {safeStage === "select" && <Selection catalog={catalog} selected={selected} setSelected={setSelected} onAnalyze={analyze} loading={loading} error={error} />}
     {safeStage === "report" && report && <ReportView report={report} onEvidence={setEvidence} onDonate={() => { setStage("donate"); window.scrollTo(0, 0); }} />}
     {safeStage === "donate" && catalog && <DonationView sessions={catalog.sessions} initialSelected={analyzedIds} onBack={() => { setStage("report"); window.scrollTo(0, 0); }} />}
-    <footer><span>Behavior Wrapped <b>v0.1</b></span><span>Localhost · Open source prototype · Nothing sent</span></footer>
+    <footer><span>Behavior Wrapped <b>v0.1</b></span><span>Local-first · Network only after explicit phrase-card opt-in</span></footer>
     {evidence && <EvidenceModal finding={evidence} onClose={() => setEvidence(null)} />}
   </div>;
 }

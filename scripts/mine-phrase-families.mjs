@@ -4,7 +4,7 @@ import path from "node:path";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
-import { redactText } from "../server/privacy.mjs";
+import { redactAggregateText } from "../server/privacy.mjs";
 
 const segmenter = new Intl.Segmenter("en", { granularity: "sentence" });
 const DEFAULTS = {
@@ -27,32 +27,14 @@ function isModelGenerated(record) {
   return record.type === "assistant" && !record.isApiErrorMessage && record?.message?.model && record.message.model !== "<synthetic>";
 }
 
-const NON_PERSON_WORDS = new Set("agent assistant user system model tool team claude zulip github person someone anyone everyone nobody only the this that new latest direct explicit online private prior session status handoff instruction instructions message messages ping pings task work context state directory window".split(" "));
-
-function replaceLikelyPersonNames(value) {
-  return value
-    .replace(/\b([A-Za-z][A-Za-z'-]{2,})(?=\s+(?:(?:directly|explicitly)\s+)?(?:said|says|asked|asks|ordered|requested|told|wants|needs|returns?|responds?|pinged|pings|messaged|reaffirmed))\b/gi,
-      (match, word) => NON_PERSON_WORDS.has(word.toLowerCase()) ? match : "person")
-    .replace(/\b(from)\s+([A-Za-z][A-Za-z'-]{2,})\b/gi,
-      (match, relation, word) => NON_PERSON_WORDS.has(word.toLowerCase()) ? match : `${relation} person`)
-    .replace(/\b(by)\s+([A-Za-z][A-Za-z'-]{2,})(?=\s+(?:just\s+)?(?:on|at|today|yesterday|who|and)\b)/gi,
-      (match, relation, word) => NON_PERSON_WORDS.has(word.toLowerCase()) ? match : `${relation} person`)
-    .replace(/\b([A-Za-z][A-Za-z'-]{2,})(?=\s+(?:messages?|pings?)\b)/gi,
-      (match, word) => NON_PERSON_WORDS.has(word.toLowerCase()) ? match : "person")
-    .replace(/\b(if|when|unless)\s+([A-Za-z][A-Za-z'-]{2,})(?=\s+(?:(?:directly|explicitly)\s+)?(?:pings?|pinged|messages?|messaged)\b)/gi,
-      (match, relation, word) => NON_PERSON_WORDS.has(word.toLowerCase()) ? match : `${relation} person`)
-    .replace(/\b((?:ping|message|tell|ask|notify)(?:s|ed|ing)?\s+)([A-Z][a-z'-]{2,})\b/g,
-      (match, action, word) => NON_PERSON_WORDS.has(word.toLowerCase()) ? match : `${action}person`);
-}
-
 function cleanText(value) {
-  return redactText(replaceLikelyPersonNames(String(value))
+  return redactAggregateText(String(value)
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/`[^`]*`/g, " ")
     .replace(/https?:\/\/\S+/g, " ")
     .replace(/\[[^\]]+\]\([^\)]+\)/g, " ")
     .replace(/(?:\/Users\/|\/home\/)[^\s,;:]+/g, " [path] ")
-    .replace(/\b([A-Z][a-z]{2,})[’']s\b/g, "person's")).text;
+    .replace(/\b([A-Z][a-z]{2,})[’']s\b/g, "person's"));
 }
 
 function tokenize(value) {
