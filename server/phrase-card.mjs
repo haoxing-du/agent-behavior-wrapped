@@ -1,6 +1,7 @@
 import { redactAggregateText } from "./privacy.mjs";
 
-export const HAIKU_MODEL = "claude-haiku-4-5-20251001";
+export const OPENROUTER_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free";
+export const PHRASE_JUDGE_NAME = "Nemotron 3 Ultra";
 
 const segmenter = new Intl.Segmenter("en", { granularity: "sentence" });
 const stopwords = new Set("a an and are as at be been but by can could did do does for from had has have he her here him his how i if in into is it its just may me more my no not of on or our out please she should so some than that the their them then there these they this those to up us was we were what when where which who why will with would you your".split(" "));
@@ -65,9 +66,10 @@ export function buildPhraseCandidates(sessionRecords, { maximumCandidates = 240 
     }
   }
 
-  const ranked = [...counts.values()]
-    .filter((item) => (item.sessions.size >= 2 && item.occurrences >= 2) || item.occurrences >= 3)
+  const allRanked = [...counts.values()]
     .sort((left, right) => right.sessions.size - left.sessions.size || right.occurrences - left.occurrences || right.phrase.split(" ").length - left.phrase.split(" ").length);
+  const repeated = allRanked.filter((item) => (item.sessions.size >= 2 && item.occurrences >= 2) || item.occurrences >= 3);
+  const ranked = repeated.length ? repeated : allRanked;
   const selected = [];
   for (const row of ranked) {
     const redundant = selected.some((existing) => {
@@ -116,36 +118,45 @@ const tool = {
   },
 };
 
-export async function judgePhraseCard(candidates, apiKey, { fetchImpl = fetch, model = HAIKU_MODEL } = {}) {
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY is required for the optional phrase card.");
+export async function judgePhraseCard(candidates, apiKey, { fetchImpl = fetch, model = OPENROUTER_MODEL } = {}) {
+  if (!apiKey) throw new Error("OPENROUTER_API_KEY is required for the standard phrase card.");
   if (!candidates.length) throw new Error("Not enough repeated, share-safe phrases were found for a phrase card.");
   const payload = JSON.stringify(candidates);
   assertSafePayload(payload);
-  const response = await fetchImpl("https://api.anthropic.com/v1/messages", {
+  const startedAt = Date.now();
+  const response = await fetchImpl("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
-    headers: { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+    headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}`, "x-title": "Behavior Wrapped" },
     body: JSON.stringify({
       model,
       max_tokens: 700,
-      system: systemPrompt,
-      messages: [{ role: "user", content: `Choose one candidate from this redacted aggregate list:\n\n${payload}` }],
-      tools: [tool],
-      tool_choice: { type: "tool", name: tool.name, disable_parallel_tool_use: true },
+      temperature: 0.2,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: `Choose one candidate from this redacted aggregate list:\n\n${payload}` },
+      ],
+      tools: [{ type: "function", function: { name: tool.name, description: tool.description, parameters: tool.input_schema } }],
+      tool_choice: { type: "function", function: { name: tool.name } },
+      parallel_tool_calls: false,
     }),
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`Anthropic API ${response.status}: ${body?.error?.message || "request failed"}`);
-  const choice = body.content?.find((block) => block.type === "tool_use" && block.name === tool.name)?.input;
+  if (!response.ok) throw new Error(`OpenRouter API ${response.status}: ${body?.error?.message || "request failed"}`);
+  const toolCall = body.choices?.[0]?.message?.tool_calls?.find((call) => call?.function?.name === tool.name);
+  let choice;
+  try { choice = JSON.parse(toolCall?.function?.arguments || ""); } catch { throw new Error(`${PHRASE_JUDGE_NAME} did not return the required structured selection.`); }
   const selected = candidates.find((candidate) => candidate.candidate_id === choice?.candidate_id);
-  if (!selected) throw new Error("Haiku returned an unknown phrase candidate.");
+  if (!selected) throw new Error(`${PHRASE_JUDGE_NAME} returned an unknown phrase candidate.`);
   return {
     phrase: selected.phrase,
     occurrences: selected.occurrences,
     distinctSessions: selected.distinct_sessions,
     model: body.model || model,
+    provider: "OpenRouter",
+    latencyMs: Date.now() - startedAt,
     interestingnessScore: choice.interestingness_score,
     generatedAt: new Date().toISOString(),
-    method: "Haiku selected one exact phrase from locally counted, redacted aggregate candidates.",
+    method: `${PHRASE_JUDGE_NAME} selected one exact phrase from locally counted, redacted aggregate candidates via OpenRouter.`,
     candidateCount: candidates.length,
     usage: body.usage || null,
   };

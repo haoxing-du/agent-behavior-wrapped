@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { discoverAllSessions, readRecords, sessionsInDefaultWindow, DEFAULT_WINDOW_DAYS } from "./discovery.mjs";
 import { analyzeSessions } from "./analysis.mjs";
-import { buildPhraseCandidates, judgePhraseCard } from "./phrase-card.mjs";
+import { buildPhraseCandidates, judgePhraseCard, PHRASE_JUDGE_NAME } from "./phrase-card.mjs";
 import { createReportId, deleteReport, listReports, saveReport, storeRoot } from "./store.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -97,22 +97,19 @@ async function createWrapped() {
     return { sessionId: session.id, agent: session.agent, records: readRecords(session.file, session.agent) };
   });
   const analyzed = analyzeSessions(sessionRecords);
-  const includePhraseCard = process.argv.includes("--with-phrase-card");
-  if (includePhraseCard) {
-    if (!process.env.ANTHROPIC_API_KEY) throw new Error("--with-phrase-card needs ANTHROPIC_API_KEY in your environment.");
-    const candidates = buildPhraseCandidates(sessionRecords);
-    process.stdout.write(`${muted}◇  Asking Haiku to pick from ${candidates.length} redacted aggregate phrases…${reset}\r`);
-    analyzed.phraseCard = await judgePhraseCard(candidates, process.env.ANTHROPIC_API_KEY);
-  }
+  if (!process.env.OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY is required to create the standard phrase card.");
+  const candidates = buildPhraseCandidates(sessionRecords);
+  process.stdout.write(`${muted}◇  Asking ${PHRASE_JUDGE_NAME} via OpenRouter to pick from ${candidates.length} redacted aggregate phrases…${reset}\r`);
+  analyzed.phraseCard = await judgePhraseCard(candidates, process.env.OPENROUTER_API_KEY);
   const id = createReportId();
   const safeFindings = analyzed.findings.map(({ evidence, method, ...finding }) => finding);
-  const report = { id, createdAt: new Date().toISOString(), rangeLabel: formatRange(chosenSessions), source: "Claude Code + Codex", stats: analyzed.stats, findings: safeFindings, phraseCard: analyzed.phraseCard || null, sessionIds: chosenSessions.map((session) => session.id), privacy: { shareSafe: true, containsTranscriptText: false, externalTransmission: includePhraseCard, transmittedData: includePhraseCard ? "redacted aggregate phrase candidates only" : "none" } };
+  const report = { id, createdAt: new Date().toISOString(), rangeLabel: formatRange(chosenSessions), source: "Claude Code + Codex", stats: analyzed.stats, findings: safeFindings, phraseCard: analyzed.phraseCard, sessionIds: chosenSessions.map((session) => session.id), privacy: { shareSafe: true, containsTranscriptText: false, externalTransmission: true, transmittedData: "redacted aggregate phrase candidates only", externalRecipient: "OpenRouter/NVIDIA" } };
   saveReport(report);
   await ensureServer();
   const url = `${baseUrl}/w/${id}`;
   const tokenLabel = formatNumber(report.stats.tokens || 0);
   console.log(`◇  ${bright}Wrapped ready${reset} · ${tokenLabel} tokens across ${report.stats.sessions} sessions          `);
-  if (report.phraseCard) console.log(`◇  Haiku's pick · “${report.phraseCard.phrase}” × ${report.phraseCard.occurrences}          `);
+  if (report.phraseCard) console.log(`◇  ${PHRASE_JUDGE_NAME}'s pick · “${report.phraseCard.phrase}” × ${report.phraseCard.occurrences} · ${(report.phraseCard.latencyMs / 1000).toFixed(1)}s          `);
   console.log(`│\n◇  Your wrapped is live locally ─────────────────────────╮`);
   console.log(`│                                                        │`);
   console.log(`│  ${purple}${bright}${url}${reset}`);
@@ -132,7 +129,7 @@ try {
     if (!id) throw new Error("Usage: behavior-wrapped delete <id>");
     console.log(deleteReport(id) ? `Deleted local report ${id}.` : "That saved report was not found.");
   } else if (command === "help" || command === "--help" || command === "-h") {
-    console.log("behavior-wrapped [--demo] [--days=30] [--no-open] [--with-phrase-card]\nbehavior-wrapped list\nbehavior-wrapped open [id]\nbehavior-wrapped delete <id>");
+    console.log("behavior-wrapped [--demo] [--days=30] [--no-open]\nbehavior-wrapped list\nbehavior-wrapped open [id]\nbehavior-wrapped delete <id>");
   } else await createWrapped();
 } catch (error) {
   console.error(`\n${bright}Could not create your Wrapped.${reset} ${error.message}\n`);

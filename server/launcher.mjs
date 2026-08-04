@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { discoverAllSessions, readRecords, defaultDateRange, DEFAULT_WINDOW_DAYS } from "./discovery.mjs";
 import { analyzeSessions, makeDonationPreview } from "./analysis.mjs";
-import { buildPhraseCandidates, HAIKU_MODEL, judgePhraseCard } from "./phrase-card.mjs";
+import { buildPhraseCandidates, OPENROUTER_MODEL, PHRASE_JUDGE_NAME, judgePhraseCard } from "./phrase-card.mjs";
 import { loadReport } from "./store.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -56,8 +56,8 @@ function publicCatalog() {
     projects: catalog.projects,
     sessions: catalog.sessions.map((s, index) => ({ ...s, label: s.label || `Session ${index + 1}` })),
     defaultRange: defaultDateRange(catalog.sessions, { days: DEFAULT_WINDOW_DAYS, anchorLatest: demo }),
-    privacy: { canonicalDirectories: ["~/.claude/projects", "~/.codex/sessions", "~/.codex/archived_sessions"], networkRequests: false },
-    phraseJudge: { available: Boolean(process.env.ANTHROPIC_API_KEY), model: HAIKU_MODEL, requiresExplicitOptIn: true },
+    privacy: { canonicalDirectories: ["~/.claude/projects", "~/.codex/sessions", "~/.codex/archived_sessions"], networkRequests: "during-analysis" },
+    phraseJudge: { available: Boolean(process.env.OPENROUTER_API_KEY), model: OPENROUTER_MODEL, name: PHRASE_JUDGE_NAME, provider: "OpenRouter", requiredOnAnalysis: true, freeEndpointDataNotice: true },
   };
 }
 
@@ -101,11 +101,9 @@ const server = http.createServer(async (request, response) => {
       if (!records.length) return json(response, 400, { error: "Choose at least one available session." });
       if (url.pathname === "/api/analyze") {
         const analyzed = analyzeSessions(records);
-        if (body.includePhraseCard === true) {
-          if (!process.env.ANTHROPIC_API_KEY) return json(response, 400, { error: "Restart with ANTHROPIC_API_KEY set to add the optional Haiku phrase card." });
-          const candidates = buildPhraseCandidates(records);
-          analyzed.phraseCard = await judgePhraseCard(candidates, process.env.ANTHROPIC_API_KEY);
-        }
+        if (!process.env.OPENROUTER_API_KEY) return json(response, 400, { error: "Restart with OPENROUTER_API_KEY set. Every Wrapped includes the Nemotron phrase card." });
+        const candidates = buildPhraseCandidates(records);
+        analyzed.phraseCard = await judgePhraseCard(candidates, process.env.OPENROUTER_API_KEY);
         return json(response, 200, analyzed);
       }
       const labels = new Map(publicCatalog().sessions.map((s) => [s.id, s]));

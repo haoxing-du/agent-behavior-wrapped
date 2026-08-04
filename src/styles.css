@@ -97,6 +97,7 @@ h1 em { font-family: Georgia, serif; font-weight: 500; color: var(--lime); }
 .judge-option > span:nth-of-type(2) { display: flex; flex-direction: column; gap: 4px; }
 .judge-option strong { font-size: 12px; }.judge-option small { color: #77717e; font-size: 10px; line-height: 1.45; }.judge-option em { color: #6940bc; font-size: 10px; font-style: normal; font-weight: 850; white-space: nowrap; }
 .judge-option.unavailable { opacity: .62; cursor: not-allowed; }.judge-option.unavailable em { color: #77717e; }
+.judge-option.judge-required { cursor: default; }.network-mark { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 8px; background: #e8ddff; color: #6840b7; font-size: 13px; font-weight: 900; }
 
 .privacy-panel { display: grid; grid-template-columns: 70px 1fr; gap: 16px; max-width: 760px; margin: 72px auto; padding: 0 24px; color: #c0bacf; }
 .privacy-icon { width: 58px; height: 58px; background: rgba(141,92,255,.15); border: 1px solid rgba(141,92,255,.35); border-radius: 18px; display: grid; place-items: center; }

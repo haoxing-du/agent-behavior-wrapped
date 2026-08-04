@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 
 type Project = { id: string; name: string; sessionCount: number; latestAt: string; agents: string[] };
 type Session = { id: string; agent: "claude" | "codex"; agentName: string; projectId: string; projectName: string; startedAt: string; endedAt: string; promptCount: number; recordCount: number; sizeBytes: number; synthetic: boolean; label: string };
-type Catalog = { rootAvailable: boolean; demo: boolean; projects: Project[]; sessions: Session[]; defaultRange: { from: string; to: string; days: number }; privacy: { canonicalDirectories: string[]; networkRequests: boolean }; phraseJudge?: { available: boolean; model: string; requiresExplicitOptIn: boolean } };
+type Catalog = { rootAvailable: boolean; demo: boolean; projects: Project[]; sessions: Session[]; defaultRange: { from: string; to: string; days: number }; privacy: { canonicalDirectories: string[]; networkRequests: string }; phraseJudge?: { available: boolean; model: string; name: string; provider: string; requiredOnAnalysis: boolean; freeEndpointDataNotice: boolean } };
 type Finding = { id: string; kind: string; title: string; summary: string; method: string; confidence: { score: number; label: string }; evidence: { id: string; sessionId: string; lines: { role: string; text: string }[] } };
-type PhraseCard = { phrase: string; occurrences: number; distinctSessions: number; model: string; interestingnessScore: number; method: string; candidateCount: number };
+type PhraseCard = { phrase: string; occurrences: number; distinctSessions: number; model: string; provider: string; latencyMs: number; interestingnessScore: number; method: string; candidateCount: number };
 type AgentStat = { agent: "claude" | "codex"; name: string; count: number; percentage: number };
 type ModelStat = { model: string; name: string; tokens: number; percentage: number };
 type Report = { stats: { sessions: number; activeDays: number; durationMinutes: number; prompts: number; toolCalls: number; interruptions: number; tokens: number; tools: { name: string; count: number }[]; agents: AgentStat[]; models: ModelStat[]; estimatedCostUsd: number; costEstimateMethod: string }; findings: Finding[]; phraseCard?: PhraseCard | null };
@@ -122,7 +122,7 @@ function SharedWrapped({ id }: { id: string }) {
     { kicker: "Your tokens were worth", headline: fmtUsd(report.stats.estimatedCostUsd || 0), detail: "API-equivalent retail estimate—not your bill.", tone: "cost", rows: costEquivalents(report.stats.estimatedCostUsd || 0) },
     { kicker: "Your most-used agent", headline: leader.name, detail: `${leader.count} of ${report.stats.sessions} selected sessions.`, tone: "agents", rows: agents.map((agent) => ({ label: agent.name, value: `${agent.percentage.toFixed(1)}%`, percentage: agent.percentage })) },
     { kicker: "Your top models", headline: `${topModel.percentage.toFixed(1)}%`, detail: `went to your #1 · ${topModel.name}`, tone: "models", rows: (report.stats.models || []).slice(0, 4).map((model, index) => ({ label: `${index + 1}  ${model.name}`, value: `${model.percentage.toFixed(1)}%`, percentage: model.percentage })) },
-    ...(report.phraseCard ? [{ kicker: `YOUR AGENT SAID THIS ${report.phraseCard.occurrences} TIMES`, headline: `“${report.phraseCard.phrase}”`, detail: `Seen across ${report.phraseCard.distinctSessions} session${report.phraseCard.distinctSessions === 1 ? "" : "s"} · picked by Haiku from redacted aggregate phrases.`, tone: "quote" }] : []),
+    ...(report.phraseCard ? [{ kicker: `YOUR AGENT SAID THIS ${report.phraseCard.occurrences} TIMES`, headline: `“${report.phraseCard.phrase}”`, detail: `Seen across ${report.phraseCard.distinctSessions} session${report.phraseCard.distinctSessions === 1 ? "" : "s"} · picked by Nemotron 3 Ultra from redacted aggregate phrases.`, tone: "quote" }] : []),
     ...(report.findings.length ? report.findings.slice(0, 2).map((finding) => ({ kicker: `${finding.confidence.label} confidence · ${Math.round(finding.confidence.score * 100)}%`, headline: finding.title, detail: finding.summary, tone: "lime" })) : [{ kicker: "Behavior check", headline: "No strong signals found.", detail: "These prototype heuristics did not find enough visible evidence.", tone: "lime" }]),
     { kicker: "The share-safe ending", headline: "The patterns can travel. Your work stays home.", detail: "No transcript excerpts, project names, paths, code, or tool outputs are in this Wrapped.", tone: "coral" },
     { kicker: "Optional research donation", headline: "Want to help researchers understand coding agents?", detail: "Review every proposed line, redact anything you want, then decide whether to export a local donation bundle.", tone: "research", cta: true },
@@ -193,17 +193,16 @@ function PrivacyPanel() {
     <div>
       <span className="eyebrow">Privacy, by construction</span>
       <h3>Your transcripts stay on this Mac.</h3>
-      <p>Analysis runs inside this local app. No transcript text is sent anywhere. Private evidence never appears in share exports, and raw tool outputs and code are excluded from evidence views.</p>
-      <div className="privacy-facts"><span>✓ No account</span><span>✓ No telemetry</span><span>✓ Network opt-in is explicit</span></div>
+      <p>Transcript parsing and behavior analysis run inside this local app. Full transcripts, excerpts, code, and tool outputs stay on this Mac; only redacted recurring-phrase candidates and counts are sent to OpenRouter during analysis.</p>
+      <div className="privacy-facts"><span>✓ No account</span><span>✓ No telemetry</span><span>✓ Only redacted phrase aggregates leave</span></div>
     </div>
   </aside>;
 }
 
-function Selection({ catalog, selected, setSelected, onAnalyze, loading, error }: { catalog: Catalog | null; selected: Set<string>; setSelected: (next: Set<string>) => void; onAnalyze: (ids: string[], includePhraseCard: boolean) => void; loading: boolean; error: string }) {
+function Selection({ catalog, selected, setSelected, onAnalyze, loading, error }: { catalog: Catalog | null; selected: Set<string>; setSelected: (next: Set<string>) => void; onAnalyze: (ids: string[]) => void; loading: boolean; error: string }) {
   const [from, setFrom] = useState(catalog?.defaultRange.from || "");
   const [to, setTo] = useState(catalog?.defaultRange.to || "");
   const [projects, setProjects] = useState<Set<string>>(new Set());
-  const [includePhraseCard, setIncludePhraseCard] = useState(false);
 
   useEffect(() => {
     if (!catalog) return;
@@ -289,16 +288,15 @@ function Selection({ catalog, selected, setSelected, onAnalyze, loading, error }
           {!visible.length && <div className="no-results">No sessions match this date and project selection.</div>}
         </div>
 
-        <label className={`judge-option ${catalog.phraseJudge?.available ? "" : "unavailable"}`}>
-          <input type="checkbox" checked={includePhraseCard} disabled={!catalog.phraseJudge?.available} onChange={(event) => setIncludePhraseCard(event.target.checked)} />
-          <span className="custom-check">✓</span>
-          <span><strong>Add a “Your agent said…” card</strong><small>Explicit opt-in: sends only redacted aggregate phrase counts to Anthropic Haiku—never transcripts.</small></span>
-          <em>{catalog.phraseJudge?.available ? "Haiku 4.5" : "Set ANTHROPIC_API_KEY and restart"}</em>
-        </label>
+        <div className={`judge-option judge-required ${catalog.phraseJudge?.available ? "" : "unavailable"}`}>
+          <span className="network-mark">↗</span>
+          <span><strong>Nemotron picks the “Your agent said…” card</strong><small>Every analysis sends only redacted aggregate phrase counts—not transcripts—to OpenRouter’s free NVIDIA endpoint. The provider may log submitted aggregates under its free-model terms.</small></span>
+          <em>{catalog.phraseJudge?.available ? "Nemotron 3 Ultra · free" : "Set OPENROUTER_API_KEY and restart"}</em>
+        </div>
 
         <div className="analyze-bar">
           <div><ShieldIcon /><span><strong>Runs locally</strong><small>Only selected sessions are read</small></span></div>
-          <button className="primary" disabled={!chosenVisible.length || loading} onClick={() => onAnalyze(chosenVisible.map((s) => s.id), includePhraseCard)}>{loading ? includePhraseCard ? "Analyzing + asking Haiku…" : "Analyzing…" : "Make my Wrapped"}<span>→</span></button>
+          <button className="primary" disabled={!chosenVisible.length || loading || !catalog.phraseJudge?.available} onClick={() => onAnalyze(chosenVisible.map((s) => s.id))}>{loading ? "Analyzing + asking Nemotron…" : "Make my Wrapped"}<span>→</span></button>
         </div>
         {error && <p className="error" role="alert">{error}</p>}
       </>}
@@ -335,7 +333,7 @@ function ReportView({ report, onEvidence, onDonate }: { report: Report; onEviden
     </section>
 
     {report.phraseCard && <section className="wrapped-card catchphrase-card">
-      <div><span className="card-kicker">HAIKU'S PICK · SHARE-SAFE</span><h2>“{report.phraseCard.phrase}”</h2><p>{report.phraseCard.method}</p></div>
+      <div><span className="card-kicker">NEMOTRON'S PICK · SHARE-SAFE</span><h2>“{report.phraseCard.phrase}”</h2><p>{report.phraseCard.method}</p></div>
       <div className="catchphrase-count"><strong>{report.phraseCard.occurrences}</strong><span>times</span><small>across {report.phraseCard.distinctSessions} session{report.phraseCard.distinctSessions === 1 ? "" : "s"}</small></div>
     </section>}
 
@@ -464,10 +462,10 @@ export default function App() {
     window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  async function analyze(ids: string[], includePhraseCard: boolean) {
+  async function analyze(ids: string[]) {
     setLoading(true); setError("");
     try {
-      const response = await fetch("/api/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionIds: ids, includePhraseCard }) });
+      const response = await fetch("/api/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionIds: ids }) });
       if (!response.ok) throw new Error((await response.json()).error || "Analysis failed");
       setReport(await response.json()); setAnalyzedIds(new Set(ids)); setStage("report"); window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e) { setError(e instanceof Error ? e.message : "Analysis failed"); } finally { setLoading(false); }
@@ -479,7 +477,7 @@ export default function App() {
     {safeStage === "select" && <Selection catalog={catalog} selected={selected} setSelected={setSelected} onAnalyze={analyze} loading={loading} error={error} />}
     {safeStage === "report" && report && <ReportView report={report} onEvidence={setEvidence} onDonate={() => { setStage("donate"); window.scrollTo(0, 0); }} />}
     {safeStage === "donate" && catalog && <DonationView sessions={catalog.sessions} initialSelected={analyzedIds} onBack={() => { setStage("report"); window.scrollTo(0, 0); }} />}
-    <footer><span>Behavior Wrapped <b>v0.1</b></span><span>Local-first · Network only after explicit phrase-card opt-in</span></footer>
+    <footer><span>Behavior Wrapped <b>v0.1</b></span><span>Local transcripts · Redacted phrase aggregates sent to OpenRouter during analysis</span></footer>
     {evidence && <EvidenceModal finding={evidence} onClose={() => setEvidence(null)} />}
   </div>;
 }

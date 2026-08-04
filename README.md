@@ -12,7 +12,7 @@ npm run build
 npm run wrapped
 ```
 
-The command automatically scans both agents, selects sessions from the latest 30-day rolling window, creates a share-safe snapshot, prints a stable local URL such as `http://127.0.0.1:4317/w/…`, starts the local viewer when needed, and opens the Wrapped slideshow. The default flow makes no network requests. Use `--days=N` to change the CLI window; the private dashboard also exposes exact date controls.
+The command automatically scans both agents, selects sessions from the latest 30-day rolling window, creates a share-safe snapshot, prints a stable local URL such as `http://127.0.0.1:4317/w/…`, starts the local viewer when needed, and opens the Wrapped slideshow. Use `--days=N` to change the CLI window; the private dashboard also exposes exact date controls.
 
 The shareable deck starts with four deterministic usage cards: token volume, estimated API-equivalent retail cost, Claude Code vs. Codex session share, and top models by token share. Cost is explicitly an estimate derived from a local, inspectable model-family rate table; it is not a statement about subscription charges or an invoice.
 
@@ -20,13 +20,14 @@ The final slideshow card offers an optional research-donation review. It opens a
 
 Use `npm run wrapped -- --demo` to generate a Wrapped from synthetic fixtures. Add `--no-open` to leave the browser closed.
 
-To add an optional “Your agent said … N times” slide, provide an Anthropic API key and opt in explicitly:
+Every Wrapped includes a “Your agent said … N times” slide chosen by the free Nemotron 3 Ultra model through OpenRouter. Add your key to the environment before launching:
 
 ```bash
-npm run wrapped -- --with-phrase-card
+export OPENROUTER_API_KEY='your-key'
+npm run wrapped
 ```
 
-Exact phrase counts are computed locally. Only redacted aggregate phrase candidates and counts are sent to Haiku 4.5; transcripts, tool output, code, and the API key are not included. The private dashboard exposes the same workflow as an unchecked opt-in control.
+Exact phrase counts are computed locally. Only redacted aggregate phrase candidates and counts are sent to `nvidia/nemotron-3-ultra-550b-a55b:free`; transcripts, tool output, code, and the API key are not included. OpenRouter notes that prompts submitted to this free endpoint may be logged and used under NVIDIA's free-model terms, which is why the UI discloses the request before analysis.
 
 Saved reports are managed with:
 
@@ -47,7 +48,7 @@ For UI development, run the local API with `npm run demo -- --no-open`, then run
 ## Privacy model
 
 - The launcher reads only selected JSONL files from the canonical Claude Code and Codex directories.
-- Analysis and redaction run locally. The application contains no analytics or external assets and makes no network requests unless the user opts into the Haiku phrase-card workflow.
+- Transcript parsing, deterministic statistics, heuristic findings, phrase counting, and redaction run locally. Creating a Wrapped sends the redacted aggregate phrase candidate list to OpenRouter for the standard Nemotron phrase card.
 - Browser payloads never include source file paths or raw tool outputs.
 - Private evidence is made from redacted user/assistant prose; code blocks are omitted.
 - Share-card PNG exports contain only aggregates and generalized findings.
@@ -67,18 +68,20 @@ The miner uses rare token-shingle postings to generate candidates, bounded token
 
 Use `--limit=100` to retain more than the default 50 families.
 
-### Optional LLM phrase judge
+### LLM phrase judge
 
-The phrase judge is the one explicitly networked workflow. It sends only redacted aggregate phrase candidates—not transcripts—to Anthropic after you invoke it. Haiku 4.5 is the default model.
+The phrase judge is the app's one networked analysis step. It sends only redacted aggregate phrase candidates—not transcripts—to OpenRouter. Nemotron 3 Ultra's free endpoint is the default model.
 
 ```bash
-export ANTHROPIC_API_KEY='your-key'
+export OPENROUTER_API_KEY='your-key'
 npm run judge:phrases -- \
   analysis-output/local-phrase-families.v1.json \
   analysis-output/local-phrase-judgment.v1.json
 ```
 
-The API key is read from the environment and is never written to an artifact. Results use forced structured output, then resolve the selected candidate ID to its exact locally counted phrase so the model cannot invent wording or inflate a count. Automated redaction is imperfect; review any generated phrase-family artifact before initiating this optional request.
+The API key is read from the environment and is never written to an artifact. Results use forced tool output, then resolve the selected candidate ID to its exact locally counted phrase so the model cannot invent wording or inflate a count. Automated redaction is imperfect; review any generated phrase-family artifact before initiating a standalone request.
+
+Do not embed a shared OpenRouter key in the npm package or browser bundle: local users could extract and reuse it. A production shared-key version should call a narrow hosted proxy that stores the key server-side, validates the aggregate-only request schema, and applies per-install quotas and abuse controls. This prototype intentionally uses the developer or user's environment-provided key until that service exists.
 
 ## Prototype boundaries
 

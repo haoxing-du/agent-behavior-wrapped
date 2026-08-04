@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
 
 const DEFAULT_MODELS = [
-  "claude-haiku-4-5-20251001",
+  "nvidia/nemotron-3-ultra-550b-a55b:free",
 ];
 
 const SYSTEM_PROMPT = `You are the editorial judge for a playful, polished "Behavior Wrapped" product about coding agents.
@@ -134,35 +134,38 @@ export function resolveJudgment(input, candidateMap) {
 
 async function callJudge(model, candidates, apiKey) {
   const started = performance.now();
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
+  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
+      "authorization": `Bearer ${apiKey}`,
+      "x-title": "Behavior Wrapped",
     },
     body: JSON.stringify({
       model,
       max_tokens: 1800,
-      system: SYSTEM_PROMPT,
-      messages: [{
-        role: "user",
-        content: `Choose from this JSON candidate list. Exact occurrence counts apply only to exact_phrase, not family_template.\n\n${JSON.stringify(candidates)}`,
-      }],
-      tools: [TOOL],
-      tool_choice: { type: "tool", name: TOOL.name, disable_parallel_tool_use: true },
+      temperature: 0.2,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: `Choose from this JSON candidate list. Exact occurrence counts apply only to exact_phrase, not family_template.\n\n${JSON.stringify(candidates)}` },
+      ],
+      tools: [{ type: "function", function: { name: TOOL.name, description: TOOL.description, parameters: TOOL.input_schema } }],
+      tool_choice: { type: "function", function: { name: TOOL.name } },
+      parallel_tool_calls: false,
     }),
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`Anthropic API ${response.status}: ${body?.error?.message || "request failed"}`);
-  const toolUse = body.content?.find((block) => block.type === "tool_use" && block.name === TOOL.name);
-  if (!toolUse) throw new Error(`Model ${model} did not return the required structured judgment.`);
+  if (!response.ok) throw new Error(`OpenRouter API ${response.status}: ${body?.error?.message || "request failed"}`);
+  const toolCall = body.choices?.[0]?.message?.tool_calls?.find((call) => call?.function?.name === TOOL.name);
+  if (!toolCall) throw new Error(`Model ${model} did not return the required structured judgment.`);
+  let input;
+  try { input = JSON.parse(toolCall.function.arguments); } catch { throw new Error(`Model ${model} returned invalid structured arguments.`); }
   return {
     model: body.model || model,
     latency_ms: Math.round(performance.now() - started),
     usage: body.usage || null,
-    stop_reason: body.stop_reason,
-    input: toolUse.input,
+    stop_reason: body.choices?.[0]?.finish_reason || null,
+    input,
   };
 }
 
@@ -173,7 +176,7 @@ async function main() {
     process.exitCode = 2;
     return;
   }
-  if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY is not set.");
+  if (!process.env.OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY is not set.");
   const sourceText = fs.readFileSync(inputFile, "utf8");
   const source = JSON.parse(sourceText);
   const candidates = buildCandidates(source);
@@ -192,7 +195,7 @@ async function main() {
   }
 
   const modelsToCall = models.filter((model) => !previousByModel.has(model));
-  const settled = await Promise.allSettled(modelsToCall.map((model) => callJudge(model, candidates, process.env.ANTHROPIC_API_KEY)));
+  const settled = await Promise.allSettled(modelsToCall.map((model) => callJudge(model, candidates, process.env.OPENROUTER_API_KEY)));
   const newEntries = settled.map((result, index) => {
     const requestedModel = modelsToCall[index];
     if (result.status === "rejected") return [requestedModel, { requested_model: requestedModel, error: result.reason.message }];
