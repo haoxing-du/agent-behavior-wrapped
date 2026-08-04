@@ -76,3 +76,7 @@ The API key is read from the environment and is never written to an artifact. Re
 - Research donation exports a reviewed local bundle but does not upload it.
 - Public sharing is a local preview; hosted publishing and account management are not implemented.
 - The project is intentionally marked private in `package.json` until its npm package name and release process are finalized.
+
+## License
+
+Apache-2.0. See [LICENSE](LICENSE).
