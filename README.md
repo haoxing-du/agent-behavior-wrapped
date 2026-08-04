@@ -68,20 +68,7 @@ The miner uses rare token-shingle postings to generate candidates, bounded token
 
 Use `--limit=100` to retain more than the default 50 families.
 
-### LLM phrase judge
-
-The phrase judge is the app's one networked analysis step. It sends only redacted aggregate phrase candidates—not transcripts—to OpenRouter. Nemotron 3 Ultra's free endpoint is the default model.
-
-```bash
-export OPENROUTER_API_KEY='your-key'
-npm run judge:phrases -- \
-  analysis-output/local-phrase-families.v1.json \
-  analysis-output/local-phrase-judgment.v1.json
-```
-
-The API key is read from the environment and is never written to an artifact. Results use forced tool output, then resolve the selected candidate ID to its exact locally counted phrase so the model cannot invent wording or inflate a count. Automated redaction is imperfect; review any generated phrase-family artifact before initiating a standalone request.
-
-Do not embed a shared OpenRouter key in the npm package or browser bundle: local users could extract and reuse it. A production shared-key version should call a narrow hosted proxy that stores the key server-side, validates the aggregate-only request schema, and applies per-install quotas and abuse controls. This prototype intentionally uses the developer or user's environment-provided key until that service exists.
+The in-app phrase judge sends only redacted aggregate phrase candidates—not transcripts—to OpenRouter. Results use forced tool output, then resolve the selected candidate ID to its exact locally counted phrase so the model cannot invent wording or inflate a count. Do not embed a shared OpenRouter key in the npm package or browser bundle: a production shared-key version needs a narrow hosted proxy with schema validation, quotas, and abuse controls.
 
 ## Prototype boundaries
 

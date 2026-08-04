@@ -122,7 +122,7 @@ function SharedWrapped({ id }: { id: string }) {
     { kicker: "Your tokens were worth", headline: fmtUsd(report.stats.estimatedCostUsd || 0), detail: "API-equivalent retail estimate—not your bill.", tone: "cost", rows: costEquivalents(report.stats.estimatedCostUsd || 0) },
     { kicker: "Your most-used agent", headline: leader.name, detail: `${leader.count} of ${report.stats.sessions} selected sessions.`, tone: "agents", rows: agents.map((agent) => ({ label: agent.name, value: `${agent.percentage.toFixed(1)}%`, percentage: agent.percentage })) },
     { kicker: "Your top models", headline: `${topModel.percentage.toFixed(1)}%`, detail: `went to your #1 · ${topModel.name}`, tone: "models", rows: (report.stats.models || []).slice(0, 4).map((model, index) => ({ label: `${index + 1}  ${model.name}`, value: `${model.percentage.toFixed(1)}%`, percentage: model.percentage })) },
-    ...(report.phraseCard ? [{ kicker: `YOUR AGENT SAID THIS ${report.phraseCard.occurrences} TIMES`, headline: `“${report.phraseCard.phrase}”`, detail: `Seen across ${report.phraseCard.distinctSessions} session${report.phraseCard.distinctSessions === 1 ? "" : "s"} · picked by Nemotron 3 Ultra from redacted aggregate phrases.`, tone: "quote" }] : []),
+    ...(report.phraseCard ? [{ kicker: "Your agent’s favorite phrase is", headline: `“${report.phraseCard.phrase}”`, detail: `It said this ${report.phraseCard.occurrences} time${report.phraseCard.occurrences === 1 ? "" : "s"} across ${report.phraseCard.distinctSessions} session${report.phraseCard.distinctSessions === 1 ? "" : "s"}.`, tone: "quote" }] : []),
     ...(report.findings.length ? report.findings.slice(0, 2).map((finding) => ({ kicker: `${finding.confidence.label} confidence · ${Math.round(finding.confidence.score * 100)}%`, headline: finding.title, detail: finding.summary, tone: "lime" })) : [{ kicker: "Behavior check", headline: "No strong signals found.", detail: "These prototype heuristics did not find enough visible evidence.", tone: "lime" }]),
     { kicker: "The share-safe ending", headline: "The patterns can travel. Your work stays home.", detail: "No transcript excerpts, project names, paths, code, or tool outputs are in this Wrapped.", tone: "coral" },
     { kicker: "Optional research donation", headline: "Want to help researchers understand coding agents?", detail: "Review every proposed line, redact anything you want, then decide whether to export a local donation bundle.", tone: "research", cta: true },
@@ -333,8 +333,7 @@ function ReportView({ report, onEvidence, onDonate }: { report: Report; onEviden
     </section>
 
     {report.phraseCard && <section className="wrapped-card catchphrase-card">
-      <div><span className="card-kicker">NEMOTRON'S PICK · SHARE-SAFE</span><h2>“{report.phraseCard.phrase}”</h2><p>{report.phraseCard.method}</p></div>
-      <div className="catchphrase-count"><strong>{report.phraseCard.occurrences}</strong><span>times</span><small>across {report.phraseCard.distinctSessions} session{report.phraseCard.distinctSessions === 1 ? "" : "s"}</small></div>
+      <div><span className="card-kicker">Your agent’s favorite phrase is</span><h2>“{report.phraseCard.phrase}”</h2><p>It said this {report.phraseCard.occurrences} time{report.phraseCard.occurrences === 1 ? "" : "s"} across {report.phraseCard.distinctSessions} session{report.phraseCard.distinctSessions === 1 ? "" : "s"}. {report.phraseCard.method}</p></div>
     </section>}
 
     <section className="wrapped-card tools-card">

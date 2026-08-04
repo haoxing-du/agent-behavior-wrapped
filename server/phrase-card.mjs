@@ -124,7 +124,7 @@ export async function judgePhraseCard(candidates, apiKey, { fetchImpl = fetch, m
   const payload = JSON.stringify(candidates);
   assertSafePayload(payload);
   const startedAt = Date.now();
-  const response = await fetchImpl("https://openrouter.ai/api/v1/chat/completions", {
+  const request = {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}`, "x-title": "Behavior Wrapped" },
     body: JSON.stringify({
@@ -139,12 +139,17 @@ export async function judgePhraseCard(candidates, apiKey, { fetchImpl = fetch, m
       tool_choice: { type: "function", function: { name: tool.name } },
       parallel_tool_calls: false,
     }),
-  });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`OpenRouter API ${response.status}: ${body?.error?.message || "request failed"}`);
-  const toolCall = body.choices?.[0]?.message?.tool_calls?.find((call) => call?.function?.name === tool.name);
+  };
+  let body;
   let choice;
-  try { choice = JSON.parse(toolCall?.function?.arguments || ""); } catch { throw new Error(`${PHRASE_JUDGE_NAME} did not return the required structured selection.`); }
+  for (let attempt = 0; attempt < 2 && !choice; attempt++) {
+    const response = await fetchImpl("https://openrouter.ai/api/v1/chat/completions", request);
+    body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(`OpenRouter API ${response.status}: ${body?.error?.message || "request failed"}`);
+    const toolCall = body.choices?.[0]?.message?.tool_calls?.find((call) => call?.function?.name === tool.name);
+    try { choice = JSON.parse(toolCall?.function?.arguments || ""); } catch { choice = null; }
+  }
+  if (!choice) throw new Error(`${PHRASE_JUDGE_NAME} did not return the required structured selection after two attempts.`);
   const selected = candidates.find((candidate) => candidate.candidate_id === choice?.candidate_id);
   if (!selected) throw new Error(`${PHRASE_JUDGE_NAME} returned an unknown phrase candidate.`);
   return {

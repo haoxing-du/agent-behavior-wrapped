@@ -58,3 +58,18 @@ test("resolves Nemotron's candidate ID locally instead of accepting invented wor
   assert.equal(result.provider, "OpenRouter");
   assert.ok(result.latencyMs >= 0);
 });
+
+test("retries once when the free model omits its required tool call", async () => {
+  const candidate = buildPhraseCandidates(fixtureRecords())[0];
+  let calls = 0;
+  const fetchImpl = async () => {
+    calls++;
+    const message = calls === 1
+      ? { content: "I choose phrase-1." }
+      : { tool_calls: [{ function: { name: "select_phrase_card", arguments: JSON.stringify({ candidate_id: candidate.candidate_id, interestingness_score: 70, rationale: "Recognizable habit." }) } }] };
+    return new Response(JSON.stringify({ choices: [{ message }] }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const result = await judgePhraseCard([candidate], "test-key", { fetchImpl });
+  assert.equal(calls, 2);
+  assert.equal(result.phrase, candidate.phrase);
+});
