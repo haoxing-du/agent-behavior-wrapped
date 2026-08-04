@@ -1,0 +1,8 @@
+{"timestamp":"2026-06-07T10:00:00.000Z","type":"session_meta","payload":{"id":"codex-synthetic-1","session_id":"codex-synthetic-1","timestamp":"2026-06-07T10:00:00.000Z","cwd":"/Users/demo/synthetic-studio","model_provider":"openai","source":"synthetic"}}
+{"timestamp":"2026-06-07T10:00:01.000Z","type":"turn_context","payload":{"cwd":"/Users/demo/synthetic-studio","model":"gpt-5.6-sol"}}
+{"timestamp":"2026-06-07T10:00:02.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Please verify the synthetic dashboard build."}]}}
+{"timestamp":"2026-06-07T10:00:05.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Let me check that carefully."}]}}
+{"timestamp":"2026-06-07T10:00:07.000Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"synthetic-call-1","arguments":"{}"}}
+{"timestamp":"2026-06-07T10:00:09.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"synthetic-call-1","output":"synthetic build passed"}}
+{"timestamp":"2026-06-07T10:00:10.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":800,"output_tokens":200,"cache_write_input_tokens":0,"cached_input_tokens":1000,"reasoning_output_tokens":50,"total_tokens":2050}}}}
+{"timestamp":"2026-06-07T10:00:12.000Z","type":"event_msg","payload":{"type":"task_complete","started_at":"2026-06-07T10:00:01.000Z","completed_at":"2026-06-07T10:00:12.000Z","duration_ms":11000,"turn_id":"synthetic-turn-1"}}

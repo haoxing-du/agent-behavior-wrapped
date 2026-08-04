@@ -2,11 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { discoverSessions, readRecords } from "../server/discovery.mjs";
+import { discoverSessions, discoverAllSessions, defaultDateRange, sessionsInDefaultWindow, readRecords } from "../server/discovery.mjs";
 import { analyzeSessions, makeDonationPreview } from "../server/analysis.mjs";
 import { redactText, safeEvidenceText } from "../server/privacy.mjs";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "projects");
+const codexRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "codex-sessions");
 
 test("discovers synthetic projects without exposing source file paths", () => {
   const catalog = discoverSessions(root);
@@ -26,6 +27,10 @@ test("computes deterministic stats and transparent behavior findings", () => {
   assert.equal(report.stats.interruptions, 1);
   assert.ok(report.stats.toolCalls >= 6);
   assert.equal(report.stats.tokens, 5500);
+  assert.deepEqual(report.stats.agents.map(({ name, count, percentage }) => ({ name, count, percentage })), [
+    { name: "Claude Code", count: 3, percentage: 100 },
+    { name: "Codex", count: 0, percentage: 0 },
+  ]);
   const kinds = new Set(report.findings.map((f) => f.kind));
   assert.ok(kinds.has("verification"));
   assert.ok(kinds.has("correction"));
@@ -33,6 +38,34 @@ test("computes deterministic stats and transparent behavior findings", () => {
   assert.ok(kinds.has("clarification"));
   assert.ok(kinds.has("scope"));
   assert.ok(report.findings.every((f) => f.method && f.confidence.score && f.evidence.lines.length));
+});
+
+test("discovers and normalizes Claude Code and Codex sessions together", () => {
+  const catalog = discoverAllSessions({ claudeRoot: root, codexRoots: [codexRoot] });
+  assert.equal(catalog.sessions.length, 4);
+  assert.deepEqual([...new Set(catalog.sessions.map((session) => session.agent))].sort(), ["claude", "codex"]);
+  assert.ok(catalog.sessions.every((session) => !("file" in session)));
+  const entries = [...catalog.index].map(([sessionId, session]) => ({ sessionId, agent: session.agent, records: readRecords(session.file, session.agent) }));
+  const normalizedCodex = entries.find((entry) => entry.agent === "codex");
+  assert.ok(!JSON.stringify(normalizedCodex).includes("synthetic build passed"));
+  const report = analyzeSessions(entries);
+  assert.equal(report.stats.sessions, 4);
+  assert.equal(report.stats.tokens, 7500);
+  assert.equal(report.stats.toolCalls, 9);
+  assert.deepEqual(report.stats.agents.map(({ name, count, percentage }) => ({ name, count, percentage })), [
+    { name: "Claude Code", count: 3, percentage: 75 },
+    { name: "Codex", count: 1, percentage: 25 },
+  ]);
+  assert.equal(report.stats.models[0].name, "Claude Opus 4.8");
+  assert.equal(report.stats.models[1].name, "GPT-5.6 Sol");
+  assert.ok(report.stats.estimatedCostUsd > 0);
+});
+
+test("uses an inclusive rolling 30-day default window", () => {
+  const sessions = [{ startedAt: "2026-07-06T00:00:00.000Z" }, { startedAt: "2026-07-07T00:00:00.000Z" }, { startedAt: "2026-08-05T00:00:00.000Z" }];
+  const range = defaultDateRange(sessions, { now: new Date("2026-08-05T12:00:00.000Z") });
+  assert.deepEqual(range, { from: "2026-07-07", to: "2026-08-05", days: 30 });
+  assert.deepEqual(sessionsInDefaultWindow(sessions, { now: new Date("2026-08-05T12:00:00.000Z") }), sessions.slice(1));
 });
 
 test("redacts likely secrets and PII, strips code from evidence", () => {

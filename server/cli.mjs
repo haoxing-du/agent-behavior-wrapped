@@ -3,7 +3,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { discoverSessions, readRecords } from "./discovery.mjs";
+import { discoverAllSessions, readRecords, sessionsInDefaultWindow, DEFAULT_WINDOW_DAYS } from "./discovery.mjs";
 import { analyzeSessions } from "./analysis.mjs";
 import { buildPhraseCandidates, judgePhraseCard } from "./phrase-card.mjs";
 import { createReportId, deleteReport, listReports, saveReport, storeRoot } from "./store.mjs";
@@ -11,6 +11,7 @@ import { createReportId, deleteReport, listReports, saveReport, storeRoot } from
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.dirname(here);
 const fixtureRoot = path.join(root, "fixtures", "projects");
+const codexFixtureRoot = path.join(root, "fixtures", "codex-sessions");
 const port = Number(process.env.BEHAVIOR_WRAPPED_PORT || 4317);
 const baseUrl = `http://127.0.0.1:${port}`;
 const command = process.argv[2];
@@ -84,10 +85,17 @@ async function createWrapped() {
   console.log(mark);
   console.log(`\n  ${bright}behavior-wrapped${reset}  ${muted}·  the wrapped for your coding agent${reset}\n`);
   const demo = process.argv.includes("--demo");
-  const catalog = discoverSessions(demo ? fixtureRoot : undefined);
-  if (!catalog.sessions.length) throw new Error("No Claude Code sessions found in ~/.claude/projects.");
-  process.stdout.write(`${muted}◇  Reading ${catalog.sessions.length} local Claude Code sessions…${reset}\r`);
-  const sessionRecords = [...catalog.index].map(([sessionId, session]) => ({ sessionId, records: readRecords(session.file) }));
+  const daysArgument = process.argv.find((argument) => argument.startsWith("--days="));
+  const windowDays = daysArgument ? Number(daysArgument.split("=")[1]) : DEFAULT_WINDOW_DAYS;
+  if (!Number.isInteger(windowDays) || windowDays < 1 || windowDays > 3650) throw new Error("--days must be a whole number from 1 to 3650.");
+  const catalog = discoverAllSessions(demo ? { claudeRoot: fixtureRoot, codexRoots: [codexFixtureRoot] } : undefined);
+  const chosenSessions = sessionsInDefaultWindow(catalog.sessions, { days: windowDays, anchorLatest: demo });
+  if (!chosenSessions.length) throw new Error(`No Claude Code or Codex sessions found in the last ${windowDays} days.`);
+  process.stdout.write(`${muted}◇  Reading ${chosenSessions.length} local Claude Code + Codex sessions from the last ${windowDays} days…${reset}\r`);
+  const sessionRecords = chosenSessions.map((publicSession) => {
+    const session = catalog.index.get(publicSession.id);
+    return { sessionId: session.id, agent: session.agent, records: readRecords(session.file, session.agent) };
+  });
   const analyzed = analyzeSessions(sessionRecords);
   const includePhraseCard = process.argv.includes("--with-phrase-card");
   if (includePhraseCard) {
@@ -98,7 +106,7 @@ async function createWrapped() {
   }
   const id = createReportId();
   const safeFindings = analyzed.findings.map(({ evidence, method, ...finding }) => finding);
-  const report = { id, createdAt: new Date().toISOString(), rangeLabel: formatRange(catalog.sessions), source: "Claude Code", stats: analyzed.stats, findings: safeFindings, phraseCard: analyzed.phraseCard || null, sessionIds: catalog.sessions.map((session) => session.id), privacy: { shareSafe: true, containsTranscriptText: false, externalTransmission: includePhraseCard, transmittedData: includePhraseCard ? "redacted aggregate phrase candidates only" : "none" } };
+  const report = { id, createdAt: new Date().toISOString(), rangeLabel: formatRange(chosenSessions), source: "Claude Code + Codex", stats: analyzed.stats, findings: safeFindings, phraseCard: analyzed.phraseCard || null, sessionIds: chosenSessions.map((session) => session.id), privacy: { shareSafe: true, containsTranscriptText: false, externalTransmission: includePhraseCard, transmittedData: includePhraseCard ? "redacted aggregate phrase candidates only" : "none" } };
   saveReport(report);
   await ensureServer();
   const url = `${baseUrl}/w/${id}`;
@@ -124,7 +132,7 @@ try {
     if (!id) throw new Error("Usage: behavior-wrapped delete <id>");
     console.log(deleteReport(id) ? `Deleted local report ${id}.` : "That saved report was not found.");
   } else if (command === "help" || command === "--help" || command === "-h") {
-    console.log("behavior-wrapped [--demo] [--no-open] [--with-phrase-card]\nbehavior-wrapped list\nbehavior-wrapped open [id]\nbehavior-wrapped delete <id>");
+    console.log("behavior-wrapped [--demo] [--days=30] [--no-open] [--with-phrase-card]\nbehavior-wrapped list\nbehavior-wrapped open [id]\nbehavior-wrapped delete <id>");
   } else await createWrapped();
 } catch (error) {
   console.error(`\n${bright}Could not create your Wrapped.${reset} ${error.message}\n`);

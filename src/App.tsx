@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 
-type Project = { id: string; name: string; sessionCount: number; latestAt: string };
-type Session = { id: string; projectId: string; projectName: string; startedAt: string; endedAt: string; promptCount: number; recordCount: number; sizeBytes: number; synthetic: boolean; label: string };
-type Catalog = { rootAvailable: boolean; demo: boolean; projects: Project[]; sessions: Session[]; privacy: { canonicalDirectory: string; networkRequests: boolean }; phraseJudge?: { available: boolean; model: string; requiresExplicitOptIn: boolean } };
+type Project = { id: string; name: string; sessionCount: number; latestAt: string; agents: string[] };
+type Session = { id: string; agent: "claude" | "codex"; agentName: string; projectId: string; projectName: string; startedAt: string; endedAt: string; promptCount: number; recordCount: number; sizeBytes: number; synthetic: boolean; label: string };
+type Catalog = { rootAvailable: boolean; demo: boolean; projects: Project[]; sessions: Session[]; defaultRange: { from: string; to: string; days: number }; privacy: { canonicalDirectories: string[]; networkRequests: boolean }; phraseJudge?: { available: boolean; model: string; requiresExplicitOptIn: boolean } };
 type Finding = { id: string; kind: string; title: string; summary: string; method: string; confidence: { score: number; label: string }; evidence: { id: string; sessionId: string; lines: { role: string; text: string }[] } };
 type PhraseCard = { phrase: string; occurrences: number; distinctSessions: number; model: string; interestingnessScore: number; method: string; candidateCount: number };
-type Report = { stats: { sessions: number; activeDays: number; durationMinutes: number; prompts: number; toolCalls: number; interruptions: number; tokens: number; tools: { name: string; count: number }[] }; findings: Finding[]; phraseCard?: PhraseCard | null };
+type AgentStat = { agent: "claude" | "codex"; name: string; count: number; percentage: number };
+type ModelStat = { model: string; name: string; tokens: number; percentage: number };
+type Report = { stats: { sessions: number; activeDays: number; durationMinutes: number; prompts: number; toolCalls: number; interruptions: number; tokens: number; tools: { name: string; count: number }[]; agents: AgentStat[]; models: ModelStat[]; estimatedCostUsd: number; costEstimateMethod: string }; findings: Finding[]; phraseCard?: PhraseCard | null };
 type DonationMessage = { role: string; timestamp: string | null; text: string };
 type DonationSession = { sessionId: string; label: string; messages: DonationMessage[] };
 type Donation = { format: string; createdLocally: boolean; detectionCount: number; sessions: DonationSession[] };
 type Stage = "select" | "report" | "donate";
 type SavedReport = Report & { id: string; createdAt: string; rangeLabel: string; source: string; privacy: { shareSafe: boolean; containsTranscriptText: boolean; externalTransmission: boolean } };
-type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; cta?: boolean };
+type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; cta?: boolean; rows?: { label: string; value: string; percentage?: number }[] };
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" });
 
@@ -25,6 +27,20 @@ function fmtCompact(value: number) {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
   if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
   return String(value);
+}
+
+function fmtUsd(value: number) {
+  if (value >= 10) return `$${Math.round(value).toLocaleString()}`;
+  return `$${value.toFixed(2)}`;
+}
+
+function costEquivalents(value: number) {
+  return [
+    { label: "Happy Meals", value: Math.round(value / 6).toLocaleString() },
+    { label: "oat-milk lattes", value: Math.round(value / 6.5).toLocaleString() },
+    { label: "mechanical keyboards", value: (value / 159).toFixed(value >= 159 ? 1 : 2) },
+    { label: "years of Spotify Premium", value: (value / 144).toFixed(value >= 144 ? 1 : 2) },
+  ];
 }
 
 function download(filename: string, content: string, type = "application/json") {
@@ -95,15 +111,22 @@ function SharedWrapped({ id }: { id: string }) {
   const [slide, setSlide] = useState(0);
   const [copied, setCopied] = useState(false);
   useEffect(() => { fetch(`/api/reports/${id}`).then(async (response) => { if (!response.ok) throw new Error("This local Wrapped was not found."); return response.json(); }).then(setReport).catch((e) => setError(e.message)); }, [id]);
-  const slides = useMemo<StorySlide[]>(() => report ? [
-    { kicker: report.rangeLabel, headline: `You and Claude had ${report.stats.sessions === 1 ? "a session" : "a run"}.`, detail: `${report.stats.sessions} sessions, ${fmtDuration(report.stats.durationMinutes)} from first message to last.`, tone: "midnight" },
-    { kicker: "Your context window got a workout", headline: fmtCompact(report.stats.tokens || 0), detail: "tokens processed locally across selected Claude Code sessions.", tone: "ice", metric: true },
-    { kicker: "Claude reached for tools", headline: `${report.stats.toolCalls} times.`, detail: report.stats.tools.slice(0, 3).map((tool) => `${tool.name} × ${tool.count}`).join("  ·  ") || "No visible tool-use records.", tone: "violet" },
+  const slides = useMemo<StorySlide[]>(() => {
+    if (!report) return [];
+    const agents = report.stats.agents || [{ agent: "claude", name: "Claude Code", count: report.stats.sessions, percentage: 100 }, { agent: "codex", name: "Codex", count: 0, percentage: 0 }];
+    const leader = [...agents].sort((left, right) => right.count - left.count)[0];
+    const topModel = report.stats.models?.[0] || { name: "Model unavailable", percentage: 0 };
+    const gettysburgCount = Math.round((report.stats.tokens || 0) / 363);
+    return [
+    { kicker: "This month you went through", headline: fmtCompact(report.stats.tokens || 0), detail: `tokens. That’s the Gettysburg Address ${gettysburgCount.toLocaleString()} times over.`, tone: "ice", metric: true },
+    { kicker: "Your tokens were worth", headline: fmtUsd(report.stats.estimatedCostUsd || 0), detail: "API-equivalent retail estimate—not your bill.", tone: "cost", rows: costEquivalents(report.stats.estimatedCostUsd || 0) },
+    { kicker: "Your most-used agent", headline: leader.name, detail: `${leader.count} of ${report.stats.sessions} selected sessions.`, tone: "agents", rows: agents.map((agent) => ({ label: agent.name, value: `${agent.percentage.toFixed(1)}%`, percentage: agent.percentage })) },
+    { kicker: "Your top models", headline: `${topModel.percentage.toFixed(1)}%`, detail: `went to your #1 · ${topModel.name}`, tone: "models", rows: (report.stats.models || []).slice(0, 4).map((model, index) => ({ label: `${index + 1}  ${model.name}`, value: `${model.percentage.toFixed(1)}%`, percentage: model.percentage })) },
     ...(report.phraseCard ? [{ kicker: `YOUR AGENT SAID THIS ${report.phraseCard.occurrences} TIMES`, headline: `“${report.phraseCard.phrase}”`, detail: `Seen across ${report.phraseCard.distinctSessions} session${report.phraseCard.distinctSessions === 1 ? "" : "s"} · picked by Haiku from redacted aggregate phrases.`, tone: "quote" }] : []),
     ...(report.findings.length ? report.findings.slice(0, 2).map((finding) => ({ kicker: `${finding.confidence.label} confidence · ${Math.round(finding.confidence.score * 100)}%`, headline: finding.title, detail: finding.summary, tone: "lime" })) : [{ kicker: "Behavior check", headline: "No strong signals found.", detail: "These prototype heuristics did not find enough visible evidence.", tone: "lime" }]),
     { kicker: "The share-safe ending", headline: "The patterns can travel. Your work stays home.", detail: "No transcript excerpts, project names, paths, code, or tool outputs are in this Wrapped.", tone: "coral" },
     { kicker: "Optional research donation", headline: "Want to help researchers understand coding agents?", detail: "Review every proposed line, redact anything you want, then decide whether to export a local donation bundle.", tone: "research", cta: true },
-  ] : [], [report]);
+  ]; }, [report]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === "ArrowRight") setSlide((value) => Math.min(slides.length - 1, value + 1)); if (event.key === "ArrowLeft") setSlide((value) => Math.max(0, value - 1)); };
     window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
@@ -115,8 +138,14 @@ function SharedWrapped({ id }: { id: string }) {
   return <main className="shared-page">
     <div className="story-progress" aria-label={`Slide ${slide + 1} of ${slides.length}`}>{slides.map((_, index) => <button key={index} className={index <= slide ? "seen" : ""} onClick={() => setSlide(index)} aria-label={`Go to slide ${index + 1}`} />)}</div>
     <section className={`story-card story-${current.tone}`} aria-live="polite">
-      <div className="story-brand"><span className="brand-mark">B</span><strong>Behavior Wrapped</strong><i /> <span>Claude Code</span></div>
-      <div className="story-copy"><span>{current.kicker}</span><h1 className={current.metric ? "giant" : ""}>{current.headline}</h1><p>{current.detail}</p></div>
+      <div className="story-brand"><span className="brand-mark">B</span><strong>Behavior Wrapped</strong><i /> <span>{report.source}</span></div>
+      <div className={`story-copy ${current.rows ? "with-rows" : ""}`}>
+        <div><span>{current.kicker}</span><h1 className={current.metric ? "giant" : ""}>{current.headline}</h1><p>{current.detail}</p></div>
+        {current.rows && <div className="story-data-rows">{current.rows.map((row) => <div className="story-data-row" key={row.label}>
+          <div><strong>{row.label}</strong><b>{row.value}</b></div>
+          {row.percentage !== undefined && <span><i style={{ width: `${row.percentage}%` }} /></span>}
+        </div>)}</div>}
+      </div>
       {current.cta ? <a className="story-cta" href={`/donate/${report.id}`}>Review redactions <span>→</span></a> : <div className="story-tag">#behaviorwrapped</div>}
       <button className="story-arrow prev" disabled={slide === 0} onClick={() => setSlide(slide - 1)} aria-label="Previous slide">‹</button>
       <button className="story-arrow next" disabled={slide === slides.length - 1} onClick={() => setSlide(slide + 1)} aria-label="Next slide">›</button>
@@ -132,7 +161,7 @@ function SavedDonationRoute({ id }: { id: string }) {
   const [error, setError] = useState("");
   useEffect(() => {
     Promise.all([
-      fetch("/api/discover").then((response) => { if (!response.ok) throw new Error("Could not read the local Claude Code catalog."); return response.json(); }),
+      fetch("/api/discover").then((response) => { if (!response.ok) throw new Error("Could not read the local agent-session catalog."); return response.json(); }),
       fetch(`/api/reports/${id}/selection`).then((response) => { if (!response.ok) throw new Error("This saved Wrapped was not found."); return response.json(); }),
     ]).then(([nextCatalog, saved]) => { setCatalog(nextCatalog); setSelection(new Set(saved.sessionIds)); }).catch((e) => setError(e.message));
   }, [id]);
@@ -171,18 +200,19 @@ function PrivacyPanel() {
 }
 
 function Selection({ catalog, selected, setSelected, onAnalyze, loading, error }: { catalog: Catalog | null; selected: Set<string>; setSelected: (next: Set<string>) => void; onAnalyze: (ids: string[], includePhraseCard: boolean) => void; loading: boolean; error: string }) {
-  const allDates = catalog?.sessions.map((s) => s.startedAt.slice(0, 10)) || [];
-  const [from, setFrom] = useState(allDates.length ? [...allDates].sort()[0] : "");
-  const [to, setTo] = useState(allDates.length ? [...allDates].sort().at(-1)! : "");
+  const [from, setFrom] = useState(catalog?.defaultRange.from || "");
+  const [to, setTo] = useState(catalog?.defaultRange.to || "");
   const [projects, setProjects] = useState<Set<string>>(new Set());
   const [includePhraseCard, setIncludePhraseCard] = useState(false);
 
   useEffect(() => {
     if (!catalog) return;
     setProjects(new Set(catalog.projects.map((p) => p.id)));
-    setSelected(new Set(catalog.sessions.map((s) => s.id)));
-    const dates = catalog.sessions.map((s) => s.startedAt.slice(0, 10)).sort();
-    if (dates.length) { setFrom(dates[0]); setTo(dates.at(-1)!); }
+    setFrom(catalog.defaultRange.from); setTo(catalog.defaultRange.to);
+    setSelected(new Set(catalog.sessions.filter((session) => {
+      const date = session.startedAt.slice(0, 10);
+      return date >= catalog.defaultRange.from && date <= catalog.defaultRange.to;
+    }).map((session) => session.id)));
   }, [catalog]);
 
   const visible = useMemo(() => (catalog?.sessions || []).filter((s) => projects.has(s.projectId) && (!from || s.startedAt.slice(0, 10) >= from) && (!to || s.startedAt.slice(0, 10) <= to)), [catalog, projects, from, to]);
@@ -201,13 +231,13 @@ function Selection({ catalog, selected, setSelected, onAnalyze, loading, error }
     setSelected(next);
   }
 
-  if (!catalog) return <main className="loading-screen"><div className="orb" /><p>Looking for local Claude Code sessions…</p></main>;
+  if (!catalog) return <main className="loading-screen"><div className="orb" /><p>Looking for local Claude Code and Codex sessions…</p></main>;
 
   return <main>
     <section className="hero">
       <div className="hero-glow glow-one" /><div className="hero-glow glow-two" />
       <div className="hero-copy">
-        <span className="eyebrow">Your Claude Code year in review</span>
+        <span className="eyebrow">Your last 30 days with Claude Code + Codex</span>
         <h1>See how your agent<br /><em>really</em> showed up.</h1>
         <p>Private, explainable behavior insights from the sessions already on your Mac.</p>
       </div>
@@ -226,8 +256,8 @@ function Selection({ catalog, selected, setSelected, onAnalyze, loading, error }
       </div>
 
       {!catalog.rootAvailable || catalog.sessions.length === 0 ? <div className="empty-state">
-        <h3>No Claude Code sessions found</h3>
-        <p>Behavior Wrapped looked in <code>~/.claude/projects</code>. Try the synthetic demo with <code>npm run demo</code>.</p>
+        <h3>No Claude Code or Codex sessions found</h3>
+        <p>Behavior Wrapped looked in <code>~/.claude/projects</code> and <code>~/.codex/sessions</code>. Try the synthetic demo with <code>npm run demo</code>.</p>
       </div> : <>
         <div className="filters">
           <label>From<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
@@ -253,7 +283,7 @@ function Selection({ catalog, selected, setSelected, onAnalyze, loading, error }
           {visible.map((session) => <label className="session-row" key={session.id}>
             <input type="checkbox" checked={selected.has(session.id)} onChange={() => toggleSession(session.id)} />
             <span className="custom-check">✓</span>
-            <span className="session-title"><strong>{session.label}</strong><small>{session.projectName} · {fmtDate(session.startedAt)}</small></span>
+            <span className="session-title"><strong>{session.label}</strong><small>{session.agentName} · {session.projectName} · {fmtDate(session.startedAt)}</small></span>
             <span>{session.promptCount}</span><span>{Math.max(1, Math.round(session.sizeBytes / 1024))} KB</span><span className="chevron">›</span>
           </label>)}
           {!visible.length && <div className="no-results">No sessions match this date and project selection.</div>}
@@ -286,7 +316,7 @@ function ReportView({ report, onEvidence, onDonate }: { report: Report; onEviden
   return <main className="report-page">
     <section className="report-intro">
       <span className="eyebrow">Analysis complete · heuristic, not a verdict</span>
-      <h1>Your agent had<br />a <em>year.</em></h1>
+      <h1>Your agents had<br />a <em>month.</em></h1>
       <p>{report.stats.sessions} local sessions became a transparent snapshot of how the work unfolded.</p>
       <div className="mode-toggle" role="group" aria-label="Report privacy mode">
         <button className={mode === "private" ? "active" : ""} onClick={() => setMode("private")}><ShieldIcon /> Private view</button>
@@ -300,7 +330,7 @@ function ReportView({ report, onEvidence, onDonate }: { report: Report; onEviden
       <StatCard label="Active days" value={report.stats.activeDays} note="days you paired up" tone="lime" />
       <StatCard label="Time in session" value={fmtDuration(report.stats.durationMinutes)} note="approximate elapsed time" tone="orange" />
       <StatCard label="Your prompts" value={report.stats.prompts} note="turns that moved work forward" tone="blue" />
-      <StatCard label="Tool calls" value={report.stats.toolCalls} note="actions taken by Claude" tone="pink" />
+      <StatCard label="Tool calls" value={report.stats.toolCalls} note="actions taken by your agents" tone="pink" />
       <StatCard label="Interruptions" value={report.stats.interruptions} note="explicit stop events" tone="yellow" />
     </section>
 
@@ -347,7 +377,7 @@ function EvidenceModal({ finding, onClose }: { finding: Finding; onClose: () => 
       <span className="private-label"><ShieldIcon /> Private evidence · never exported</span>
       <h2 id="evidence-title">{finding.title}</h2>
       <p className="modal-method">{finding.method}</p>
-      <div className="transcript-excerpt">{finding.evidence.lines.map((line, i) => <div className={`excerpt-line ${line.role}`} key={i}><span>{line.role === "assistant" ? "Claude" : "You"}</span><p>{line.text}</p></div>)}</div>
+      <div className="transcript-excerpt">{finding.evidence.lines.map((line, i) => <div className={`excerpt-line ${line.role}`} key={i}><span>{line.role === "assistant" ? "Agent" : "You"}</span><p>{line.text}</p></div>)}</div>
       <div className="modal-foot"><span>Confidence</span><strong>{finding.confidence.label} · {Math.round(finding.confidence.score * 100)}%</strong><small>This is a heuristic signal. Review the evidence and draw your own conclusion.</small></div>
     </section>
   </div>;
@@ -404,7 +434,7 @@ function DonationView({ sessions, initialSelected, onBack }: { sessions: Session
         {!bundle ? <div className="preview-placeholder"><span>⌁</span><p>Your exact redacted bundle will appear here.</p></div> : <>
           <div className="redaction-banner"><strong>{bundle.detectionCount} likely sensitive item{bundle.detectionCount === 1 ? "" : "s"} removed</strong><span>Secrets, emails, phone numbers, home paths, and code blocks</span></div>
           <div className="manual-redact"><input value={manualTerm} onChange={(e) => setManualTerm(e.target.value)} placeholder="Text to remove everywhere" aria-label="Text to remove" /><button onClick={removeTerm}>Remove text</button></div>
-          <div className="bundle-preview">{bundle.sessions.map((session, si) => <div className="bundle-session" key={session.sessionId}><h3>{session.label}<small>{session.messages.length} messages</small></h3>{session.messages.map((message, mi) => <label key={mi}><span>{message.role === "assistant" ? "Claude" : "You"}</span><textarea value={message.text} onChange={(e) => editMessage(si, mi, e.target.value)} rows={Math.min(6, Math.max(2, Math.ceil(message.text.length / 90)))} /></label>)}</div>)}</div>
+          <div className="bundle-preview">{bundle.sessions.map((session, si) => <div className="bundle-session" key={session.sessionId}><h3>{session.label}<small>{session.messages.length} messages</small></h3>{session.messages.map((message, mi) => <label key={mi}><span>{message.role === "assistant" ? "Agent" : "You"}</span><textarea value={message.text} onChange={(e) => editMessage(si, mi, e.target.value)} rows={Math.min(6, Math.max(2, Math.ceil(message.text.length / 90)))} /></label>)}</div>)}</div>
           <div className="donation-step consent-step"><span>3</span><div><h2>Consent separately</h2><p>This consent applies only to the file you reviewed above.</p></div></div>
           <label className="consent"><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} /><span>I consent to donate this reviewed, redacted bundle for AI-behavior research. I understand this prototype only saves it locally and does not transmit it.</span></label>
           <button className="export-button" disabled={!consent} onClick={exportBundle}>Export donation bundle locally <span>↓</span></button>

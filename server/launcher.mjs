@@ -5,7 +5,7 @@ import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { discoverSessions, readRecords, opaqueId } from "./discovery.mjs";
+import { discoverAllSessions, readRecords, defaultDateRange, DEFAULT_WINDOW_DAYS } from "./discovery.mjs";
 import { analyzeSessions, makeDonationPreview } from "./analysis.mjs";
 import { buildPhraseCandidates, HAIKU_MODEL, judgePhraseCard } from "./phrase-card.mjs";
 import { loadReport } from "./store.mjs";
@@ -14,13 +14,14 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.dirname(here);
 const dist = path.join(root, "dist");
 const fixtureRoot = path.join(root, "fixtures", "projects");
+const codexFixtureRoot = path.join(root, "fixtures", "codex-sessions");
 const demo = process.argv.includes("--demo");
 const portArg = process.argv.find((arg) => arg.startsWith("--port="));
 const port = Number(portArg?.split("=")[1] || 4317);
 let catalog = loadCatalog();
 
 function loadCatalog() {
-  const found = discoverSessions(demo ? fixtureRoot : undefined);
+  const found = discoverAllSessions(demo ? { claudeRoot: fixtureRoot, codexRoots: [codexFixtureRoot] } : undefined);
   if (demo) {
     found.sessions = found.sessions.map((s, i) => ({ ...s, synthetic: true, label: `Demo session ${i + 1}` }));
   }
@@ -44,7 +45,7 @@ function readBody(request) {
 function chosenRecords(ids) {
   return ids.flatMap((id) => {
     const session = catalog.index.get(id);
-    return session ? [{ sessionId: id, records: readRecords(session.file) }] : [];
+    return session ? [{ sessionId: id, agent: session.agent, records: readRecords(session.file, session.agent) }] : [];
   });
 }
 
@@ -54,7 +55,8 @@ function publicCatalog() {
     demo,
     projects: catalog.projects,
     sessions: catalog.sessions.map((s, index) => ({ ...s, label: s.label || `Session ${index + 1}` })),
-    privacy: { canonicalDirectory: "~/.claude/projects", networkRequests: false },
+    defaultRange: defaultDateRange(catalog.sessions, { days: DEFAULT_WINDOW_DAYS, anchorLatest: demo }),
+    privacy: { canonicalDirectories: ["~/.claude/projects", "~/.codex/sessions", "~/.codex/archived_sessions"], networkRequests: false },
     phraseJudge: { available: Boolean(process.env.ANTHROPIC_API_KEY), model: HAIKU_MODEL, requiresExplicitOptIn: true },
   };
 }
@@ -124,6 +126,6 @@ const server = http.createServer(async (request, response) => {
 server.listen(port, "127.0.0.1", () => {
   const url = `http://127.0.0.1:${port}`;
   console.log(`Behavior Wrapped is ready at ${url}`);
-  console.log(demo ? "Using synthetic demo sessions." : `Reading Claude Code sessions locally from ${path.join(os.homedir(), ".claude", "projects")}`);
+  console.log(demo ? "Using synthetic Claude Code + Codex demo sessions." : `Reading Claude Code and Codex sessions locally from ${path.join(os.homedir(), ".claude", "projects")} and ${path.join(os.homedir(), ".codex")}`);
   if (!process.argv.includes("--no-open") && process.env.NODE_ENV !== "test") spawn("open", [url], { stdio: "ignore", detached: true }).unref();
 });

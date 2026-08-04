@@ -1,6 +1,6 @@
 # Behavior Wrapped
 
-A local-first, macOS prototype that discovers Claude Code session history in `~/.claude/projects`, analyzes selected sessions on-device, and serves a private Wrapped-style report at localhost.
+A local-first, macOS prototype that discovers Claude Code history in `~/.claude/projects` and Codex history in `~/.codex/sessions` plus `~/.codex/archived_sessions`, analyzes selected sessions on-device, and serves a private Wrapped-style report at localhost.
 
 ## One-command flow
 
@@ -12,7 +12,9 @@ npm run build
 npm run wrapped
 ```
 
-The command automatically scans Claude Code, creates a share-safe snapshot, prints a stable local URL such as `http://127.0.0.1:4317/w/…`, starts the local viewer when needed, and opens the Wrapped slideshow. The default flow makes no network requests.
+The command automatically scans both agents, selects sessions from the latest 30-day rolling window, creates a share-safe snapshot, prints a stable local URL such as `http://127.0.0.1:4317/w/…`, starts the local viewer when needed, and opens the Wrapped slideshow. The default flow makes no network requests. Use `--days=N` to change the CLI window; the private dashboard also exposes exact date controls.
+
+The shareable deck starts with four deterministic usage cards: token volume, estimated API-equivalent retail cost, Claude Code vs. Codex session share, and top models by token share. Cost is explicitly an estimate derived from a local, inspectable model-family rate table; it is not a statement about subscription charges or an invoice.
 
 The final slideshow card offers an optional research-donation review. It opens a private page with the Wrapped's sessions preselected, automatic redactions, editable message text, separate consent, and local-only bundle export.
 
@@ -44,7 +46,7 @@ For UI development, run the local API with `npm run demo -- --no-open`, then run
 
 ## Privacy model
 
-- The launcher reads only selected JSONL files from the canonical Claude Code directory.
+- The launcher reads only selected JSONL files from the canonical Claude Code and Codex directories.
 - Analysis and redaction run locally. The application contains no analytics or external assets and makes no network requests unless the user opts into the Haiku phrase-card workflow.
 - Browser payloads never include source file paths or raw tool outputs.
 - Private evidence is made from redacted user/assistant prose; code blocks are omitted.

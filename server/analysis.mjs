@@ -45,6 +45,30 @@ function finding(kind, title, summary, method, score, evidence) {
   return { id: crypto.randomUUID(), kind, title, summary, method, confidence: confidence(score), evidence };
 }
 
+function displayModelName(value) {
+  const raw = String(value || "Unknown model");
+  if (raw === "<synthetic>") return "Synthetic model";
+  const claude = raw.match(/^claude-([a-z]+)-(\d+)-(\d+)$/i);
+  if (claude) return `Claude ${claude[1][0].toUpperCase()}${claude[1].slice(1).toLowerCase()} ${claude[2]}.${claude[3]}`;
+  const gpt = raw.match(/^gpt-(\d+)[.-](\d+)(?:-([a-z]+))?$/i);
+  if (gpt) return `GPT-${gpt[1]}.${gpt[2]}${gpt[3] ? ` ${gpt[3][0].toUpperCase()}${gpt[3].slice(1).toLowerCase()}` : ""}`;
+  return raw
+    .replace(/^claude-/i, "Claude ")
+    .replace(/^gpt-/i, "GPT-")
+    .replace(/-(\d+)-(\d+)(?=$|-)/g, "$1.$2")
+    .replace(/-/g, " ")
+    .replace(/\b(opus|sonnet|haiku|sol|luna)\b/gi, (word) => word[0].toUpperCase() + word.slice(1).toLowerCase());
+}
+
+function ratesFor(model, agent) {
+  const value = String(model || "").toLowerCase();
+  if (value.includes("opus")) return { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 };
+  if (value.includes("sonnet")) return { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 };
+  if (value.includes("haiku")) return { input: 1, output: 5, cacheWrite: 1.25, cacheRead: 0.1 };
+  if (agent === "codex" || value.startsWith("gpt")) return { input: 1.25, output: 10, cacheWrite: 1.25, cacheRead: 0.125 };
+  return { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 };
+}
+
 function analyzeBehavior(sessionRecords) {
   const findings = [];
   for (const { sessionId, records } of sessionRecords) {
@@ -122,13 +146,17 @@ function analyzeBehavior(sessionRecords) {
 
 export function analyzeSessions(sessionRecords) {
   const toolCounts = new Map();
+  const agentCounts = new Map([["claude", 0], ["codex", 0]]);
+  const modelTokens = new Map();
   const activeDays = new Set();
   let prompts = 0;
   let toolCalls = 0;
   let interruptions = 0;
   let totalDurationMs = 0;
   let tokens = 0;
-  for (const { records } of sessionRecords) {
+  let estimatedCostUsd = 0;
+  for (const { records, agent = "claude" } of sessionRecords) {
+    agentCounts.set(agent, (agentCounts.get(agent) || 0) + 1);
     const timestamps = records.map((r) => r.timestamp).filter(Boolean).map((value) => new Date(value).getTime()).filter(Number.isFinite);
     if (timestamps.length > 1) totalDurationMs += Math.max(...timestamps) - Math.min(...timestamps);
     for (const record of records) {
@@ -137,7 +165,18 @@ export function analyzeSessions(sessionRecords) {
       if (record.type === "user" && !record.isMeta && visibleText(record)) prompts++;
       if (record.type === "system" && /interrupt/i.test(`${record.subtype || ""} ${record.content || ""}`)) interruptions++;
       const usage = record?.message?.usage;
-      if (usage) tokens += ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"].reduce((sum, key) => sum + (Number(usage[key]) || 0), 0);
+      if (usage) {
+        const input = Number(usage.input_tokens) || 0;
+        const output = Number(usage.output_tokens) || 0;
+        const cacheWrite = Number(usage.cache_creation_input_tokens) || 0;
+        const cacheRead = Number(usage.cache_read_input_tokens) || 0;
+        const recordTokens = input + output + cacheWrite + cacheRead;
+        tokens += recordTokens;
+        const model = record?.message?.model || `${agent === "codex" ? "Codex" : "Claude"} model`;
+        modelTokens.set(model, (modelTokens.get(model) || 0) + recordTokens);
+        const rates = ratesFor(model, agent);
+        estimatedCostUsd += (input * rates.input + output * rates.output + cacheWrite * rates.cacheWrite + cacheRead * rates.cacheRead) / 1_000_000;
+      }
       for (const tool of toolUses(record)) {
         toolCalls++;
         const name = String(tool.name || "Unknown tool");
@@ -146,7 +185,19 @@ export function analyzeSessions(sessionRecords) {
     }
   }
   const tools = [...toolCounts].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name, count]) => ({ name, count }));
-  const stats = { sessions: sessionRecords.length, activeDays: activeDays.size, durationMinutes: Math.round(totalDurationMs / 60000), prompts, toolCalls, interruptions, tokens, tools };
+  const totalSessions = sessionRecords.length;
+  const claudePercentage = totalSessions ? Number(((agentCounts.get("claude") || 0) / totalSessions * 100).toFixed(1)) : 0;
+  const agents = [
+    { agent: "claude", name: "Claude Code", count: agentCounts.get("claude") || 0, percentage: claudePercentage },
+    { agent: "codex", name: "Codex", count: agentCounts.get("codex") || 0, percentage: totalSessions ? Number((100 - claudePercentage).toFixed(1)) : 0 },
+  ];
+  const models = [...modelTokens].sort((left, right) => right[1] - left[1]).map(([model, modelTokenCount]) => ({
+    model: String(model),
+    name: displayModelName(model),
+    tokens: modelTokenCount,
+    percentage: tokens ? Number((modelTokenCount / tokens * 100).toFixed(1)) : 0,
+  }));
+  const stats = { sessions: totalSessions, activeDays: activeDays.size, durationMinutes: Math.round(totalDurationMs / 60000), prompts, toolCalls, interruptions, tokens, tools, agents, models, estimatedCostUsd: Number(estimatedCostUsd.toFixed(2)), costEstimateMethod: "API-equivalent estimate using a local, inspectable model-family rate table." };
   return { stats, findings: analyzeBehavior(sessionRecords) };
 }
 
