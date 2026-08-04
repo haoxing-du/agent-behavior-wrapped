@@ -68,7 +68,7 @@ The miner uses rare token-shingle postings to generate candidates, bounded token
 
 Use `--limit=100` to retain more than the default 50 families.
 
-The in-app phrase judge sends only redacted aggregate phrase candidates—not transcripts—to OpenRouter. Results use forced tool output, then resolve the selected candidate ID to its exact locally counted phrase so the model cannot invent wording or inflate a count. Do not embed a shared OpenRouter key in the npm package or browser bundle: a production shared-key version needs a narrow hosted proxy with schema validation, quotas, and abuse controls.
+The in-app phrase judge sends only redacted aggregate phrase candidates—not transcripts—to OpenRouter. It requests one candidate ID using a strict JSON schema and also tolerates that single known ID in ordinary response text. The app resolves the selected ID to its exact locally counted phrase, so the model cannot invent wording or inflate a count. Do not embed a shared OpenRouter key in the npm package or browser bundle: a production shared-key version needs a narrow hosted proxy with schema validation, quotas, and abuse controls.
 
 ## Prototype boundaries
 

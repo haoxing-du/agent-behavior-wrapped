@@ -43,7 +43,7 @@ test("resolves Nemotron's candidate ID locally instead of accepting invented wor
     outbound = JSON.parse(init.body);
     return new Response(JSON.stringify({
       model: OPENROUTER_MODEL,
-      choices: [{ message: { tool_calls: [{ type: "function", function: { name: "select_phrase_card", arguments: JSON.stringify({ candidate_id: candidate.candidate_id, interestingness_score: 84, rationale: "Recognizable agent habit." }) } }] } }],
+      choices: [{ message: { content: JSON.stringify({ candidate_id: candidate.candidate_id }) } }],
       usage: { prompt_tokens: 12, completion_tokens: 7 },
     }), { status: 200, headers: { "content-type": "application/json" } });
   };
@@ -55,21 +55,28 @@ test("resolves Nemotron's candidate ID locally instead of accepting invented wor
   assert.equal(requestUrl, "https://openrouter.ai/api/v1/chat/completions");
   assert.equal(authorization, "Bearer test-key-never-serialized");
   assert.equal(outbound.model, OPENROUTER_MODEL);
+  assert.equal(outbound.tools, undefined);
+  assert.equal(outbound.response_format.json_schema.strict, true);
+  assert.deepEqual(outbound.response_format.json_schema.schema.properties.candidate_id.enum, [candidate.candidate_id]);
   assert.equal(result.provider, "OpenRouter");
   assert.ok(result.latencyMs >= 0);
 });
 
-test("retries once when the free model omits its required tool call", async () => {
+test("accepts exactly one known candidate ID in ordinary response text without retrying", async () => {
   const candidate = buildPhraseCandidates(fixtureRecords())[0];
   let calls = 0;
   const fetchImpl = async () => {
     calls++;
-    const message = calls === 1
-      ? { content: "I choose phrase-1." }
-      : { tool_calls: [{ function: { name: "select_phrase_card", arguments: JSON.stringify({ candidate_id: candidate.candidate_id, interestingness_score: 70, rationale: "Recognizable habit." }) } }] };
-    return new Response(JSON.stringify({ choices: [{ message }] }), { status: 200, headers: { "content-type": "application/json" } });
+    return new Response(JSON.stringify({ choices: [{ message: { content: `My selection is ${candidate.candidate_id}.` } }] }), { status: 200, headers: { "content-type": "application/json" } });
   };
   const result = await judgePhraseCard([candidate], "test-key", { fetchImpl });
-  assert.equal(calls, 2);
+  assert.equal(calls, 1);
   assert.equal(result.phrase, candidate.phrase);
+});
+
+test("rejects ordinary text that mentions more than one supplied candidate ID", async () => {
+  const first = buildPhraseCandidates(fixtureRecords())[0];
+  const second = { ...first, candidate_id: "phrase-2", phrase: "another safe candidate" };
+  const fetchImpl = async () => new Response(JSON.stringify({ choices: [{ message: { content: "Either phrase-1 or phrase-2." } }] }), { status: 200, headers: { "content-type": "application/json" } });
+  await assert.rejects(judgePhraseCard([first, second], "test-key", { fetchImpl }), /exactly one supplied phrase candidate/);
 });
