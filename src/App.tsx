@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { toPng } from "html-to-image";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type Project = { id: string; name: string; sessionCount: number; latestAt: string; agents: string[] };
 type Session = { id: string; agent: "claude" | "codex"; agentName: string; projectId: string; projectName: string; startedAt: string; endedAt: string; promptCount: number; recordCount: number; sizeBytes: number; synthetic: boolean; label: string };
@@ -101,21 +102,17 @@ function ShieldIcon() {
   return <span className="shield" aria-hidden="true">◆</span>;
 }
 
-function downloadSlide(report: SavedReport, slide: number, headline: string, detail: string) {
-  const canvas = document.createElement("canvas"); canvas.width = 1200; canvas.height = 630;
-  const ctx = canvas.getContext("2d"); if (!ctx) return;
-  const palettes = [["#17151a", "#ff6b38", "#f7f3ed"], ["#eaf2f8", "#376579", "#221f1a"], ["#8d5cff", "#c9f24b", "#ffffff"], ["#c9f24b", "#0d0b1b", "#12101f"]];
-  const [bg, accent, ink] = palettes[slide % palettes.length]; ctx.fillStyle = bg; ctx.fillRect(0, 0, 1200, 630);
-  ctx.fillStyle = accent; ctx.fillRect(0, 0, 16, 630); ctx.fillStyle = ink;
-  ctx.font = "800 26px system-ui"; ctx.fillText("BEHAVIOR WRAPPED", 74, 78);
-  ctx.globalAlpha = .58; ctx.font = "500 24px system-ui"; ctx.fillText(report.rangeLabel, 74, 142); ctx.globalAlpha = 1;
-  ctx.font = "800 68px system-ui";
-  const words = headline.split(" "); let line = ""; let y = 245;
-  for (const word of words) { const candidate = `${line}${word} `; if (ctx.measureText(candidate).width > 1020 && line) { ctx.fillText(line.trim(), 74, y); line = `${word} `; y += 78; } else line = candidate; }
-  ctx.fillText(line.trim(), 74, y);
-  ctx.globalAlpha = .72; ctx.font = "500 28px system-ui"; ctx.fillText(detail.slice(0, 96), 74, Math.min(520, y + 72)); ctx.globalAlpha = 1;
-  ctx.font = "700 19px system-ui"; ctx.fillText("#behaviorwrapped  ·  share-safe", 74, 580);
-  const anchor = document.createElement("a"); anchor.href = canvas.toDataURL("image/png"); anchor.download = `behavior-wrapped-${slide + 1}.png`; anchor.click();
+async function downloadSlide(card: HTMLElement, slide: number) {
+  await document.fonts.ready;
+  const dataUrl = await toPng(card, {
+    backgroundColor: "#09090b",
+    cacheBust: true,
+    pixelRatio: 2,
+  });
+  const anchor = document.createElement("a");
+  anchor.href = dataUrl;
+  anchor.download = `behavior-wrapped-${slide + 1}.png`;
+  anchor.click();
 }
 
 function SharedWrapped({ id }: { id: string }) {
@@ -123,6 +120,8 @@ function SharedWrapped({ id }: { id: string }) {
   const [error, setError] = useState("");
   const [slide, setSlide] = useState(0);
   const [copied, setCopied] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const cardRef = useRef<HTMLElement>(null);
   useEffect(() => { fetch(`/api/reports/${id}`).then(async (response) => { if (!response.ok) throw new Error("This local Wrapped was not found."); return response.json(); }).then(setReport).catch((e) => setError(e.message)); }, [id]);
   const slides = useMemo<StorySlide[]>(() => {
     if (!report) return [];
@@ -146,9 +145,15 @@ function SharedWrapped({ id }: { id: string }) {
   if (!report || !slides.length) return <main className="shared-loading"><div className="orb" /><p>Opening your local Wrapped…</p></main>;
   const current = slides[slide];
   async function copyLink() { await navigator.clipboard.writeText(window.location.href); setCopied(true); window.setTimeout(() => setCopied(false), 1600); }
+  async function downloadCurrentSlide() {
+    if (!cardRef.current || downloading) return;
+    setDownloading(true);
+    try { await downloadSlide(cardRef.current, slide); }
+    finally { setDownloading(false); }
+  }
   return <main className="shared-page">
     <div className="story-progress" aria-label={`Slide ${slide + 1} of ${slides.length}`}>{slides.map((_, index) => <button key={index} className={index <= slide ? "seen" : ""} onClick={() => setSlide(index)} aria-label={`Go to slide ${index + 1}`} />)}</div>
-    <section className={`story-card story-${current.tone}`} aria-live="polite">
+    <section ref={cardRef} className={`story-card story-${current.tone}`} aria-live="polite">
       <div className="story-brand"><span className="brand-mark">B</span><strong>Behavior Wrapped</strong><i /> <span>{report.source}</span></div>
       <div className={`story-copy ${current.rows ? "with-rows" : ""}`}>
         <div><span>{current.kicker}</span><h1 className={current.metric ? "giant" : ""}>{current.headline}</h1>{current.detail && <p>{current.detail}</p>}</div>
@@ -161,7 +166,7 @@ function SharedWrapped({ id }: { id: string }) {
       <button className="story-arrow prev" disabled={slide === 0} onClick={() => setSlide(slide - 1)} aria-label="Previous slide">‹</button>
       <button className="story-arrow next" disabled={slide === slides.length - 1} onClick={() => setSlide(slide + 1)} aria-label="Next slide">›</button>
     </section>
-    <div className="story-actions"><button onClick={copyLink}>{copied ? "Copied" : "Copy local link"}</button><button onClick={() => downloadSlide(report, slide, current.headline, current.detail)}>Download image</button></div>
+    <div className="story-actions"><button onClick={copyLink}>{copied ? "Copied" : "Copy local link"}</button><button disabled={downloading} onClick={downloadCurrentSlide}>{downloading ? "Preparing image…" : "Download image"}</button></div>
     <p className="story-foot"><ShieldIcon /> Share-safe local page · no transcript text · nothing published</p>
   </main>;
 }
