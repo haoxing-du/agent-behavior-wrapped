@@ -13,7 +13,7 @@ type DonationSession = { sessionId: string; label: string; messages: DonationMes
 type Donation = { format: string; createdLocally: boolean; detectionCount: number; sessions: DonationSession[] };
 type Stage = "select" | "report" | "donate";
 type SavedReport = Report & { id: string; createdAt: string; rangeLabel: string; source: string; privacy: { shareSafe: boolean; containsTranscriptText: boolean; externalTransmission: boolean } };
-type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; cta?: boolean; rows?: { label: string; value: string; percentage?: number }[] };
+type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; rows?: { label: string; value: string; percentage?: number }[] };
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" });
 
@@ -131,9 +131,6 @@ function SharedWrapped({ id }: { id: string }) {
     { kicker: "Your most-used agent", headline: leader.name, detail: `${leader.count} of ${report.stats.sessions} selected sessions.`, tone: "agents", rows: agents.map((agent) => ({ label: agent.name, value: `${agent.percentage.toFixed(1)}%`, percentage: agent.percentage })) },
     { kicker: "Your top models", headline: `${topModel.percentage.toFixed(1)}%`, detail: `went to your #1 · ${topModel.name}`, tone: "models", rows: (report.stats.models || []).slice(0, 4).map((model, index) => ({ label: `${index + 1}  ${model.name}`, value: `${model.percentage.toFixed(1)}%`, percentage: model.percentage })) },
     ...(report.phraseCard ? [{ kicker: "Your agent’s favorite phrase is", headline: `“${report.phraseCard.phrase}”`, detail: `It said this ${report.phraseCard.occurrences} time${report.phraseCard.occurrences === 1 ? "" : "s"} across ${report.phraseCard.distinctSessions} session${report.phraseCard.distinctSessions === 1 ? "" : "s"}.`, tone: "quote" }] : []),
-    ...(report.findings.length ? report.findings.slice(0, 2).map((finding) => ({ kicker: `${finding.confidence.label} confidence · ${Math.round(finding.confidence.score * 100)}%`, headline: finding.title, detail: finding.summary, tone: "lime" })) : [{ kicker: "Behavior check", headline: "No strong signals found.", detail: "These prototype heuristics did not find enough visible evidence.", tone: "lime" }]),
-    { kicker: "The share-safe ending", headline: "The patterns can travel. Your work stays home.", detail: "No transcript excerpts, project names, paths, code, or tool outputs are in this Wrapped.", tone: "coral" },
-    { kicker: "Optional research donation", headline: "Want to help researchers understand coding agents?", detail: "Review every proposed line, redact anything you want, then decide whether to export a local donation bundle.", tone: "research", cta: true },
   ]; }, [report]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === "ArrowRight") setSlide((value) => Math.min(slides.length - 1, value + 1)); if (event.key === "ArrowLeft") setSlide((value) => Math.max(0, value - 1)); };
@@ -154,7 +151,7 @@ function SharedWrapped({ id }: { id: string }) {
           {row.percentage !== undefined && <span><i style={{ width: `${row.percentage}%` }} /></span>}
         </div>)}</div>}
       </div>
-      {current.cta ? <a className="story-cta" href={`/donate/${report.id}`}>Review redactions <span>→</span></a> : <div className="story-tag">#behaviorwrapped</div>}
+      <div className="story-tag">#behaviorwrapped</div>
       <button className="story-arrow prev" disabled={slide === 0} onClick={() => setSlide(slide - 1)} aria-label="Previous slide">‹</button>
       <button className="story-arrow next" disabled={slide === slides.length - 1} onClick={() => setSlide(slide + 1)} aria-label="Next slide">›</button>
     </section>
