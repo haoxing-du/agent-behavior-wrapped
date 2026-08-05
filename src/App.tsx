@@ -44,10 +44,10 @@ function fmtEquivalent(value: number, unitCost: number) {
 
 function costEquivalents(value: number) {
   return [
-    { label: "iPhones (~$1,000)", value: fmtEquivalent(value, 1_000) },
-    { label: "months of Claude/Codex ($200)", value: fmtEquivalent(value, 200) },
-    { label: "$20 hardcover books", value: fmtEquivalent(value, 20) },
-    { label: "Starbucks lattes (~$6.50)", value: fmtEquivalent(value, 6.5) },
+    { label: "iPhones", value: fmtEquivalent(value, 1_000) },
+    { label: "Claude/Codex subscription months", value: fmtEquivalent(value, 200) },
+    { label: "hardcover books", value: fmtEquivalent(value, 20) },
+    { label: "Starbucks lattes", value: fmtEquivalent(value, 6.5) },
   ];
 }
 
@@ -127,7 +127,7 @@ function SharedWrapped({ id }: { id: string }) {
     const harryPotterSeriesCount = fmtEquivalent(report.stats.tokens || 0, 1_450_000);
     return [
     { kicker: "This month you went through", headline: fmtCompact(report.stats.tokens || 0), detail: `tokens. That’s the complete Harry Potter series roughly ${harryPotterSeriesCount} times over.`, tone: "ice", metric: true },
-    { kicker: "Your tokens were worth", headline: fmtUsd(report.stats.estimatedCostUsd || 0), detail: "API-equivalent retail estimate—not your bill.", tone: "cost", rows: costEquivalents(report.stats.estimatedCostUsd || 0) },
+    { kicker: "Your tokens were worth", headline: fmtUsd(report.stats.estimatedCostUsd || 0), detail: "", tone: "cost", rows: costEquivalents(report.stats.estimatedCostUsd || 0) },
     { kicker: "Your most-used agent", headline: leader.name, detail: `${leader.count} of ${report.stats.sessions} selected sessions.`, tone: "agents", rows: agents.map((agent) => ({ label: agent.name, value: `${agent.percentage.toFixed(1)}%`, percentage: agent.percentage })) },
     { kicker: "Your top models", headline: `${topModel.percentage.toFixed(1)}%`, detail: `went to your #1 · ${topModel.name}`, tone: "models", rows: (report.stats.models || []).slice(0, 4).map((model, index) => ({ label: `${index + 1}  ${model.name}`, value: `${model.percentage.toFixed(1)}%`, percentage: model.percentage })) },
     ...(report.phraseCard ? [{ kicker: "Your agent’s favorite phrase is", headline: `“${report.phraseCard.phrase}”`, detail: `It said this ${report.phraseCard.occurrences} time${report.phraseCard.occurrences === 1 ? "" : "s"} across ${report.phraseCard.distinctSessions} session${report.phraseCard.distinctSessions === 1 ? "" : "s"}.`, tone: "quote" }] : []),
@@ -145,7 +145,7 @@ function SharedWrapped({ id }: { id: string }) {
     <section className={`story-card story-${current.tone}`} aria-live="polite">
       <div className="story-brand"><span className="brand-mark">B</span><strong>Behavior Wrapped</strong><i /> <span>{report.source}</span></div>
       <div className={`story-copy ${current.rows ? "with-rows" : ""}`}>
-        <div><span>{current.kicker}</span><h1 className={current.metric ? "giant" : ""}>{current.headline}</h1><p>{current.detail}</p></div>
+        <div><span>{current.kicker}</span><h1 className={current.metric ? "giant" : ""}>{current.headline}</h1>{current.detail && <p>{current.detail}</p>}</div>
         {current.rows && <div className="story-data-rows">{current.rows.map((row) => <div className="story-data-row" key={row.label}>
           <div><strong>{row.label}</strong><b>{row.value}</b></div>
           {row.percentage !== undefined && <span><i style={{ width: `${row.percentage}%` }} /></span>}
