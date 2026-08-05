@@ -102,6 +102,19 @@ function ShieldIcon() {
   return <span className="shield" aria-hidden="true">◆</span>;
 }
 
+function GiftbotMark() {
+  return <svg className="brand-mark" viewBox="0 0 40 40" aria-hidden="true">
+    <g fill="none" stroke="#c9f24b" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M11 13v-2.5L8.5 8V3.5H15V8l3 3h4l3-3V3.5h6.5V8L29 10.5V13" />
+      <rect x="3.5" y="13" width="33" height="23.5" rx="3" fill="#21101a" />
+      <path d="M3.5 27h33M20 27v9.5" opacity=".62" />
+      <path d="M16.5 22.5v1c0 1.4 1.6 2.5 3.5 2.5s3.5-1.1 3.5-2.5v-1" />
+    </g>
+    <circle cx="12.5" cy="20" r="1.8" fill="#8d5cff" />
+    <circle cx="27.5" cy="20" r="1.8" fill="#8d5cff" />
+  </svg>;
+}
+
 async function downloadSlide(card: HTMLElement, slide: number) {
   await document.fonts.ready;
   const dataUrl = await toPng(card, {
@@ -154,7 +167,7 @@ function SharedWrapped({ id }: { id: string }) {
   return <main className="shared-page">
     <div className="story-progress" aria-label={`Slide ${slide + 1} of ${slides.length}`}>{slides.map((_, index) => <button key={index} className={index <= slide ? "seen" : ""} onClick={() => setSlide(index)} aria-label={`Go to slide ${index + 1}`} />)}</div>
     <section ref={cardRef} className={`story-card story-${current.tone}`} aria-live="polite">
-      <div className="story-brand"><span className="brand-mark">B</span><strong>Behavior Wrapped</strong><i /> <span>{report.source}</span></div>
+      <div className="story-brand"><GiftbotMark /><strong>Behavior Wrapped</strong><i /> <span>{report.source}</span></div>
       <div className={`story-copy ${current.rows ? "with-rows" : ""}`}>
         <div><span>{current.kicker}</span><h1 className={current.metric ? "giant" : ""}>{current.headline}</h1>{current.detail && <p>{current.detail}</p>}</div>
         {current.rows && <div className="story-data-rows">{current.rows.map((row) => <div className="story-data-row" key={row.label}>
@@ -193,7 +206,7 @@ function SavedDonationRoute({ id }: { id: string }) {
 function Header({ stage, setStage }: { stage: Stage; setStage: (stage: Stage) => void }) {
   return <header className="topbar">
     <button className="brand" onClick={() => setStage("select")} aria-label="Behavior Wrapped home">
-      <span className="brand-mark">B</span><span>Behavior Wrapped</span>
+      <GiftbotMark /><span>Behavior Wrapped</span>
     </button>
     <div className="local-pill"><span className="pulse" /> Local-first</div>
     {stage !== "select" && <nav aria-label="Report navigation">
