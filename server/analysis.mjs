@@ -1,6 +1,8 @@
 import crypto from "node:crypto";
 import { safeEvidenceText, redactText } from "./privacy.mjs";
 
+const wordSegmenter = new Intl.Segmenter("en", { granularity: "word" });
+
 function contentBlocks(record) {
   const content = record?.message?.content ?? record?.content;
   if (Array.isArray(content)) return content;
@@ -10,6 +12,12 @@ function contentBlocks(record) {
 
 function visibleText(record) {
   return contentBlocks(record).filter((block) => block?.type === "text").map((block) => block.text || "").join("\n").trim();
+}
+
+function wordCount(value) {
+  let count = 0;
+  for (const part of wordSegmenter.segment(value)) if (part.isWordLike) count++;
+  return count;
 }
 
 function toolUses(record) {
@@ -155,14 +163,36 @@ export function analyzeSessions(sessionRecords) {
   let totalDurationMs = 0;
   let tokens = 0;
   let estimatedCostUsd = 0;
+  let userInputWords = 0;
+  let userInputCount = 0;
+  let agentResponseWords = 0;
+  let agentResponseCount = 0;
   for (const { records, agent = "claude" } of sessionRecords) {
     agentCounts.set(agent, (agentCounts.get(agent) || 0) + 1);
     const timestamps = records.map((r) => r.timestamp).filter(Boolean).map((value) => new Date(value).getTime()).filter(Number.isFinite);
     if (timestamps.length > 1) totalDurationMs += Math.max(...timestamps) - Math.min(...timestamps);
+    let currentResponseWords = 0;
+    let hasCurrentPrompt = false;
+    const finishResponse = () => {
+      if (hasCurrentPrompt && currentResponseWords > 0) {
+        agentResponseWords += currentResponseWords;
+        agentResponseCount++;
+      }
+      currentResponseWords = 0;
+    };
     for (const record of records) {
+      const text = visibleText(record);
+      if (record.type === "user" && !record.isMeta && text) {
+        finishResponse();
+        hasCurrentPrompt = true;
+        userInputWords += wordCount(text);
+        userInputCount++;
+      } else if (record.type === "assistant" && hasCurrentPrompt && text) {
+        currentResponseWords += wordCount(text);
+      }
       const d = day(record.timestamp);
       if (d) activeDays.add(d);
-      if (record.type === "user" && !record.isMeta && visibleText(record)) prompts++;
+      if (record.type === "user" && !record.isMeta && text) prompts++;
       if (record.type === "system" && /interrupt/i.test(`${record.subtype || ""} ${record.content || ""}`)) interruptions++;
       const usage = record?.message?.usage;
       if (usage) {
@@ -183,6 +213,7 @@ export function analyzeSessions(sessionRecords) {
         toolCounts.set(name, (toolCounts.get(name) || 0) + 1);
       }
     }
+    finishResponse();
   }
   const tools = [...toolCounts].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name, count]) => ({ name, count }));
   const totalSessions = sessionRecords.length;
@@ -197,7 +228,7 @@ export function analyzeSessions(sessionRecords) {
     tokens: modelTokenCount,
     percentage: tokens ? Number((modelTokenCount / tokens * 100).toFixed(1)) : 0,
   }));
-  const stats = { sessions: totalSessions, activeDays: activeDays.size, durationMinutes: Math.round(totalDurationMs / 60000), prompts, toolCalls, interruptions, tokens, tools, agents, models, estimatedCostUsd: Number(estimatedCostUsd.toFixed(2)), costEstimateMethod: "API-equivalent estimate using a local, inspectable model-family rate table." };
+  const stats = { sessions: totalSessions, activeDays: activeDays.size, durationMinutes: Math.round(totalDurationMs / 60000), prompts, toolCalls, interruptions, tokens, averageAgentResponseWords: agentResponseCount ? Math.round(agentResponseWords / agentResponseCount) : 0, averageUserInputWords: userInputCount ? Math.round(userInputWords / userInputCount) : 0, tools, agents, models, estimatedCostUsd: Number(estimatedCostUsd.toFixed(2)), costEstimateMethod: "API-equivalent estimate using a local, inspectable model-family rate table." };
   return { stats, findings: analyzeBehavior(sessionRecords) };
 }
 

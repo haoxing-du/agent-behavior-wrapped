@@ -61,6 +61,20 @@ test("discovers and normalizes Claude Code and Codex sessions together", () => {
   assert.ok(report.stats.estimatedCostUsd > 0);
 });
 
+test("averages human inputs and complete agent responses across tool-use records", () => {
+  const report = analyzeSessions([{ sessionId: "word-lengths", records: [
+    { type: "user", message: { content: "Please check this." } },
+    { type: "assistant", message: { content: "I will check it now." } },
+    { type: "assistant", message: { content: [{ type: "tool_use", name: "Read" }] } },
+    { type: "user", isMeta: true, message: { content: [{ type: "tool_result", content: "ignored output" }] } },
+    { type: "assistant", message: { content: "Everything looks good." } },
+    { type: "user", message: { content: "Thanks." } },
+    { type: "assistant", message: { content: "You are welcome." } },
+  ] }]);
+  assert.equal(report.stats.averageAgentResponseWords, 6);
+  assert.equal(report.stats.averageUserInputWords, 2);
+});
+
 test("uses an inclusive rolling 30-day default window", () => {
   const sessions = [{ startedAt: "2026-07-06T00:00:00.000Z" }, { startedAt: "2026-07-07T00:00:00.000Z" }, { startedAt: "2026-08-05T00:00:00.000Z" }];
   const range = defaultDateRange(sessions, { now: new Date("2026-08-05T12:00:00.000Z") });
