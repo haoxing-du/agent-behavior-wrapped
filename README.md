@@ -7,7 +7,6 @@ A local-first, macOS prototype that discovers Claude Code history in `~/.claude/
 Requires Node.js 20 or newer.
 
 ```bash
-export OPENROUTER_API_KEY='your-key'
 npx agent-behavior-wrapped@latest
 ```
 
@@ -21,14 +20,7 @@ The final slideshow card offers an optional research-donation review. It opens a
 
 When developing from this repository, run `npm install`, then `npm run wrapped`. Add `--demo` to use synthetic fixtures or `--no-open` to leave the browser closed.
 
-Every Wrapped includes a “Your agent said … N times” slide chosen by the free Nemotron 3 Ultra model through OpenRouter. Add your key to the environment before launching:
-
-```bash
-export OPENROUTER_API_KEY='your-key'
-npm run wrapped
-```
-
-Exact phrase counts are computed locally. Only redacted aggregate phrase candidates and counts are sent to `nvidia/nemotron-3-ultra-550b-a55b:free`; transcripts, tool output, code, and the API key are not included. OpenRouter notes that prompts submitted to this free endpoint may be logged and used under NVIDIA's free-model terms, which is why the UI discloses the request before analysis.
+Every Wrapped includes a “Your agent said … N times” slide chosen by the free Nemotron 3 Ultra model through the hosted Behavior Wrapped relay and OpenRouter. Exact phrase counts are computed locally. Only redacted aggregate phrase candidates, counts, and a random installation ID are sent; transcripts, tool output, code, paths, and secrets are not included. The relay accepts only the fixed phrase-selection schema, uses a fixed free model, and rate-limits clients before attaching its server-side OpenRouter credential.
 
 Saved reports are managed with:
 
@@ -47,7 +39,7 @@ For UI development, run the local API with `npm run demo -- --no-open`, then run
 ## Privacy model
 
 - The launcher reads only selected JSONL files from the canonical Claude Code and Codex directories.
-- Transcript parsing, deterministic statistics, heuristic findings, phrase counting, and redaction run locally. Creating a Wrapped sends the redacted aggregate phrase candidate list to OpenRouter for the standard Nemotron phrase card.
+- Transcript parsing, deterministic statistics, heuristic findings, phrase counting, and redaction run locally. Creating a Wrapped sends the redacted aggregate phrase candidate list and a random installation ID through the Behavior Wrapped relay to OpenRouter for the standard Nemotron phrase card.
 - Browser payloads never include source file paths or raw tool outputs.
 - Private evidence is made from redacted user/assistant prose; code blocks are omitted.
 - Share-card PNG exports contain only aggregates and generalized findings.
@@ -67,7 +59,7 @@ The miner uses rare token-shingle postings to generate candidates, bounded token
 
 Use `--limit=100` to retain more than the default 50 families.
 
-The in-app phrase judge sends only redacted aggregate phrase candidates—not transcripts—to OpenRouter. It requests one candidate ID using a strict JSON schema and also tolerates that single known ID in ordinary response text. The app resolves the selected ID to its exact locally counted phrase, so the model cannot invent wording or inflate a count. Do not embed a shared OpenRouter key in the npm package or browser bundle: a production shared-key version needs a narrow hosted proxy with schema validation, quotas, and abuse controls.
+The in-app phrase judge requests one candidate ID using a strict JSON schema and also tolerates that single known ID in ordinary response text. The app resolves the selected ID to its exact locally counted phrase, so the model cannot invent wording or inflate a count. The OpenRouter key is stored only as an encrypted Worker secret and is never shipped in the npm package or browser bundle. For local relay development, set `BEHAVIOR_WRAPPED_JUDGE_URL`; maintainers can bypass the relay with `BEHAVIOR_WRAPPED_DIRECT_OPENROUTER=1` and `OPENROUTER_API_KEY`.
 
 ## Prototype boundaries
 

@@ -5,6 +5,7 @@ import crypto from "node:crypto";
 
 export const storeRoot = process.env.BEHAVIOR_WRAPPED_STORE_ROOT || path.join(os.homedir(), ".agent-behavior-wrapped");
 export const reportsRoot = path.join(storeRoot, "reports");
+const clientIdFile = path.join(storeRoot, "client-id");
 
 function ensureStore() {
   fs.mkdirSync(reportsRoot, { recursive: true, mode: 0o700 });
@@ -12,6 +13,17 @@ function ensureStore() {
 
 export function createReportId() {
   return crypto.randomBytes(12).toString("base64url");
+}
+
+export function getOrCreateClientId() {
+  ensureStore();
+  if (fs.existsSync(clientIdFile)) {
+    const existing = fs.readFileSync(clientIdFile, "utf8").trim();
+    if (/^[a-f0-9]{32}$/.test(existing)) return existing;
+  }
+  const clientId = crypto.randomBytes(16).toString("hex");
+  fs.writeFileSync(clientIdFile, `${clientId}\n`, { mode: 0o600 });
+  return clientId;
 }
 
 export function saveReport(report) {

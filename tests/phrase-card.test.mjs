@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { discoverSessions, readRecords } from "../server/discovery.mjs";
-import { buildPhraseCandidates, OPENROUTER_MODEL, judgePhraseCard } from "../server/phrase-card.mjs";
+import { buildPhraseCandidates, OPENROUTER_MODEL, judgePhraseCard, judgePhraseCardViaRelay } from "../server/phrase-card.mjs";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "projects");
 
@@ -119,4 +119,39 @@ test("times out a stalled phrase judge request instead of waiting indefinitely",
   const candidate = buildPhraseCandidates(fixtureRecords())[0];
   const fetchImpl = async () => { const error = new Error("stalled"); error.name = "TimeoutError"; throw error; };
   await assert.rejects(judgePhraseCard([candidate], "test-key", { fetchImpl, timeoutMs: 1_000 }), /timed out after 1 seconds/);
+});
+
+test("relay returns only a candidate ID and the client resolves exact local text and counts", async () => {
+  const candidate = buildPhraseCandidates(fixtureRecords())[0];
+  let outbound;
+  let headers;
+  const fetchImpl = async (_url, init) => {
+    outbound = JSON.parse(init.body);
+    headers = init.headers;
+    return new Response(JSON.stringify({
+      candidate_id: candidate.candidate_id,
+      phrase: "invented text is ignored",
+      occurrences: 999999,
+      model: OPENROUTER_MODEL,
+      usage: { prompt_tokens: 20, completion_tokens: 4 },
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const result = await judgePhraseCardViaRelay([candidate], {
+    endpoint: "https://relay.example/v1/phrase-card",
+    clientId: "0123456789abcdef0123456789abcdef",
+    fetchImpl,
+  });
+  assert.deepEqual(outbound, { candidates: [candidate] });
+  assert.equal(headers["x-behavior-wrapped-protocol"], "1");
+  assert.equal(headers["x-behavior-wrapped-client"], "0123456789abcdef0123456789abcdef");
+  assert.equal(result.phrase, candidate.phrase);
+  assert.equal(result.occurrences, candidate.occurrences);
+  assert.equal(result.distinctSessions, candidate.distinct_sessions);
+  assert.equal(result.provider, "OpenRouter via Behavior Wrapped relay");
+});
+
+test("relay errors do not expose an OpenRouter credential", async () => {
+  const candidate = buildPhraseCandidates(fixtureRecords())[0];
+  const fetchImpl = async () => new Response(JSON.stringify({ error: "Phrase judge is temporarily unavailable." }), { status: 502, headers: { "content-type": "application/json" } });
+  await assert.rejects(judgePhraseCardViaRelay([candidate], { fetchImpl }), /temporarily unavailable/);
 });

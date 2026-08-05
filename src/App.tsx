@@ -223,7 +223,7 @@ function PrivacyPanel() {
     <div>
       <span className="eyebrow">Privacy, by construction</span>
       <h3>Your transcripts stay on this Mac.</h3>
-      <p>Transcript parsing and behavior analysis run inside this local app. Full transcripts, excerpts, code, and tool outputs stay on this Mac; only redacted recurring-phrase candidates and counts are sent to OpenRouter during analysis.</p>
+      <p>Transcript parsing and behavior analysis run inside this local app. Full transcripts, excerpts, code, and tool outputs stay on this Mac; only redacted recurring-phrase candidates, counts, and a random client ID go through the Behavior Wrapped relay to OpenRouter.</p>
       <div className="privacy-facts"><span>✓ No account</span><span>✓ No telemetry</span><span>✓ Only redacted phrase aggregates leave</span></div>
     </div>
   </aside>;
@@ -320,8 +320,8 @@ function Selection({ catalog, selected, setSelected, onAnalyze, loading, error }
 
         <div className={`judge-option judge-required ${catalog.phraseJudge?.available ? "" : "unavailable"}`}>
           <span className="network-mark">↗</span>
-          <span><strong>Nemotron picks the “Your agent said…” card</strong><small>Every analysis sends only redacted aggregate phrase counts—not transcripts—to OpenRouter’s free NVIDIA endpoint. The provider may log submitted aggregates under its free-model terms.</small></span>
-          <em>{catalog.phraseJudge?.available ? "Nemotron 3 Ultra · free" : "Set OPENROUTER_API_KEY and restart"}</em>
+          <span><strong>Nemotron picks the “Your agent said…” card</strong><small>Every analysis sends only redacted aggregate phrases, counts, and a random client ID—not transcripts—through our rate-limited relay to OpenRouter’s free NVIDIA endpoint.</small></span>
+          <em>Nemotron 3 Ultra · shared relay</em>
         </div>
 
         <div className="analyze-bar">
@@ -506,7 +506,7 @@ export default function App() {
     {safeStage === "select" && <Selection catalog={catalog} selected={selected} setSelected={setSelected} onAnalyze={analyze} loading={loading} error={error} />}
     {safeStage === "report" && report && <ReportView report={report} onEvidence={setEvidence} onDonate={() => { setStage("donate"); window.scrollTo(0, 0); }} />}
     {safeStage === "donate" && catalog && <DonationView sessions={catalog.sessions} initialSelected={analyzedIds} onBack={() => { setStage("report"); window.scrollTo(0, 0); }} />}
-    <footer><span>Behavior Wrapped <b>v0.1</b></span><span>Local transcripts · Redacted phrase aggregates sent to OpenRouter during analysis</span></footer>
+    <footer><span>Behavior Wrapped <b>v0.1</b></span><span>Local transcripts · Redacted phrase aggregates sent through the hosted relay during analysis</span></footer>
     {evidence && <EvidenceModal finding={evidence} onClose={() => setEvidence(null)} />}
   </div>;
 }

@@ -5,8 +5,8 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { discoverAllSessions, readRecords, sessionsInDefaultWindow, DEFAULT_WINDOW_DAYS } from "./discovery.mjs";
 import { analyzeSessions } from "./analysis.mjs";
-import { buildPhraseCandidates, judgePhraseCard, PHRASE_JUDGE_NAME } from "./phrase-card.mjs";
-import { createReportId, deleteReport, listReports, saveReport, storeRoot } from "./store.mjs";
+import { buildPhraseCandidates, judgePhraseCard, judgePhraseCardViaRelay, PHRASE_JUDGE_NAME, PHRASE_JUDGE_RELAY_URL } from "./phrase-card.mjs";
+import { createReportId, deleteReport, getOrCreateClientId, listReports, saveReport, storeRoot } from "./store.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.dirname(here);
@@ -99,13 +99,14 @@ async function createWrapped() {
     return { sessionId: session.id, agent: session.agent, records: readRecords(session.file, session.agent) };
   });
   const analyzed = analyzeSessions(sessionRecords);
-  if (!process.env.OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY is required to create the standard phrase card.");
   const candidates = buildPhraseCandidates(sessionRecords, { maximumCandidates: 100 });
   process.stdout.write(`${muted}◇  Scanning corpus for the agent's favorite phrase…${reset}\r`);
-  analyzed.phraseCard = await judgePhraseCard(candidates, process.env.OPENROUTER_API_KEY);
+  analyzed.phraseCard = process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
+    ? await judgePhraseCard(candidates, process.env.OPENROUTER_API_KEY)
+    : await judgePhraseCardViaRelay(candidates, { endpoint: process.env.BEHAVIOR_WRAPPED_JUDGE_URL || PHRASE_JUDGE_RELAY_URL, clientId: getOrCreateClientId() });
   const id = createReportId();
   const safeFindings = analyzed.findings.map(({ evidence, method, ...finding }) => finding);
-  const report = { id, createdAt: new Date().toISOString(), rangeLabel: formatRange(chosenSessions), source: "Claude Code + Codex", stats: analyzed.stats, findings: safeFindings, phraseCard: analyzed.phraseCard, sessionIds: chosenSessions.map((session) => session.id), privacy: { shareSafe: true, containsTranscriptText: false, externalTransmission: true, transmittedData: "redacted aggregate phrase candidates only", externalRecipient: "OpenRouter/NVIDIA" } };
+  const report = { id, createdAt: new Date().toISOString(), rangeLabel: formatRange(chosenSessions), source: "Claude Code + Codex", stats: analyzed.stats, findings: safeFindings, phraseCard: analyzed.phraseCard, sessionIds: chosenSessions.map((session) => session.id), privacy: { shareSafe: true, containsTranscriptText: false, externalTransmission: true, transmittedData: "redacted aggregate phrase candidates and a random client ID only", externalRecipient: "Behavior Wrapped relay, OpenRouter, and NVIDIA" } };
   saveReport(report);
   await ensureServer();
   const url = `${baseUrl}/w/${id}`;

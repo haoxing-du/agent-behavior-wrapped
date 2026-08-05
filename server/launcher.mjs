@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { discoverAllSessions, readRecords, defaultDateRange, DEFAULT_WINDOW_DAYS } from "./discovery.mjs";
 import { analyzeSessions, makeDonationPreview } from "./analysis.mjs";
-import { buildPhraseCandidates, OPENROUTER_MODEL, PHRASE_JUDGE_NAME, judgePhraseCard } from "./phrase-card.mjs";
-import { loadReport } from "./store.mjs";
+import { buildPhraseCandidates, OPENROUTER_MODEL, PHRASE_JUDGE_NAME, PHRASE_JUDGE_RELAY_URL, judgePhraseCard, judgePhraseCardViaRelay } from "./phrase-card.mjs";
+import { getOrCreateClientId, loadReport } from "./store.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.dirname(here);
@@ -57,7 +57,7 @@ function publicCatalog() {
     sessions: catalog.sessions.map((s, index) => ({ ...s, label: s.label || `Session ${index + 1}` })),
     defaultRange: defaultDateRange(catalog.sessions, { days: DEFAULT_WINDOW_DAYS, anchorLatest: demo }),
     privacy: { canonicalDirectories: ["~/.claude/projects", "~/.codex/sessions", "~/.codex/archived_sessions"], networkRequests: "during-analysis" },
-    phraseJudge: { available: Boolean(process.env.OPENROUTER_API_KEY), model: OPENROUTER_MODEL, name: PHRASE_JUDGE_NAME, provider: "OpenRouter", requiredOnAnalysis: true, freeEndpointDataNotice: true },
+    phraseJudge: { available: true, model: OPENROUTER_MODEL, name: PHRASE_JUDGE_NAME, provider: "Behavior Wrapped relay + OpenRouter", requiredOnAnalysis: true, freeEndpointDataNotice: true },
   };
 }
 
@@ -101,9 +101,10 @@ const server = http.createServer(async (request, response) => {
       if (!records.length) return json(response, 400, { error: "Choose at least one available session." });
       if (url.pathname === "/api/analyze") {
         const analyzed = analyzeSessions(records);
-        if (!process.env.OPENROUTER_API_KEY) return json(response, 400, { error: "Restart with OPENROUTER_API_KEY set. Every Wrapped includes the Nemotron phrase card." });
         const candidates = buildPhraseCandidates(records, { maximumCandidates: 100 });
-        analyzed.phraseCard = await judgePhraseCard(candidates, process.env.OPENROUTER_API_KEY);
+        analyzed.phraseCard = process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
+          ? await judgePhraseCard(candidates, process.env.OPENROUTER_API_KEY)
+          : await judgePhraseCardViaRelay(candidates, { endpoint: process.env.BEHAVIOR_WRAPPED_JUDGE_URL || PHRASE_JUDGE_RELAY_URL, clientId: getOrCreateClientId() });
         return json(response, 200, analyzed);
       }
       const labels = new Map(publicCatalog().sessions.map((s) => [s.id, s]));
