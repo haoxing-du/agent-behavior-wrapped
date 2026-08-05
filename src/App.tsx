@@ -106,7 +106,7 @@ function GiftbotMark() {
   return <svg className="brand-mark" viewBox="0 0 40 40" aria-hidden="true">
     <g fill="none" stroke="#c9f24b" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M11 13v-2.5L8.5 8V3.5H15V8l3 3h4l3-3V3.5h6.5V8L29 10.5V13" />
-      <rect x="3.5" y="13" width="33" height="23.5" rx="3" fill="#21101a" />
+      <rect x="3.5" y="13" width="33" height="23.5" rx="3" fill="#ffffff" />
       <path d="M3.5 27h33M20 27v9.5" opacity=".62" />
       <path d="M16.5 22.5v1c0 1.4 1.6 2.5 3.5 2.5s3.5-1.1 3.5-2.5v-1" />
     </g>
