@@ -34,20 +34,25 @@ function fmtUsd(value: number) {
   return `$${value.toFixed(2)}`;
 }
 
-function fmtEquivalent(value: number, unitCost: number) {
-  const count = value / unitCost;
+function fmtSeriesEquivalent(value: number, unitTokens: number) {
+  const count = value / unitTokens;
   if (count >= 100) return Math.round(count).toLocaleString();
   if (count >= 10) return count.toFixed(1);
   if (count >= 1) return count.toFixed(1);
   return count.toFixed(2);
 }
 
+function fmtCostEquivalent(value: number, unitCost: number) {
+  const count = value / unitCost;
+  return count < 1 ? count.toFixed(1) : Math.round(count).toLocaleString();
+}
+
 function costEquivalents(value: number) {
   return [
-    { label: "iPhones", value: fmtEquivalent(value, 1_000) },
-    { label: "Claude/Codex subscription months", value: fmtEquivalent(value, 200) },
-    { label: "hardcover books", value: fmtEquivalent(value, 20) },
-    { label: "Starbucks lattes", value: fmtEquivalent(value, 6.5) },
+    { label: "iPhones", value: fmtCostEquivalent(value, 1_000) },
+    { label: "Claude/Codex subscription months", value: fmtCostEquivalent(value, 200) },
+    { label: "hardcover books", value: fmtCostEquivalent(value, 20) },
+    { label: "Starbucks lattes", value: fmtCostEquivalent(value, 6.5) },
   ];
 }
 
@@ -124,7 +129,7 @@ function SharedWrapped({ id }: { id: string }) {
     const agents = report.stats.agents || [{ agent: "claude", name: "Claude Code", count: report.stats.sessions, percentage: 100 }, { agent: "codex", name: "Codex", count: 0, percentage: 0 }];
     const leader = [...agents].sort((left, right) => right.count - left.count)[0];
     const topModel = report.stats.models?.[0] || { name: "Model unavailable", percentage: 0 };
-    const harryPotterSeriesCount = fmtEquivalent(report.stats.tokens || 0, 1_450_000);
+    const harryPotterSeriesCount = fmtSeriesEquivalent(report.stats.tokens || 0, 1_450_000);
     return [
     { kicker: "This month you went through", headline: fmtCompact(report.stats.tokens || 0), detail: `tokens. That’s the complete Harry Potter series roughly ${harryPotterSeriesCount} times over.`, tone: "ice", metric: true },
     { kicker: "Your tokens were worth", headline: fmtUsd(report.stats.estimatedCostUsd || 0), detail: "", tone: "cost", rows: costEquivalents(report.stats.estimatedCostUsd || 0) },
