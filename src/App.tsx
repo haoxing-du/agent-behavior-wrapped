@@ -52,7 +52,7 @@ function costEquivalents(value: number) {
   return [
     { label: "iPhones", value: fmtCostEquivalent(value, 1_000) },
     { label: "Claude/Codex subscription months", value: fmtCostEquivalent(value, 200) },
-    { label: "hardcover books", value: fmtCostEquivalent(value, 20) },
+    { label: "Hardcover books", value: fmtCostEquivalent(value, 20) },
     { label: "Starbucks lattes", value: fmtCostEquivalent(value, 6.5) },
   ];
 }
@@ -138,19 +138,23 @@ function SharedWrapped({ id }: { id: string }) {
   useEffect(() => { fetch(`/api/reports/${id}`).then(async (response) => { if (!response.ok) throw new Error("This local Wrapped was not found."); return response.json(); }).then(setReport).catch((e) => setError(e.message)); }, [id]);
   const slides = useMemo<StorySlide[]>(() => {
     if (!report) return [];
-    const agents = report.stats.agents || [{ agent: "claude", name: "Claude Code", count: report.stats.sessions, percentage: 100 }, { agent: "codex", name: "Codex", count: 0, percentage: 0 }];
-    const leader = [...agents].sort((left, right) => right.count - left.count)[0];
-    const topModel = report.stats.models?.[0] || { name: "Model unavailable", percentage: 0 };
+    const agents = report.stats.agents?.length ? report.stats.agents : [{ agent: "claude" as const, name: "Claude Code", count: report.stats.sessions, percentage: 100 }];
+    const activeAgents = agents.filter((agent) => Number(agent.percentage.toFixed(1)) > 0);
+    const leader = [...activeAgents].sort((left, right) => right.count - left.count)[0];
+    const activeModels = (report.stats.models || []).filter((model) => Number(model.percentage.toFixed(1)) > 0);
+    const topModel = activeModels[0];
     const harryPotterSeriesCount = fmtSeriesEquivalent(report.stats.tokens || 0, 1_450_000);
-    return [
+    const wrappedSlides: StorySlide[] = [
     { kicker: "This month you went through", headline: fmtCompact(report.stats.tokens || 0), detail: `tokens. That’s the complete Harry Potter series roughly ${harryPotterSeriesCount} times over.`, tone: "ice", metric: true },
     { kicker: "Your tokens were worth", headline: fmtUsd(report.stats.estimatedCostUsd || 0), detail: "", tone: "cost", rows: costEquivalents(report.stats.estimatedCostUsd || 0) },
-    { kicker: "Your most-used agent", headline: leader.name, detail: `${leader.count} of ${report.stats.sessions} selected sessions.`, tone: "agents", rows: agents.map((agent) => ({ label: agent.name, value: `${agent.percentage.toFixed(1)}%`, percentage: agent.percentage })) },
-    { kicker: "Your top models", headline: `${topModel.percentage.toFixed(1)}%`, detail: `went to your #1 · ${topModel.name}`, tone: "models", rows: (report.stats.models || []).slice(0, 4).map((model, index) => ({ label: `${index + 1}  ${model.name}`, value: `${model.percentage.toFixed(1)}%`, percentage: model.percentage })) },
+    ...(leader ? [{ kicker: "Your most-used agent", headline: leader.name, detail: `${leader.count} of ${report.stats.sessions} selected sessions.`, tone: "agents", rows: activeAgents.map((agent) => ({ label: agent.name, value: `${agent.percentage.toFixed(1)}%`, percentage: agent.percentage })) }] : []),
+    ...(topModel ? [{ kicker: "Your top models", headline: `${topModel.percentage.toFixed(1)}%`, detail: `went to your #1 · ${topModel.name}`, tone: "models", rows: activeModels.slice(0, 4).map((model, index) => ({ label: `${index + 1}  ${model.name}`, value: `${model.percentage.toFixed(1)}%`, percentage: model.percentage })) }] : []),
     ...(Number.isFinite(report.stats.averageAgentResponseWords) ? [{ kicker: "On average, your agent responded with", headline: `${report.stats.averageAgentResponseWords!.toLocaleString()} words`, detail: `Your average input was ${report.stats.averageUserInputWords!.toLocaleString()} words.`, tone: "violet" }] : []),
     ...(report.phraseCard ? [{ kicker: "Your agent’s favorite phrase is", headline: `“${report.phraseCard.phrase}”`, detail: `It said this ${report.phraseCard.occurrences} time${report.phraseCard.occurrences === 1 ? "" : "s"} across ${report.phraseCard.distinctSessions} session${report.phraseCard.distinctSessions === 1 ? "" : "s"}.`, tone: "quote" }] : []),
     { kicker: "Optional research donation", headline: "Want to donate your data to research?", detail: "Review exactly what would be included and redact anything you want before exporting a local bundle.", tone: "research", cta: true },
-  ]; }, [report]);
+  ];
+    return wrappedSlides;
+  }, [report]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === "ArrowRight") setSlide((value) => Math.min(slides.length - 1, value + 1)); if (event.key === "ArrowLeft") setSlide((value) => Math.max(0, value - 1)); };
     window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
@@ -326,8 +330,12 @@ function Selection({ catalog, selected, setSelected, onAnalyze, loading, error }
 
         <div className="analyze-bar">
           <div><ShieldIcon /><span><strong>Runs locally</strong><small>Only selected sessions are read</small></span></div>
-          <button className="primary" disabled={!chosenVisible.length || loading || !catalog.phraseJudge?.available} onClick={() => onAnalyze(chosenVisible.map((s) => s.id))}>{loading ? "Scanning corpus for the agent’s favorite phrase…" : "Make my Wrapped"}<span>→</span></button>
+          <button className="primary" disabled={!chosenVisible.length || loading || !catalog.phraseJudge?.available} onClick={() => onAnalyze(chosenVisible.map((s) => s.id))}>{loading ? "Scanning corpus…" : "Make my Wrapped"}<span>{loading ? <i className="button-spinner" aria-hidden="true" /> : "→"}</span></button>
         </div>
+        {loading && <div className="analysis-progress" role="status" aria-live="polite">
+          <div><strong>Scanning corpus for the agent’s favorite phrase…</strong><span>The phrase judge can take a minute.</span></div>
+          <div className="analysis-progress-track" aria-hidden="true"><i /></div>
+        </div>}
         {error && <p className="error" role="alert">{error}</p>}
       </>}
     </section>
@@ -410,6 +418,28 @@ function EvidenceModal({ finding, onClose }: { finding: Finding; onClose: () => 
   </div>;
 }
 
+function DonationMessageEditor({ message, onChange }: { message: DonationMessage; onChange: (text: string) => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const isAgent = message.role === "assistant";
+  const isLong = message.text.length > 280 || message.text.split("\n").length > 4;
+  const expandedRows = Math.min(12, Math.max(4, Math.ceil(message.text.length / 72)));
+
+  return <div className={`bundle-message ${isAgent ? "assistant" : "user"}`}>
+    <span className="bundle-role">{isAgent ? "Agent" : "You"}</span>
+    <div className="bundle-bubble">
+      <textarea
+        aria-label={`${isAgent ? "Agent" : "Your"} message`}
+        className={expanded ? "expanded" : "collapsed"}
+        value={message.text}
+        onChange={(event) => onChange(event.target.value)}
+        rows={expanded ? expandedRows : 3}
+        wrap="soft"
+      />
+      {isLong && <button type="button" onClick={() => setExpanded((value) => !value)}>{expanded ? "Show less" : "Show full message"}</button>}
+    </div>
+  </div>;
+}
+
 function DonationView({ sessions, initialSelected, onBack }: { sessions: Session[]; initialSelected: Set<string>; onBack: () => void }) {
   const [chosen, setChosen] = useState(new Set(initialSelected));
   const [bundle, setBundle] = useState<Donation | null>(null);
@@ -461,7 +491,7 @@ function DonationView({ sessions, initialSelected, onBack }: { sessions: Session
         {!bundle ? <div className="preview-placeholder"><span>⌁</span><p>Your exact redacted bundle will appear here.</p></div> : <>
           <div className="redaction-banner"><strong>{bundle.detectionCount} likely sensitive item{bundle.detectionCount === 1 ? "" : "s"} removed</strong><span>Secrets, emails, phone numbers, home paths, and code blocks</span></div>
           <div className="manual-redact"><input value={manualTerm} onChange={(e) => setManualTerm(e.target.value)} placeholder="Text to remove everywhere" aria-label="Text to remove" /><button onClick={removeTerm}>Remove text</button></div>
-          <div className="bundle-preview">{bundle.sessions.map((session, si) => <div className="bundle-session" key={session.sessionId}><h3>{session.label}<small>{session.messages.length} messages</small></h3>{session.messages.map((message, mi) => <label key={mi}><span>{message.role === "assistant" ? "Agent" : "You"}</span><textarea value={message.text} onChange={(e) => editMessage(si, mi, e.target.value)} rows={Math.min(6, Math.max(2, Math.ceil(message.text.length / 90)))} /></label>)}</div>)}</div>
+          <div className="bundle-preview">{bundle.sessions.map((session, si) => <div className="bundle-session" key={session.sessionId}><h3>{session.label}<small>{session.messages.length} messages</small></h3><div className="bundle-chat">{session.messages.map((message, mi) => <DonationMessageEditor key={mi} message={message} onChange={(text) => editMessage(si, mi, text)} />)}</div></div>)}</div>
           <div className="donation-step consent-step"><span>3</span><div><h2>Consent separately</h2><p>This consent applies only to the file you reviewed above.</p></div></div>
           <label className="consent"><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} /><span>I consent to donate this reviewed, redacted bundle for AI-behavior research. I understand this prototype only saves it locally and does not transmit it.</span></label>
           <button className="export-button" disabled={!consent} onClick={exportBundle}>Export donation bundle locally <span>↓</span></button>
