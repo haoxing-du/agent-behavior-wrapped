@@ -34,12 +34,20 @@ function fmtUsd(value: number) {
   return `$${value.toFixed(2)}`;
 }
 
+function fmtEquivalent(value: number, unitCost: number) {
+  const count = value / unitCost;
+  if (count >= 100) return Math.round(count).toLocaleString();
+  if (count >= 10) return count.toFixed(1);
+  if (count >= 1) return count.toFixed(1);
+  return count.toFixed(2);
+}
+
 function costEquivalents(value: number) {
   return [
-    { label: "Happy Meals", value: Math.round(value / 6).toLocaleString() },
-    { label: "oat-milk lattes", value: Math.round(value / 6.5).toLocaleString() },
-    { label: "mechanical keyboards", value: (value / 159).toFixed(value >= 159 ? 1 : 2) },
-    { label: "years of Spotify Premium", value: (value / 144).toFixed(value >= 144 ? 1 : 2) },
+    { label: "iPhones (~$1,000)", value: fmtEquivalent(value, 1_000) },
+    { label: "months of Claude/Codex ($200)", value: fmtEquivalent(value, 200) },
+    { label: "$20 hardcover books", value: fmtEquivalent(value, 20) },
+    { label: "Starbucks lattes (~$6.50)", value: fmtEquivalent(value, 6.5) },
   ];
 }
 
@@ -116,9 +124,9 @@ function SharedWrapped({ id }: { id: string }) {
     const agents = report.stats.agents || [{ agent: "claude", name: "Claude Code", count: report.stats.sessions, percentage: 100 }, { agent: "codex", name: "Codex", count: 0, percentage: 0 }];
     const leader = [...agents].sort((left, right) => right.count - left.count)[0];
     const topModel = report.stats.models?.[0] || { name: "Model unavailable", percentage: 0 };
-    const gettysburgCount = Math.round((report.stats.tokens || 0) / 363);
+    const harryPotterSeriesCount = fmtEquivalent(report.stats.tokens || 0, 1_450_000);
     return [
-    { kicker: "This month you went through", headline: fmtCompact(report.stats.tokens || 0), detail: `tokens. That’s the Gettysburg Address ${gettysburgCount.toLocaleString()} times over.`, tone: "ice", metric: true },
+    { kicker: "This month you went through", headline: fmtCompact(report.stats.tokens || 0), detail: `tokens. That’s the complete Harry Potter series roughly ${harryPotterSeriesCount} times over.`, tone: "ice", metric: true },
     { kicker: "Your tokens were worth", headline: fmtUsd(report.stats.estimatedCostUsd || 0), detail: "API-equivalent retail estimate—not your bill.", tone: "cost", rows: costEquivalents(report.stats.estimatedCostUsd || 0) },
     { kicker: "Your most-used agent", headline: leader.name, detail: `${leader.count} of ${report.stats.sessions} selected sessions.`, tone: "agents", rows: agents.map((agent) => ({ label: agent.name, value: `${agent.percentage.toFixed(1)}%`, percentage: agent.percentage })) },
     { kicker: "Your top models", headline: `${topModel.percentage.toFixed(1)}%`, detail: `went to your #1 · ${topModel.name}`, tone: "models", rows: (report.stats.models || []).slice(0, 4).map((model, index) => ({ label: `${index + 1}  ${model.name}`, value: `${model.percentage.toFixed(1)}%`, percentage: model.percentage })) },
