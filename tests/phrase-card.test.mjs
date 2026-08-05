@@ -32,6 +32,25 @@ test("keeps safe single-occurrence candidates when a small selection has no repe
   assert.equal(candidates[0].distinct_sessions, 1);
 });
 
+test("requires five tokens and rejects dangling or predictably truncated endings", () => {
+  const records = [
+    "I will carefully inspect the build output before answering.",
+    "I will carefully inspect the test output before answering.",
+    "I will carefully inspect the log output before answering.",
+  ].map((content) => ({ type: "assistant", message: { content } }));
+  const candidates = buildPhraseCandidates([{ sessionId: "boundaries", records }]);
+  assert.ok(candidates.length > 0);
+  assert.ok(candidates.every((candidate) => candidate.phrase.split(" ").length >= 5));
+  assert.equal(candidates.some((candidate) => candidate.phrase === "i will carefully inspect the"), false);
+  assert.equal(candidates.some((candidate) => candidate.phrase === "i will carefully inspect the build"), false);
+});
+
+test("treats punctuation-delimited clauses as complete phrase boundaries", () => {
+  const records = Array.from({ length: 3 }, () => ({ type: "assistant", message: { content: "You're right to push back, and I'll inspect the evidence carefully." } }));
+  const candidates = buildPhraseCandidates([{ sessionId: "clauses", records }]);
+  assert.ok(candidates.some((candidate) => candidate.phrase === "you're right to push back"));
+});
+
 test("resolves Nemotron's candidate ID locally instead of accepting invented wording or counts", async () => {
   const candidate = buildPhraseCandidates(fixtureRecords())[0];
   let outbound;
@@ -81,4 +100,10 @@ test("rejects ordinary text that mentions more than one supplied candidate ID", 
   const second = { ...first, candidate_id: "phrase-2", phrase: "another safe candidate" };
   const fetchImpl = async () => new Response(JSON.stringify({ choices: [{ message: { content: "Either phrase-1 or phrase-2." } }] }), { status: 200, headers: { "content-type": "application/json" } });
   await assert.rejects(judgePhraseCard([first, second], "test-key", { fetchImpl }), /exactly one supplied phrase candidate/);
+});
+
+test("times out a stalled phrase judge request instead of waiting indefinitely", async () => {
+  const candidate = buildPhraseCandidates(fixtureRecords())[0];
+  const fetchImpl = async () => { const error = new Error("stalled"); error.name = "TimeoutError"; throw error; };
+  await assert.rejects(judgePhraseCard([candidate], "test-key", { fetchImpl, timeoutMs: 1_000 }), /timed out after 1 seconds/);
 });

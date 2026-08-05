@@ -102,7 +102,7 @@ const server = http.createServer(async (request, response) => {
       if (url.pathname === "/api/analyze") {
         const analyzed = analyzeSessions(records);
         if (!process.env.OPENROUTER_API_KEY) return json(response, 400, { error: "Restart with OPENROUTER_API_KEY set. Every Wrapped includes the Nemotron phrase card." });
-        const candidates = buildPhraseCandidates(records);
+        const candidates = buildPhraseCandidates(records, { maximumCandidates: 120 });
         analyzed.phraseCard = await judgePhraseCard(candidates, process.env.OPENROUTER_API_KEY);
         return json(response, 200, analyzed);
       }

@@ -6,6 +6,10 @@ export const PHRASE_JUDGE_NAME = "Nemotron 3 Ultra";
 const segmenter = new Intl.Segmenter("en", { granularity: "sentence" });
 const stopwords = new Set("a an and are as at be been but by can could did do does for from had has have he her here him his how i if in into is it its just may me more my no not of on or our out please she should so some than that the their them then there these they this those to up us was we were what when where which who why will with would you your".split(" "));
 const blockedTokens = new Set(["credential", "email", "number", "person", "redacted", "removed", "secret", "ssn"]);
+const danglingEndTokens = new Set("a an and are as at be been being but by can could did do does for from had has have if in into is may might must of on or shall should so than that the then to was were when which while who whose will with would yet i'll you'll he'll she'll we'll they'll i'd you'd he'd she'd we'd they'd i've you've we've they've i'm you're he's she's we're they're let's".split(" "));
+const MIN_PHRASE_TOKENS = 5;
+const MAX_PHRASE_TOKENS = 10;
+const PHRASE_JUDGE_TIMEOUT_MS = 60_000;
 
 function visibleText(record) {
   const content = record?.message?.content ?? record?.content;
@@ -45,28 +49,46 @@ export function buildPhraseCandidates(sessionRecords, { maximumCandidates = 240 
       if (record.type !== "assistant" || record.isApiErrorMessage || record?.message?.model === "<synthetic>") continue;
       const prose = cleanText(visibleText(record));
       if (!prose.trim()) continue;
-      let sentenceIndex = 0;
+      let clauseIndex = 0;
       for (const part of segmenter.segment(prose)) {
-        const sentenceTokens = tokens(part.segment);
-        for (let length = 3; length <= Math.min(8, sentenceTokens.length); length++) {
-          for (let offset = 0; offset + length <= sentenceTokens.length; offset++) {
-            const slice = sentenceTokens.slice(offset, offset + length);
-            if (slice.some((token) => blockedTokens.has(token))) continue;
-            if (slice.filter((token) => !stopwords.has(token)).length < 2) continue;
-            const phrase = slice.join(" ");
-            let item = counts.get(phrase);
-            if (!item) counts.set(phrase, item = { phrase, occurrences: 0, sessions: new Set(), openingOccurrences: 0 });
-            item.occurrences++;
-            item.sessions.add(sessionIndex);
-            if (sentenceIndex === 0 && offset === 0) item.openingOccurrences++;
+        const clauses = part.segment.split(/(?:[;:—–]|\n+|,(?=\s+(?:and|but|or|so|yet)\b))/i);
+        for (const clause of clauses) {
+          const sentenceTokens = tokens(clause);
+          for (let length = MIN_PHRASE_TOKENS; length <= Math.min(MAX_PHRASE_TOKENS, sentenceTokens.length); length++) {
+            for (let offset = 0; offset + length <= sentenceTokens.length; offset++) {
+              const slice = sentenceTokens.slice(offset, offset + length);
+              if (slice.some((token) => blockedTokens.has(token))) continue;
+              if (slice.filter((token) => !stopwords.has(token)).length < 2) continue;
+              const phrase = slice.join(" ");
+              let item = counts.get(phrase);
+              if (!item) counts.set(phrase, item = { phrase, occurrences: 0, sessions: new Set(), openingOccurrences: 0, startBoundaryOccurrences: 0, endBoundaryOccurrences: 0, previousTokens: new Map(), nextTokens: new Map() });
+              item.occurrences++;
+              item.sessions.add(sessionIndex);
+              if (clauseIndex === 0 && offset === 0) item.openingOccurrences++;
+              if (offset === 0) item.startBoundaryOccurrences++;
+              if (offset + length === sentenceTokens.length) item.endBoundaryOccurrences++;
+              const previous = sentenceTokens[offset - 1];
+              const next = sentenceTokens[offset + length];
+              if (previous) item.previousTokens.set(previous, (item.previousTokens.get(previous) || 0) + 1);
+              if (next) item.nextTokens.set(next, (item.nextTokens.get(next) || 0) + 1);
+            }
           }
+          clauseIndex++;
         }
-        sentenceIndex++;
       }
     }
   }
 
   const allRanked = [...counts.values()]
+    .filter((item) => {
+      if (danglingEndTokens.has(item.phrase.split(" ").at(-1))) return false;
+      const startBoundaryRate = item.startBoundaryOccurrences / item.occurrences;
+      const endBoundaryRate = item.endBoundaryOccurrences / item.occurrences;
+      const previousDominance = Math.max(0, ...item.previousTokens.values()) / item.occurrences;
+      const nextDominance = Math.max(0, ...item.nextTokens.values()) / item.occurrences;
+      return (startBoundaryRate >= 0.5 || previousDominance < 0.6)
+        && (endBoundaryRate >= 0.4 || nextDominance < 0.6);
+    })
     .sort((left, right) => right.sessions.size - left.sessions.size || right.occurrences - left.occurrences || right.phrase.split(" ").length - left.phrase.split(" ").length);
   const repeated = allRanked.filter((item) => (item.sessions.size >= 2 && item.occurrences >= 2) || item.occurrences >= 3);
   const ranked = repeated.length ? repeated : allRanked;
@@ -86,6 +108,8 @@ export function buildPhraseCandidates(sessionRecords, { maximumCandidates = 240 
     occurrences: item.occurrences,
     distinct_sessions: item.sessions.size,
     opening_rate: Number((item.openingOccurrences / item.occurrences).toFixed(4)),
+    start_boundary_rate: Number((item.startBoundaryOccurrences / item.occurrences).toFixed(4)),
+    end_boundary_rate: Number((item.endBoundaryOccurrences / item.occurrences).toFixed(4)),
   }));
 }
 
@@ -119,7 +143,7 @@ function extractCandidateId(body, candidates) {
   return matches.length === 1 ? matches[0] : null;
 }
 
-export async function judgePhraseCard(candidates, apiKey, { fetchImpl = fetch, model = OPENROUTER_MODEL } = {}) {
+export async function judgePhraseCard(candidates, apiKey, { fetchImpl = fetch, model = OPENROUTER_MODEL, timeoutMs = PHRASE_JUDGE_TIMEOUT_MS } = {}) {
   if (!apiKey) throw new Error("OPENROUTER_API_KEY is required for the standard phrase card.");
   if (!candidates.length) throw new Error("Not enough repeated, share-safe phrases were found for a phrase card.");
   const payload = JSON.stringify(candidates);
@@ -128,6 +152,7 @@ export async function judgePhraseCard(candidates, apiKey, { fetchImpl = fetch, m
   const request = {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}`, "x-title": "Behavior Wrapped" },
+    signal: AbortSignal.timeout(timeoutMs),
     body: JSON.stringify({
       model,
       temperature: 0,
@@ -151,7 +176,13 @@ export async function judgePhraseCard(candidates, apiKey, { fetchImpl = fetch, m
       },
     }),
   };
-  const response = await fetchImpl("https://openrouter.ai/api/v1/chat/completions", request);
+  let response;
+  try {
+    response = await fetchImpl("https://openrouter.ai/api/v1/chat/completions", request);
+  } catch (error) {
+    if (error?.name === "TimeoutError" || error?.name === "AbortError") throw new Error(`${PHRASE_JUDGE_NAME} timed out after ${Math.round(timeoutMs / 1000)} seconds.`);
+    throw error;
+  }
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(`OpenRouter API ${response.status}: ${body?.error?.message || "request failed"}`);
   const candidateId = extractCandidateId(body, candidates);
