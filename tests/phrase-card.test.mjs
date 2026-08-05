@@ -32,7 +32,7 @@ test("keeps safe single-occurrence candidates when a small selection has no repe
   assert.equal(candidates[0].distinct_sessions, 1);
 });
 
-test("requires five tokens and rejects dangling or predictably truncated endings", () => {
+test("requires four tokens and rejects dangling or predictably truncated endings", () => {
   const records = [
     "I will carefully inspect the build output before answering.",
     "I will carefully inspect the test output before answering.",
@@ -40,7 +40,7 @@ test("requires five tokens and rejects dangling or predictably truncated endings
   ].map((content) => ({ type: "assistant", message: { content } }));
   const candidates = buildPhraseCandidates([{ sessionId: "boundaries", records }]);
   assert.ok(candidates.length > 0);
-  assert.ok(candidates.every((candidate) => candidate.phrase.split(" ").length >= 5));
+  assert.ok(candidates.every((candidate) => candidate.phrase.split(" ").length >= 4));
   assert.equal(candidates.some((candidate) => candidate.phrase === "i will carefully inspect the"), false);
   assert.equal(candidates.some((candidate) => candidate.phrase === "i will carefully inspect the build"), false);
 });
@@ -49,6 +49,12 @@ test("treats punctuation-delimited clauses as complete phrase boundaries", () =>
   const records = Array.from({ length: 3 }, () => ({ type: "assistant", message: { content: "You're right to push back, and I'll inspect the evidence carefully." } }));
   const candidates = buildPhraseCandidates([{ sessionId: "clauses", records }]);
   assert.ok(candidates.some((candidate) => candidate.phrase === "you're right to push back"));
+});
+
+test("keeps complete four-token phrases", () => {
+  const records = Array.from({ length: 3 }, () => ({ type: "assistant", message: { content: "Check the output carefully." } }));
+  const candidates = buildPhraseCandidates([{ sessionId: "four-token-phrase", records }]);
+  assert.ok(candidates.some((candidate) => candidate.phrase === "check the output carefully"));
 });
 
 test("caps the judge payload at 100 phrase candidates", () => {
