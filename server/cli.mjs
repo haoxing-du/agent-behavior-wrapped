@@ -18,13 +18,15 @@ const command = process.argv[2];
 const muted = "\x1b[2m"; const bright = "\x1b[1m"; const lime = "\x1b[38;2;201;242;75m"; const purple = "\x1b[38;2;141;92;255m"; const reset = "\x1b[0m";
 
 const mark = `${lime}
-       ◆
-      ◆◆◆
-    ◆◆◆◆◆◆
-   ◆◆◆◆◆◆◆◆
-     ◆◆◆◆◆◆
-       ◆◆◆
-        ◆${reset}`;
+       ╭──╮ ╭──╮
+       ╰╮ ╰─╯ ╭╯
+        ╰╮   ╭╯
+    ╭────┴───┴────╮
+    │  ${purple}●     ●${lime}  │
+    │     ╰─╯     │
+    ├──────┬──────┤
+    │      │      │
+    ╰──────┴──────╯${reset}`;
 
 function formatNumber(value) {
   if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`;
