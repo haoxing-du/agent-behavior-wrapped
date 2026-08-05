@@ -65,7 +65,7 @@ function displayModelName(value) {
     .replace(/^gpt-/i, "GPT-")
     .replace(/-(\d+)-(\d+)(?=$|-)/g, "$1.$2")
     .replace(/-/g, " ")
-    .replace(/\b(opus|sonnet|haiku|sol|luna)\b/gi, (word) => word[0].toUpperCase() + word.slice(1).toLowerCase());
+    .replace(/\b[a-z]+\b/gi, (word) => word.toLowerCase() === "gpt" ? "GPT" : word[0].toUpperCase() + word.slice(1).toLowerCase());
 }
 
 function ratesFor(model, agent) {

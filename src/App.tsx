@@ -30,6 +30,10 @@ function fmtCompact(value: number) {
   return String(value);
 }
 
+function hasDisplayablePercentage(value: number) {
+  return Number.isFinite(value) && Number(value.toFixed(1)) > 0;
+}
+
 function fmtUsd(value: number) {
   if (value >= 10) return `$${Math.round(value).toLocaleString()}`;
   return `$${value.toFixed(2)}`;
@@ -139,9 +143,9 @@ function SharedWrapped({ id }: { id: string }) {
   const slides = useMemo<StorySlide[]>(() => {
     if (!report) return [];
     const agents = report.stats.agents?.length ? report.stats.agents : [{ agent: "claude" as const, name: "Claude Code", count: report.stats.sessions, percentage: 100 }];
-    const activeAgents = agents.filter((agent) => Number(agent.percentage.toFixed(1)) > 0);
+    const activeAgents = agents.filter((agent) => hasDisplayablePercentage(agent.percentage));
     const leader = [...activeAgents].sort((left, right) => right.count - left.count)[0];
-    const activeModels = (report.stats.models || []).filter((model) => Number(model.percentage.toFixed(1)) > 0);
+    const activeModels = (report.stats.models || []).filter((model) => hasDisplayablePercentage(model.percentage));
     const topModel = activeModels[0];
     const harryPotterSeriesCount = fmtSeriesEquivalent(report.stats.tokens || 0, 1_450_000);
     const wrappedSlides: StorySlide[] = [

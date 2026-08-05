@@ -75,6 +75,14 @@ test("averages human inputs and complete agent responses across tool-use records
   assert.equal(report.stats.averageUserInputWords, 2);
 });
 
+test("title-cases model families that are not hardcoded", () => {
+  const report = analyzeSessions([{ sessionId: "new-model-family", records: [
+    { type: "user", message: { content: "Hello" } },
+    { type: "assistant", message: { model: "claude-fable-5", content: "Hi", usage: { input_tokens: 10, output_tokens: 5 } } },
+  ] }]);
+  assert.equal(report.stats.models[0].name, "Claude Fable 5");
+});
+
 test("uses an inclusive rolling 30-day default window", () => {
   const sessions = [{ startedAt: "2026-07-06T00:00:00.000Z" }, { startedAt: "2026-07-07T00:00:00.000Z" }, { startedAt: "2026-08-05T00:00:00.000Z" }];
   const range = defaultDateRange(sessions, { now: new Date("2026-08-05T12:00:00.000Z") });
