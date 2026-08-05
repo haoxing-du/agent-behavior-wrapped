@@ -2,15 +2,16 @@
 
 A local-first, macOS prototype that discovers Claude Code history in `~/.claude/projects` and Codex history in `~/.codex/sessions` plus `~/.codex/archived_sessions`, analyzes selected sessions on-device, and serves a private Wrapped-style report at localhost.
 
-## One-command flow
+## Run it
 
 Requires Node.js 20 or newer.
 
 ```bash
-npm install
-npm run build
-npm run wrapped
+export OPENROUTER_API_KEY='your-key'
+npx agent-behavior-wrapped@latest
 ```
+
+Nothing is installed globally. To try it without reading your real session history, add `--demo` to use only the bundled synthetic fixtures.
 
 The command automatically scans both agents, selects sessions from the latest 30-day rolling window, creates a share-safe snapshot, prints a stable local URL such as `http://127.0.0.1:4317/w/…`, starts the local viewer when needed, and opens the Wrapped slideshow. Use `--days=N` to change the CLI window; the private dashboard also exposes exact date controls.
 
@@ -18,7 +19,7 @@ The shareable deck starts with four deterministic usage cards: token volume, est
 
 The final slideshow card offers an optional research-donation review. It opens a private page with the Wrapped's sessions preselected, automatic redactions, editable message text, separate consent, and local-only bundle export.
 
-Use `npm run wrapped -- --demo` to generate a Wrapped from synthetic fixtures. Add `--no-open` to leave the browser closed.
+When developing from this repository, run `npm install`, then `npm run wrapped`. Add `--demo` to use synthetic fixtures or `--no-open` to leave the browser closed.
 
 Every Wrapped includes a “Your agent said … N times” slide chosen by the free Nemotron 3 Ultra model through OpenRouter. Add your key to the environment before launching:
 
@@ -36,8 +37,6 @@ Saved reports are managed with:
 ./server/cli.mjs open <id>
 ./server/cli.mjs delete <id>
 ```
-
-After publishing as an npm package, the same binary is ready for an `npx agent-behavior-wrapped@latest` flow.
 
 ## Private dashboard
 
@@ -75,7 +74,6 @@ The in-app phrase judge sends only redacted aggregate phrase candidates—not tr
 - Behavioral findings are transparent heuristics, not calibrated diagnoses.
 - Research donation exports a reviewed local bundle but does not upload it.
 - Public sharing is a local preview; hosted publishing and account management are not implemented.
-- The project is intentionally marked private in `package.json` until its npm package name and release process are finalized.
 
 ## License
 
