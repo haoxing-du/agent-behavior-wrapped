@@ -158,7 +158,7 @@ function SharedWrapped({ id }: { id: string }) {
       <button className="story-arrow prev" disabled={slide === 0} onClick={() => setSlide(slide - 1)} aria-label="Previous slide">‹</button>
       <button className="story-arrow next" disabled={slide === slides.length - 1} onClick={() => setSlide(slide + 1)} aria-label="Next slide">›</button>
     </section>
-    <div className="story-actions"><button onClick={copyLink}>{copied ? "Copied" : "Copy local link"}</button><button onClick={() => downloadSlide(report, slide, current.headline, current.detail)}>Download image</button><a href="/">Refine privately</a></div>
+    <div className="story-actions"><button onClick={copyLink}>{copied ? "Copied" : "Copy local link"}</button><button onClick={() => downloadSlide(report, slide, current.headline, current.detail)}>Download image</button></div>
     <p className="story-foot"><ShieldIcon /> Share-safe local page · no transcript text · nothing published</p>
   </main>;
 }
