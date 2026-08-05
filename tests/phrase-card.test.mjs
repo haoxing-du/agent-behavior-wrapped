@@ -51,6 +51,13 @@ test("treats punctuation-delimited clauses as complete phrase boundaries", () =>
   assert.ok(candidates.some((candidate) => candidate.phrase === "you're right to push back"));
 });
 
+test("caps the judge payload at 100 phrase candidates", () => {
+  const wordFor = (number) => `word${String.fromCharCode(97 + Math.floor(number / 26))}${String.fromCharCode(97 + number % 26)}`;
+  const records = Array.from({ length: 120 }, (_, index) => ({ type: "assistant", message: { content: `Alpha beta gamma ${wordFor(index)} complete.` } }));
+  const candidates = buildPhraseCandidates([{ sessionId: "many-candidates", records }], { maximumCandidates: 500 });
+  assert.equal(candidates.length, 100);
+});
+
 test("resolves Nemotron's candidate ID locally instead of accepting invented wording or counts", async () => {
   const candidate = buildPhraseCandidates(fixtureRecords())[0];
   let outbound;

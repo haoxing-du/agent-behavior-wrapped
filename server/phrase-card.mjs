@@ -9,6 +9,7 @@ const blockedTokens = new Set(["credential", "email", "number", "person", "redac
 const danglingEndTokens = new Set("a an and are as at be been being but by can could did do does for from had has have if in into is may might must of on or shall should so than that the then to was were when which while who whose will with would yet i'll you'll he'll she'll we'll they'll i'd you'd he'd she'd we'd they'd i've you've we've they've i'm you're he's she's we're they're let's".split(" "));
 const MIN_PHRASE_TOKENS = 5;
 const MAX_PHRASE_TOKENS = 10;
+const MAX_PHRASE_CANDIDATES = 100;
 const PHRASE_JUDGE_TIMEOUT_MS = 60_000;
 
 function visibleText(record) {
@@ -42,7 +43,8 @@ function containsTokens(container, contained) {
   return false;
 }
 
-export function buildPhraseCandidates(sessionRecords, { maximumCandidates = 240 } = {}) {
+export function buildPhraseCandidates(sessionRecords, { maximumCandidates = MAX_PHRASE_CANDIDATES } = {}) {
+  const candidateLimit = Math.min(maximumCandidates, MAX_PHRASE_CANDIDATES);
   const counts = new Map();
   for (let sessionIndex = 0; sessionIndex < sessionRecords.length; sessionIndex++) {
     for (const record of sessionRecords[sessionIndex].records) {
@@ -100,7 +102,7 @@ export function buildPhraseCandidates(sessionRecords, { maximumCandidates = 240 
       return nested && occurrenceRatio >= 0.72;
     });
     if (!redundant) selected.push(row);
-    if (selected.length === maximumCandidates) break;
+    if (selected.length === candidateLimit) break;
   }
   return selected.map((item, index) => ({
     candidate_id: `phrase-${index + 1}`,
