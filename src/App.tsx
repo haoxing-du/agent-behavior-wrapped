@@ -9,7 +9,7 @@ type PhraseCard = { phrase: string; occurrences: number; distinctSessions: numbe
 type AgentStat = { agent: "claude" | "codex"; name: string; count: number; percentage: number };
 type ModelStat = { model: string; name: string; tokens: number; percentage: number };
 type InteractionTone = { frustratedMessages: number; gratefulMessages: number; analyzedMessages: number; method?: string };
-type InteractionCard = { quote?: string; frustrationQuote?: string | null; gratitudeQuote?: string | null };
+type InteractionCard = { quote?: string; frustrationQuote?: string | null };
 type LanguageStat = { language: string; words: number; percentage: number };
 type TopicStat = { topic: string; prompts: number; percentage: number };
 type Report = { stats: { sessions: number; activeDays: number; durationMinutes: number; prompts: number; toolCalls: number; interruptions: number; tokens: number; agentWords?: number; userWords?: number; agentUserWordRatio?: number | null; averageAgentResponseWords?: number; averageUserInputWords?: number; interactionTone?: InteractionTone; outputLanguages?: LanguageStat[]; topics?: TopicStat[]; tools: { name: string; count: number }[]; agents: AgentStat[]; models: ModelStat[]; estimatedCostUsd: number; costEstimateMethod: string }; findings: Finding[]; phraseCard?: PhraseCard | null; interactionCard?: InteractionCard | null };
@@ -176,7 +176,7 @@ function SharedWrapped({ id }: { id: string }) {
     ...(Number.isFinite(report.stats.averageAgentResponseWords) ? [{ kicker: "On average, your agent responded with", headline: `${report.stats.averageAgentResponseWords!.toLocaleString()} words`, detail: `Your average input was ${report.stats.averageUserInputWords!.toLocaleString()} words.`, tone: "violet" }] : []),
     ...(interactionTone && interactionTone.frustratedMessages + interactionTone.gratefulMessages > 0 ? [{ kicker: "", headline: "", detail: "", tone: "social", comparison: [
       { label: "You yelled at your agent", value: interactionTone.frustratedMessages.toLocaleString(), suffix: `time${interactionTone.frustratedMessages === 1 ? "" : "s"}`, quote: report.interactionCard?.frustrationQuote || report.interactionCard?.quote },
-      { label: "You thanked your agent", value: interactionTone.gratefulMessages.toLocaleString(), suffix: `time${interactionTone.gratefulMessages === 1 ? "" : "s"}`, quote: report.interactionCard?.gratitudeQuote || undefined },
+      { label: "You thanked your agent", value: interactionTone.gratefulMessages.toLocaleString(), suffix: `time${interactionTone.gratefulMessages === 1 ? "" : "s"}` },
     ] }] : []),
     ...(showLanguages && languages[0] ? [{ kicker: "Your agent’s output was mostly", headline: languages[0].language, detail: `${languages[0].percentage.toFixed(1)}% of its natural-language words.`, tone: "languages", rows: languages.slice(0, 4).map((item) => ({ label: item.language, value: `${item.percentage.toFixed(1)}%`, percentage: item.percentage })) }] : []),
     ...(topTopic ? [{ kicker: "Your #1 use for agents was", headline: topTopic.topic, detail: `${topTopic.prompts.toLocaleString()} of ${report.stats.prompts.toLocaleString()} prompts.`, tone: "topics", rows: displayTopics.slice(0, 5).map((item) => ({ label: item.topic === "Other" ? "Everything else" : item.topic, value: `${item.percentage.toFixed(1)}%`, percentage: item.percentage })) }] : []),
@@ -367,7 +367,7 @@ function PrivacyPanel() {
     <div>
       <span className="eyebrow">Privacy, by construction</span>
       <h3>Your transcripts stay on this Mac.</h3>
-      <p>Transcript parsing and behavior analysis run inside this local app. Full transcripts, code, and tool outputs stay on this Mac; only redacted recurring-phrase and interaction-quote candidates, counts, and a random client ID go through the Behavior Wrapped relay to OpenRouter.</p>
+      <p>Transcript parsing and behavior analysis run inside this local app. Full transcripts, code, and tool outputs stay on this Mac; only redacted recurring-phrase and frustration-quote candidates, counts, and a random client ID go through the Behavior Wrapped relay to OpenRouter.</p>
       <div className="privacy-facts"><span>✓ No account</span><span>✓ No telemetry</span><span>✓ Only redacted phrase aggregates leave</span></div>
     </div>
   </aside>;
@@ -464,7 +464,7 @@ function Selection({ catalog, selected, setSelected, onAnalyze, loading, error }
 
         <div className={`judge-option judge-required ${catalog.phraseJudge?.available ? "" : "unavailable"}`}>
           <span className="network-mark">↗</span>
-          <span><strong>Nemotron picks the favorite phrase and best interaction quotes</strong><small>Every analysis sends only redacted phrase, frustration, and gratitude candidates plus counts and a random client ID—not transcripts—through our rate-limited relay to OpenRouter’s free NVIDIA endpoint.</small></span>
+          <span><strong>Nemotron picks the favorite phrase and funniest call-out</strong><small>Every analysis sends only redacted phrase and frustration candidates plus counts and a random client ID—not transcripts—through our rate-limited relay to OpenRouter’s free NVIDIA endpoint.</small></span>
           <em>Nemotron 3 Ultra · shared relay</em>
         </div>
 

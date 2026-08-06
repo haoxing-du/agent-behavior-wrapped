@@ -21,7 +21,7 @@ function reportFixture() {
     },
     findings: [{ id: "finding-1", kind: "scope", title: "Expanded scope", summary: "Generalized signal", confidence: { score: 0.7, label: "Medium" } }],
     phraseCard: { phrase: "let me check that carefully", occurrences: 7, distinctSessions: 3 },
-    interactionCard: { frustrationQuote: "Dude, come on, this is not what I asked for!", gratitudeQuote: "Thank you, this genuinely made my day!", method: "private judge detail" },
+    interactionCard: { frustrationQuote: "Dude, come on, this is not what I asked for!", method: "private judge detail" },
   };
 }
 
@@ -36,7 +36,7 @@ test("sanitizes a hosted report to a strict share-safe shape", () => {
   assert.deepEqual(safe.stats.interactionTone, { frustratedMessages: 3, gratefulMessages: 7, analyzedMessages: 20 });
   assert.deepEqual(safe.stats.outputLanguages.map((item) => item.language), ["English", "Spanish"]);
   assert.deepEqual(safe.stats.topics.map((item) => item.topic), ["Coding", "Writing"]);
-  assert.deepEqual(safe.interactionCard, { frustrationQuote: "Dude, come on, this is not what I asked for!", gratitudeQuote: "Thank you, this genuinely made my day!" });
+  assert.deepEqual(safe.interactionCard, { frustrationQuote: "Dude, come on, this is not what I asked for!" });
   assert.equal(serialized.includes("private implementation detail"), false);
   assert.equal(serialized.includes("private judge detail"), false);
 });

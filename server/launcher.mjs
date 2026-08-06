@@ -8,7 +8,7 @@ import { spawn } from "node:child_process";
 import { discoverAllSessions, readRecords, defaultDateRange, DEFAULT_WINDOW_DAYS } from "./discovery.mjs";
 import { analyzeSessions, makeDonationPreview } from "./analysis.mjs";
 import { buildPhraseCandidates, OPENROUTER_MODEL, PHRASE_JUDGE_NAME, PHRASE_JUDGE_RELAY_URL, judgePhraseCard, judgePhraseCardViaRelay } from "./phrase-card.mjs";
-import { buildFrustrationQuoteCandidates, buildGratitudeQuoteCandidates, FRUSTRATION_JUDGE_RELAY_URL, GRATITUDE_JUDGE_RELAY_URL, judgeFrustrationQuote, judgeFrustrationQuoteViaRelay, judgeGratitudeQuote, judgeGratitudeQuoteViaRelay } from "./frustration-card.mjs";
+import { buildFrustrationQuoteCandidates, FRUSTRATION_JUDGE_RELAY_URL, judgeFrustrationQuote, judgeFrustrationQuoteViaRelay } from "./frustration-card.mjs";
 import { getLeaderboardSnapshot, joinLeaderboard, leaderboardAggregateFromReport, LEADERBOARD_RELAY_ORIGIN, leaveLeaderboard, syntheticLeaderboardSnapshot } from "./leaderboard.mjs";
 import { getOrCreateClientId, loadReport } from "./store.mjs";
 
@@ -144,7 +144,6 @@ const server = http.createServer(async (request, response) => {
       if (url.pathname === "/api/analyze") {
         const candidates = buildPhraseCandidates(records, { maximumCandidates: 100 });
         const frustrationCandidates = buildFrustrationQuoteCandidates(records);
-        const gratitudeCandidates = buildGratitudeQuoteCandidates(records);
         const phraseCardPromise = process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
           ? judgePhraseCard(candidates, process.env.OPENROUTER_API_KEY)
           : judgePhraseCardViaRelay(candidates, { endpoint: process.env.BEHAVIOR_WRAPPED_JUDGE_URL || PHRASE_JUDGE_RELAY_URL, clientId: getOrCreateClientId() });
@@ -153,15 +152,10 @@ const server = http.createServer(async (request, response) => {
             ? judgeFrustrationQuote(frustrationCandidates, process.env.OPENROUTER_API_KEY)
             : judgeFrustrationQuoteViaRelay(frustrationCandidates, { endpoint: process.env.BEHAVIOR_WRAPPED_FRUSTRATION_JUDGE_URL || FRUSTRATION_JUDGE_RELAY_URL, clientId: getOrCreateClientId() })
           : Promise.resolve(null);
-        const gratitudeCardPromise = gratitudeCandidates.length
-          ? process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
-            ? judgeGratitudeQuote(gratitudeCandidates, process.env.OPENROUTER_API_KEY)
-            : judgeGratitudeQuoteViaRelay(gratitudeCandidates, { endpoint: process.env.BEHAVIOR_WRAPPED_GRATITUDE_JUDGE_URL || GRATITUDE_JUDGE_RELAY_URL, clientId: getOrCreateClientId() })
-          : Promise.resolve(null);
         const analyzed = analyzeSessions(records);
-        const [phraseCard, frustrationCard, gratitudeCard] = await Promise.all([phraseCardPromise, interactionCardPromise, gratitudeCardPromise]);
+        const [phraseCard, frustrationCard] = await Promise.all([phraseCardPromise, interactionCardPromise]);
         analyzed.phraseCard = phraseCard;
-        analyzed.interactionCard = frustrationCard || gratitudeCard ? { frustrationQuote: frustrationCard?.quote || null, gratitudeQuote: gratitudeCard?.quote || null } : null;
+        analyzed.interactionCard = frustrationCard ? { frustrationQuote: frustrationCard.quote } : null;
         return json(response, 200, analyzed);
       }
       const labels = new Map(publicCatalog().sessions.map((s) => [s.id, s]));
