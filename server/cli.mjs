@@ -7,6 +7,7 @@ import { discoverAllSessions, readRecords, sessionsInDefaultWindow, DEFAULT_WIND
 import { analyzeSessions } from "./analysis.mjs";
 import { buildPhraseCandidates, judgePhraseCard, judgePhraseCardViaRelay, PHRASE_JUDGE_NAME, PHRASE_JUDGE_RELAY_URL } from "./phrase-card.mjs";
 import { buildFrustrationQuoteCandidates, FRUSTRATION_JUDGE_RELAY_URL, judgeFrustrationQuote, judgeFrustrationQuoteViaRelay } from "./frustration-card.mjs";
+import { requestRemoteAnalysisConsent } from "./consent.mjs";
 import { deletePublicReport, publishPublicReport, PUBLIC_REPORT_ORIGIN } from "./public-report.mjs";
 import { createReportId, deleteReport, getOrCreateClientId, listReports, saveReport, storeRoot } from "./store.mjs";
 
@@ -95,6 +96,11 @@ async function createWrapped() {
   const catalog = discoverAllSessions(demo ? { claudeRoot: fixtureRoot, codexRoots: [codexFixtureRoot] } : undefined);
   const chosenSessions = sessionsInDefaultWindow(catalog.sessions, { days: windowDays, anchorLatest: demo });
   if (!chosenSessions.length) throw new Error(`No Claude Code or Codex sessions found in the last ${windowDays} days.`);
+  const consented = await requestRemoteAnalysisConsent();
+  if (!consented) {
+    console.log(`\n${muted}Nothing was sent or published.${reset}\n`);
+    return;
+  }
   process.stdout.write(`${muted}◇  Reading ${chosenSessions.length} local Claude Code + Codex sessions from the last ${windowDays} days…${reset}\r`);
   const sessionRecords = chosenSessions.map((publicSession) => {
     const session = catalog.index.get(publicSession.id);
