@@ -8,6 +8,7 @@ import { spawn } from "node:child_process";
 import { discoverAllSessions, readRecords, defaultDateRange, DEFAULT_WINDOW_DAYS } from "./discovery.mjs";
 import { analyzeSessions, makeDonationPreview } from "./analysis.mjs";
 import { buildPhraseCandidates, OPENROUTER_MODEL, PHRASE_JUDGE_NAME, PHRASE_JUDGE_RELAY_URL, judgePhraseCard, judgePhraseCardViaRelay } from "./phrase-card.mjs";
+import { buildFrustrationQuoteCandidates, FRUSTRATION_JUDGE_RELAY_URL, judgeFrustrationQuote, judgeFrustrationQuoteViaRelay } from "./frustration-card.mjs";
 import { getLeaderboardSnapshot, joinLeaderboard, leaderboardAggregateFromReport, LEADERBOARD_RELAY_ORIGIN, leaveLeaderboard, syntheticLeaderboardSnapshot } from "./leaderboard.mjs";
 import { getOrCreateClientId, loadReport } from "./store.mjs";
 
@@ -142,11 +143,17 @@ const server = http.createServer(async (request, response) => {
       if (!records.length) return json(response, 400, { error: "Choose at least one available session." });
       if (url.pathname === "/api/analyze") {
         const candidates = buildPhraseCandidates(records, { maximumCandidates: 100 });
+        const frustrationCandidates = buildFrustrationQuoteCandidates(records);
         const phraseCardPromise = process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
           ? judgePhraseCard(candidates, process.env.OPENROUTER_API_KEY)
           : judgePhraseCardViaRelay(candidates, { endpoint: process.env.BEHAVIOR_WRAPPED_JUDGE_URL || PHRASE_JUDGE_RELAY_URL, clientId: getOrCreateClientId() });
+        const interactionCardPromise = frustrationCandidates.length
+          ? process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
+            ? judgeFrustrationQuote(frustrationCandidates, process.env.OPENROUTER_API_KEY)
+            : judgeFrustrationQuoteViaRelay(frustrationCandidates, { endpoint: process.env.BEHAVIOR_WRAPPED_FRUSTRATION_JUDGE_URL || FRUSTRATION_JUDGE_RELAY_URL, clientId: getOrCreateClientId() })
+          : Promise.resolve(null);
         const analyzed = analyzeSessions(records);
-        analyzed.phraseCard = await phraseCardPromise;
+        [analyzed.phraseCard, analyzed.interactionCard] = await Promise.all([phraseCardPromise, interactionCardPromise]);
         return json(response, 200, analyzed);
       }
       const labels = new Map(publicCatalog().sessions.map((s) => [s.id, s]));

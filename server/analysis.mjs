@@ -1,11 +1,10 @@
 import crypto from "node:crypto";
 import { safeEvidenceText, redactText } from "./privacy.mjs";
+import { isFrustratedMessage } from "./frustration-card.mjs";
 
 const wordSegmenter = new Intl.Segmenter("en", { granularity: "word" });
 
 const gratitudePattern = /\b(?:thank(?:s| you)?|thx|tysm|much appreciated|appreciate (?:it|that|you)|nice work|great job|good job|perfect|awesome)\b/i;
-const frustrationPattern = /\b(?:bro|bruh|dude|come on|seriously|what (?:are|were) you doing|this is ridiculous|clearly not|not what i (?:asked|meant|wanted)|i already (?:said|told|asked)|you (?:keep|ignored|missed|broke|failed)|how many times|for the last time|wtf|wth)\b|\b(?:damn|hell)\b/i;
-const negativeTonePattern = /\b(?:wrong|broken|ridiculous|ignored|missed|failed|stop|again|not what)\b/i;
 
 const languageLexicons = [
   ["Spanish", new Set("el la los las una unas para pero porque como esto esta este muy más con del quiero puede puedes hacer gracias ahora".split(" "))],
@@ -50,14 +49,6 @@ function proseText(value) {
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-function isFrustratedMessage(value) {
-  const text = proseText(value);
-  if (!text) return false;
-  if (frustrationPattern.test(text)) return true;
-  const capsWords = text.match(/\b[A-Z]{4,}\b/g)?.filter((word) => !/^(?:README|JSON|HTML|HTTP|HTTPS|API|SQL|CSS|TODO|URL|CLI)$/.test(word)) || [];
-  return (capsWords.length >= 2 || /[!?]{3,}/.test(text)) && negativeTonePattern.test(text);
 }
 
 function isGratefulMessage(value) {
