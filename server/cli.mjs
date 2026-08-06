@@ -6,8 +6,8 @@ import { spawn } from "node:child_process";
 import { discoverAllSessions, readRecords, sessionsInDefaultWindow, DEFAULT_WINDOW_DAYS } from "./discovery.mjs";
 import { analyzeSessions } from "./analysis.mjs";
 import { buildPhraseCandidates, judgePhraseCard, judgePhraseCardViaRelay, PHRASE_JUDGE_NAME, PHRASE_JUDGE_RELAY_URL } from "./phrase-card.mjs";
-import { buildFrustrationQuoteCandidates, FRUSTRATION_JUDGE_RELAY_URL, judgeFrustrationQuote, judgeFrustrationQuoteViaRelay } from "./frustration-card.mjs";
 import { requestRemoteAnalysisConsent } from "./consent.mjs";
+import { applyInteractionToneJudgment, buildInteractionToneCandidates, emptyInteractionToneJudgment, INTERACTION_TONE_RELAY_URL, judgeInteractionTone, judgeInteractionToneViaRelay } from "./interaction-tone.mjs";
 import { deletePublicReport, publishPublicReport, PUBLIC_REPORT_ORIGIN } from "./public-report.mjs";
 import { createReportId, deleteReport, getOrCreateClientId, listReports, saveReport, storeRoot } from "./store.mjs";
 
@@ -107,23 +107,23 @@ async function createWrapped() {
     return { sessionId: session.id, agent: session.agent, records: readRecords(session.file, session.agent) };
   });
   const candidates = buildPhraseCandidates(sessionRecords, { maximumCandidates: 100 });
-  const frustrationCandidates = buildFrustrationQuoteCandidates(sessionRecords);
-  process.stdout.write(`${muted}◇  Scanning corpus for the agent's favorite phrase and funniest call-out…${reset}\r`);
+  const interactionCandidates = buildInteractionToneCandidates(sessionRecords);
+  process.stdout.write(`${muted}◇  Scanning corpus for the agent's favorite phrase and interaction style…${reset}\r`);
   const phraseCardPromise = process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
     ? judgePhraseCard(candidates, process.env.OPENROUTER_API_KEY)
     : judgePhraseCardViaRelay(candidates, { endpoint: process.env.BEHAVIOR_WRAPPED_JUDGE_URL || PHRASE_JUDGE_RELAY_URL, clientId: getOrCreateClientId() });
-  const interactionCardPromise = frustrationCandidates.length
+  const interactionTonePromise = interactionCandidates.length
     ? process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
-      ? judgeFrustrationQuote(frustrationCandidates, process.env.OPENROUTER_API_KEY)
-      : judgeFrustrationQuoteViaRelay(frustrationCandidates, { endpoint: process.env.BEHAVIOR_WRAPPED_FRUSTRATION_JUDGE_URL || FRUSTRATION_JUDGE_RELAY_URL, clientId: getOrCreateClientId() })
-    : Promise.resolve(null);
+      ? judgeInteractionTone(interactionCandidates, process.env.OPENROUTER_API_KEY)
+      : judgeInteractionToneViaRelay(interactionCandidates, { endpoint: process.env.BEHAVIOR_WRAPPED_INTERACTION_TONE_URL || INTERACTION_TONE_RELAY_URL, clientId: getOrCreateClientId() })
+    : Promise.resolve(emptyInteractionToneJudgment());
   const analyzed = analyzeSessions(sessionRecords);
-  const [phraseCard, frustrationCard] = await Promise.all([phraseCardPromise, interactionCardPromise]);
+  const [phraseCard, interactionTone] = await Promise.all([phraseCardPromise, interactionTonePromise]);
   analyzed.phraseCard = phraseCard;
-  analyzed.interactionCard = frustrationCard ? { frustrationQuote: frustrationCard.quote } : null;
+  applyInteractionToneJudgment(analyzed, interactionTone);
   const id = createReportId();
   const safeFindings = analyzed.findings.map(({ evidence, method, ...finding }) => finding);
-  const report = { id, createdAt: new Date().toISOString(), rangeLabel: formatRange(chosenSessions), source: "Claude Code + Codex", stats: analyzed.stats, findings: safeFindings, phraseCard: analyzed.phraseCard, interactionCard: analyzed.interactionCard, sessionIds: chosenSessions.map((session) => session.id), privacy: { shareSafe: true, containsTranscriptText: false, externalTransmission: true, transmittedData: "redacted phrase and frustration-quote candidates, aggregate report statistics, and a random client ID only", externalRecipient: "Behavior Wrapped relay, OpenRouter, NVIDIA, and public report hosting" } };
+  const report = { id, createdAt: new Date().toISOString(), rangeLabel: formatRange(chosenSessions), source: "Claude Code + Codex", stats: analyzed.stats, findings: safeFindings, phraseCard: analyzed.phraseCard, interactionCard: analyzed.interactionCard, sessionIds: chosenSessions.map((session) => session.id), privacy: { shareSafe: true, containsTranscriptText: false, externalTransmission: true, transmittedData: "redacted phrase and interaction-tone candidates, aggregate report statistics, and a random client ID only", externalRecipient: "Behavior Wrapped relay, OpenRouter, NVIDIA, and public report hosting" } };
   process.stdout.write(`${muted}◇  Publishing the share-safe Wrapped page…${reset}\r`);
   let publicUrl = null;
   try {

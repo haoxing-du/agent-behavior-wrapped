@@ -367,7 +367,7 @@ function PrivacyPanel() {
     <div>
       <span className="eyebrow">Privacy, by construction</span>
       <h3>Your transcripts stay on this Mac.</h3>
-      <p>Transcript parsing and behavior analysis run inside this local app. Full transcripts, code, and tool outputs stay on this Mac; only redacted recurring-phrase and frustration-quote candidates, counts, and a random client ID go through the Behavior Wrapped relay to OpenRouter.</p>
+      <p>Transcript parsing runs inside this local app. Full transcripts, code, and tool outputs stay on this Mac; only redacted recurring-phrase and interaction-tone candidates, counts, and a random client ID go through the Behavior Wrapped relay to OpenRouter.</p>
       <div className="privacy-facts"><span>✓ No account</span><span>✓ No telemetry</span><span>✓ Only redacted phrase aggregates leave</span></div>
     </div>
   </aside>;
@@ -464,7 +464,7 @@ function Selection({ catalog, selected, setSelected, onAnalyze, loading, error }
 
         <div className={`judge-option judge-required ${catalog.phraseJudge?.available ? "" : "unavailable"}`}>
           <span className="network-mark">↗</span>
-          <span><strong>Nemotron picks the favorite phrase and funniest call-out</strong><small>Every analysis sends only redacted phrase and frustration candidates plus counts and a random client ID—not transcripts—through our rate-limited relay to OpenRouter’s free NVIDIA endpoint.</small></span>
+          <span><strong>Nemotron picks the favorite phrase and judges interaction tone</strong><small>Every analysis sends only redacted phrase and interaction-tone candidates plus counts and a random client ID—not transcripts—through our rate-limited relay to OpenRouter’s free NVIDIA endpoint.</small></span>
           <em>Nemotron 3 Ultra · shared relay</em>
         </div>
 

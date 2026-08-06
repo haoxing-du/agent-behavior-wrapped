@@ -1,5 +1,6 @@
 import { buildOpenRouterJudgeRequest, extractCandidateId, OPENROUTER_MODEL } from "../server/phrase-card.mjs";
 import { buildOpenRouterFrustrationRequest, isShareSafeFrustrationQuote } from "../server/frustration-card.mjs";
+import { buildOpenRouterInteractionToneRequest, extractInteractionToneSelection, INTERACTION_TONE_MAX_CANDIDATES, isShareSafeInteractionText } from "../server/interaction-tone.mjs";
 
 const MAX_BODY_BYTES = 48_000;
 const MAX_CANDIDATES = 100;
@@ -56,6 +57,20 @@ export function validateRelayPayload(value) {
 
 export function validateFrustrationRelayPayload(value) {
   return validateInteractionQuoteRelayPayload(value, "frustration");
+}
+
+export function validateInteractionToneRelayPayload(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).join("|") !== "candidates") return null;
+  if (!Array.isArray(value.candidates) || value.candidates.length < 1 || value.candidates.length > INTERACTION_TONE_MAX_CANDIDATES) return null;
+  return value.candidates.every((candidate, index) => candidate
+    && typeof candidate === "object"
+    && !Array.isArray(candidate)
+    && Object.keys(candidate).sort().join("|") === "candidate_id|occurrences|text"
+    && candidate.candidate_id === `interaction-${index + 1}`
+    && isShareSafeInteractionText(candidate.text)
+    && Number.isInteger(candidate.occurrences)
+    && candidate.occurrences >= 1
+    && candidate.occurrences <= 1_000_000) ? value.candidates : null;
 }
 
 function validateInteractionQuoteRelayPayload(value, prefix) {
@@ -355,7 +370,8 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
     return handleLeaderboard(request, env);
   }
   const frustrationRoute = url.pathname === "/v1/frustration-quote";
-  if (url.pathname !== "/v1/phrase-card" && !frustrationRoute) return json({ error: "Not found." }, 404);
+  const interactionToneRoute = url.pathname === "/v1/interaction-tone";
+  if (url.pathname !== "/v1/phrase-card" && !frustrationRoute && !interactionToneRoute) return json({ error: "Not found." }, 404);
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
   if (request.headers.get("x-behavior-wrapped-protocol") !== "1") return json({ error: "Unsupported client protocol." }, 400);
   const contentLength = Number(request.headers.get("content-length") || 0);
@@ -365,13 +381,13 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
   if (raw === null) return json({ error: "Request too large." }, 413);
   let body;
   try { body = JSON.parse(raw); } catch { return json({ error: "Invalid JSON." }, 400); }
-  const candidates = frustrationRoute ? validateFrustrationRelayPayload(body) : validateRelayPayload(body);
+  const candidates = interactionToneRoute ? validateInteractionToneRelayPayload(body) : frustrationRoute ? validateFrustrationRelayPayload(body) : validateRelayPayload(body);
   if (!candidates) return json({ error: "Invalid redacted candidate payload." }, 400);
 
   const clientHeader = request.headers.get("x-behavior-wrapped-client") || "";
   const networkId = request.headers.get("cf-connecting-ip") || "unknown";
   const clientKey = /^[a-f0-9]{32}$/.test(clientHeader) ? clientHeader : networkId;
-  const judgeKind = frustrationRoute ? "frustration" : "phrase";
+  const judgeKind = interactionToneRoute ? "interaction-tone" : frustrationRoute ? "frustration" : "phrase";
   if (!await applyRateLimit(env.CLIENT_RATE_LIMITER, `${judgeKind}:${clientKey}`)) return json({ error: "Too many requests from this client. Try again shortly." }, 429);
   if (!await applyRateLimit(env.GLOBAL_RATE_LIMITER, "all-clients")) return json({ error: "The shared phrase judge is busy. Try again shortly." }, 429);
   if (!env.OPENROUTER_API_KEY) return json({ error: "Phrase judge is not configured." }, 503);
@@ -385,7 +401,7 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
         authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
         "x-title": "Behavior Wrapped",
       },
-      body: JSON.stringify(frustrationRoute ? buildOpenRouterFrustrationRequest(candidates) : buildOpenRouterJudgeRequest(candidates)),
+      body: JSON.stringify(interactionToneRoute ? buildOpenRouterInteractionToneRequest(candidates) : frustrationRoute ? buildOpenRouterFrustrationRequest(candidates) : buildOpenRouterJudgeRequest(candidates)),
     });
   } catch (error) {
     console.error(JSON.stringify({
@@ -405,13 +421,18 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
     }));
     return json({ error: "Card judge is temporarily unavailable." }, 502);
   }
-  const candidateId = extractCandidateId(upstreamBody, candidates);
-  if (!candidateId) return json({ error: "Card judge returned an invalid selection." }, 502);
   const usage = upstreamBody.usage ? {
     prompt_tokens: upstreamBody.usage.prompt_tokens || 0,
     completion_tokens: upstreamBody.usage.completion_tokens || 0,
     total_tokens: upstreamBody.usage.total_tokens || 0,
   } : null;
+  if (interactionToneRoute) {
+    const selection = extractInteractionToneSelection(upstreamBody, candidates);
+    if (!selection) return json({ error: "Interaction-tone judge returned an invalid classification." }, 502);
+    return json({ ...selection, model: upstreamBody.model || OPENROUTER_MODEL, usage });
+  }
+  const candidateId = extractCandidateId(upstreamBody, candidates);
+  if (!candidateId) return json({ error: "Card judge returned an invalid selection." }, 502);
   return json({
     candidate_id: candidateId,
     model: upstreamBody.model || OPENROUTER_MODEL,
