@@ -1,6 +1,6 @@
 # Behavior Wrapped
 
-A local-first, macOS prototype that discovers Claude Code history in `~/.claude/projects` and Codex history in `~/.codex/sessions` plus `~/.codex/archived_sessions`, analyzes selected sessions on-device, and serves a private Wrapped-style report at localhost.
+A local-first, macOS prototype that discovers Claude Code history in `~/.claude/projects` and Codex history in `~/.codex/sessions` plus `~/.codex/archived_sessions`, analyzes selected sessions on-device, and publishes a strictly share-safe Wrapped deck while keeping private review tools on localhost.
 
 ## Run it
 
@@ -12,11 +12,11 @@ npx agent-behavior-wrapped@latest
 
 Nothing is installed globally. To try it without reading your real session history, add `--demo` to use only the bundled synthetic fixtures.
 
-The command automatically scans both agents, selects sessions from the latest 30-day rolling window, creates a share-safe snapshot, prints a stable local URL such as `http://127.0.0.1:4317/w/…`, starts the local viewer when needed, and opens the Wrapped slideshow. Use `--days=N` to change the CLI window; the private dashboard also exposes exact date controls.
+The command automatically scans both agents, selects sessions from the latest 30-day rolling window, creates a share-safe snapshot, publishes it at a public `/w/…` URL, starts the local viewer for private controls, and opens the Wrapped slideshow. Use `--days=N` to change the CLI window; the private dashboard also exposes exact date controls.
 
 The shareable deck starts with four deterministic usage cards: token volume, estimated API-equivalent retail cost, Claude Code vs. Codex session share, and top models by token share. Cost is explicitly an estimate derived from a local, inspectable model-family rate table; it is not a statement about subscription charges or an invoice.
 
-The final slideshow card offers an optional research-donation review. It opens a private page with the Wrapped's sessions preselected, automatic redactions, editable message text, separate consent, and local-only bundle export.
+The local deck includes an optional research-donation review with automatic redactions, editable message text, separate consent, and local-only bundle export. The final card opens token and agent/user word-ratio distributions, opt-in top-user rankings, and a public wall of opted-in favorite phrases.
 
 When developing from this repository, run `npm install`, then `npm run wrapped`. Add `--demo` to use synthetic fixtures or `--no-open` to leave the browser closed.
 
@@ -40,6 +40,8 @@ For UI development, run the local API with `npm run demo -- --no-open`, then run
 
 - The launcher reads only selected JSONL files from the canonical Claude Code and Codex directories.
 - Transcript parsing, deterministic statistics, heuristic findings, phrase counting, and redaction run locally. Creating a Wrapped sends the redacted aggregate phrase candidate list and a random installation ID through the Behavior Wrapped relay to OpenRouter for the standard Nemotron phrase card.
+- Public reports contain only sanitized aggregate statistics, generalized findings, and the redacted favorite phrase. They never contain session IDs, evidence, transcripts, prompts, session dates, project names, code, paths, or tool output. Deleting a locally managed report also requests deletion of its public copy.
+- Viewing the leaderboard compares the report's aggregate token and word-ratio values without storing them. Joining requires separate consent; a hashed random installation ID supports later updates or deletion, and public ranking plus phrase-wall inclusion are independent choices.
 - Browser payloads never include source file paths or raw tool outputs.
 - Private evidence is made from redacted user/assistant prose; code blocks are omitted.
 - Share-card PNG exports contain only aggregates and generalized findings.
@@ -65,7 +67,7 @@ The in-app phrase judge requests one candidate ID using a strict JSON schema and
 
 - Behavioral findings are transparent heuristics, not calibrated diagnoses.
 - Research donation exports a reviewed local bundle but does not upload it.
-- Public sharing is a local preview; hosted publishing and account management are not implemented.
+- Hosted reports currently use unguessable URLs and installation-scoped deletion rather than user accounts.
 
 ## License
 

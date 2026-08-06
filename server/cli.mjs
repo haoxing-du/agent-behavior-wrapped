@@ -6,6 +6,7 @@ import { spawn } from "node:child_process";
 import { discoverAllSessions, readRecords, sessionsInDefaultWindow, DEFAULT_WINDOW_DAYS } from "./discovery.mjs";
 import { analyzeSessions } from "./analysis.mjs";
 import { buildPhraseCandidates, judgePhraseCard, judgePhraseCardViaRelay, PHRASE_JUDGE_NAME, PHRASE_JUDGE_RELAY_URL } from "./phrase-card.mjs";
+import { deletePublicReport, publishPublicReport, PUBLIC_REPORT_ORIGIN } from "./public-report.mjs";
 import { createReportId, deleteReport, getOrCreateClientId, listReports, saveReport, storeRoot } from "./store.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -107,20 +108,31 @@ async function createWrapped() {
   analyzed.phraseCard = await phraseCardPromise;
   const id = createReportId();
   const safeFindings = analyzed.findings.map(({ evidence, method, ...finding }) => finding);
-  const report = { id, createdAt: new Date().toISOString(), rangeLabel: formatRange(chosenSessions), source: "Claude Code + Codex", stats: analyzed.stats, findings: safeFindings, phraseCard: analyzed.phraseCard, sessionIds: chosenSessions.map((session) => session.id), privacy: { shareSafe: true, containsTranscriptText: false, externalTransmission: true, transmittedData: "redacted aggregate phrase candidates and a random client ID only", externalRecipient: "Behavior Wrapped relay, OpenRouter, and NVIDIA" } };
+  const report = { id, createdAt: new Date().toISOString(), rangeLabel: formatRange(chosenSessions), source: "Claude Code + Codex", stats: analyzed.stats, findings: safeFindings, phraseCard: analyzed.phraseCard, sessionIds: chosenSessions.map((session) => session.id), privacy: { shareSafe: true, containsTranscriptText: false, externalTransmission: true, transmittedData: "redacted phrase candidates, aggregate report statistics, and a random client ID only", externalRecipient: "Behavior Wrapped relay, OpenRouter, NVIDIA, and public report hosting" } };
+  process.stdout.write(`${muted}◇  Publishing the share-safe Wrapped page…${reset}\r`);
+  let publicUrl = null;
+  try {
+    const published = await publishPublicReport(report, { clientId: getOrCreateClientId(), origin: process.env.BEHAVIOR_WRAPPED_PUBLIC_URL || PUBLIC_REPORT_ORIGIN });
+    publicUrl = published.public_url;
+    report.publicUrl = publicUrl;
+  } catch (error) {
+    report.publicHostingError = error.message;
+  }
   saveReport(report);
   await ensureServer();
-  const url = `${baseUrl}/w/${id}`;
+  const localUrl = `${baseUrl}/w/${id}`;
+  const url = publicUrl || localUrl;
   const tokenLabel = formatNumber(report.stats.tokens || 0);
   console.log(`◇  ${bright}Wrapped ready${reset} · ${tokenLabel} tokens across ${report.stats.sessions} sessions          `);
   if (report.phraseCard) console.log(`◇  ${PHRASE_JUDGE_NAME}'s pick · “${report.phraseCard.phrase}” × ${report.phraseCard.occurrences} · ${(report.phraseCard.latencyMs / 1000).toFixed(1)}s          `);
-  console.log(`│\n◇  Your wrapped is live locally ─────────────────────────╮`);
+  console.log(`│\n◇  Your wrapped is ${publicUrl ? "live" : "ready locally"} ───────────────────────────────╮`);
   console.log(`│                                                        │`);
   console.log(`│  ${purple}${bright}${url}${reset}`);
   console.log(`│                                                        │`);
   console.log(`│  ${tokenLabel} tokens  ·  ${report.stats.toolCalls} tool calls  ·  ${report.stats.sessions} sessions`);
   console.log(`│                                                        │`);
   console.log(`├────────────────────────────────────────────────────────╯`);
+  if (!publicUrl) console.log(`│  ${muted}Public hosting unavailable; your local report still works.${reset}`);
   console.log(`│\n└  ${muted}saved to ${storeRoot}  ·  behavior-wrapped list / delete <id>${reset}\n`);
   openUrl(url);
 }
@@ -131,7 +143,13 @@ try {
   else if (command === "delete") {
     const id = process.argv[3];
     if (!id) throw new Error("Usage: behavior-wrapped delete <id>");
-    console.log(deleteReport(id) ? `Deleted local report ${id}.` : "That saved report was not found.");
+    const report = listReports().find((item) => item.id === id);
+    if (report?.publicUrl) {
+      try { await deletePublicReport(id, { clientId: getOrCreateClientId(), origin: process.env.BEHAVIOR_WRAPPED_PUBLIC_URL || PUBLIC_REPORT_ORIGIN }); }
+      catch (error) { throw new Error(`The public copy could not be removed, so the local management record was kept. ${error.message}`); }
+    }
+    const deleted = deleteReport(id);
+    console.log(deleted ? `Deleted report ${id}.` : "That saved report was not found.");
   } else if (command === "help" || command === "--help" || command === "-h") {
     console.log("behavior-wrapped [--demo] [--days=30] [--no-open]\nbehavior-wrapped list\nbehavior-wrapped open [id]\nbehavior-wrapped delete <id>");
   } else await createWrapped();

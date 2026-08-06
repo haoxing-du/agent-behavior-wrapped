@@ -8,13 +8,22 @@ type Finding = { id: string; kind: string; title: string; summary: string; metho
 type PhraseCard = { phrase: string; occurrences: number; distinctSessions: number; model: string; provider: string; latencyMs: number; method: string; candidateCount: number };
 type AgentStat = { agent: "claude" | "codex"; name: string; count: number; percentage: number };
 type ModelStat = { model: string; name: string; tokens: number; percentage: number };
-type Report = { stats: { sessions: number; activeDays: number; durationMinutes: number; prompts: number; toolCalls: number; interruptions: number; tokens: number; averageAgentResponseWords?: number; averageUserInputWords?: number; tools: { name: string; count: number }[]; agents: AgentStat[]; models: ModelStat[]; estimatedCostUsd: number; costEstimateMethod: string }; findings: Finding[]; phraseCard?: PhraseCard | null };
+type Report = { stats: { sessions: number; activeDays: number; durationMinutes: number; prompts: number; toolCalls: number; interruptions: number; tokens: number; agentWords?: number; userWords?: number; agentUserWordRatio?: number | null; averageAgentResponseWords?: number; averageUserInputWords?: number; tools: { name: string; count: number }[]; agents: AgentStat[]; models: ModelStat[]; estimatedCostUsd: number; costEstimateMethod: string }; findings: Finding[]; phraseCard?: PhraseCard | null };
 type DonationMessage = { role: string; timestamp: string | null; text: string };
 type DonationSession = { sessionId: string; label: string; messages: DonationMessage[] };
 type Donation = { format: string; createdLocally: boolean; detectionCount: number; sessions: DonationSession[] };
 type Stage = "select" | "report" | "donate";
-type SavedReport = Report & { id: string; createdAt: string; rangeLabel: string; source: string; privacy: { shareSafe: boolean; containsTranscriptText: boolean; externalTransmission: boolean } };
-type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; cta?: boolean; rows?: { label: string; value: string; percentage?: number }[] };
+type SavedReport = Report & { id: string; createdAt: string; rangeLabel: string; source: string; publicUrl?: string; hosting?: { public: boolean }; privacy: { shareSafe: boolean; containsTranscriptText: boolean; externalTransmission: boolean } };
+type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; ctaHref?: string; ctaLabel?: string; rows?: { label: string; value: string; percentage?: number }[] };
+type DistributionBucket = { label: string; minimum: number; maximum: number | null; count: number };
+type RankedValue = { rank: number; name: string; value: number };
+type LeaderboardSnapshot = {
+  cohort_size: number;
+  tokens: { value: number; percentile: number | null; distribution: DistributionBucket[]; top: RankedValue[] };
+  word_ratio: { value: number; percentile: number | null; distribution: DistributionBucket[]; top: RankedValue[] };
+  phrases: { global: { phrase: string; occurrences: number; contributors: number } | null; wall: { phrase: string; occurrences: number; sessions: number }[] };
+  participation: { joined: boolean; display_name?: string; public_ranked?: boolean; shares_phrase?: boolean };
+};
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" });
 
@@ -147,6 +156,7 @@ function SharedWrapped({ id }: { id: string }) {
     const leader = [...activeAgents].sort((left, right) => right.count - left.count)[0];
     const activeModels = (report.stats.models || []).filter((model) => hasDisplayablePercentage(model.percentage));
     const topModel = activeModels[0];
+    const hosted = report.hosting?.public === true;
     const harryPotterSeriesCount = fmtSeriesEquivalent(report.stats.tokens || 0, 1_450_000);
     const wrappedSlides: StorySlide[] = [
     { kicker: "This month you went through", headline: fmtCompact(report.stats.tokens || 0), detail: `tokens. That’s the complete Harry Potter series roughly ${harryPotterSeriesCount} times over.`, tone: "ice", metric: true },
@@ -155,7 +165,8 @@ function SharedWrapped({ id }: { id: string }) {
     ...(topModel ? [{ kicker: "Your top models", headline: `${topModel.percentage.toFixed(1)}%`, detail: `went to your #1 · ${topModel.name}`, tone: "models", rows: activeModels.slice(0, 4).map((model, index) => ({ label: `${index + 1}  ${model.name}`, value: `${model.percentage.toFixed(1)}%`, percentage: model.percentage })) }] : []),
     ...(Number.isFinite(report.stats.averageAgentResponseWords) ? [{ kicker: "On average, your agent responded with", headline: `${report.stats.averageAgentResponseWords!.toLocaleString()} words`, detail: `Your average input was ${report.stats.averageUserInputWords!.toLocaleString()} words.`, tone: "violet" }] : []),
     ...(report.phraseCard ? [{ kicker: "Your agent’s favorite phrase is", headline: `“${report.phraseCard.phrase}”`, detail: `It said this ${report.phraseCard.occurrences} time${report.phraseCard.occurrences === 1 ? "" : "s"} across ${report.phraseCard.distinctSessions} session${report.phraseCard.distinctSessions === 1 ? "" : "s"}.`, tone: "quote" }] : []),
-    { kicker: "Optional research donation", headline: "Want to donate your data to research?", detail: "Review exactly what would be included and redact anything you want before exporting a local bundle.", tone: "research", cta: true },
+    ...(!hosted ? [{ kicker: "Optional research donation", headline: "Want to donate your data to research?", detail: "Review exactly what would be included and redact anything you want before exporting a local bundle.", tone: "research", ctaHref: `/donate/${report.id}`, ctaLabel: "Review redactions" }] : []),
+    { kicker: "Now zoom out", headline: "Where do you land among other agent users?", detail: "See the distributions, opt-in rankings, and everyone’s favorite phrases.", tone: "leaderboard", ctaHref: `/leaderboard/${report.id}`, ctaLabel: "View the leaderboards" },
   ];
     return wrappedSlides;
   }, [report]);
@@ -166,7 +177,8 @@ function SharedWrapped({ id }: { id: string }) {
   if (error) return <main className="shared-error"><h1>Wrapped not found</h1><p>{error}</p><a href="/">Create a new local Wrapped</a></main>;
   if (!report || !slides.length) return <main className="shared-loading"><div className="orb" /><p>Opening your local Wrapped…</p></main>;
   const current = slides[slide];
-  async function copyLink() { await navigator.clipboard.writeText(window.location.href); setCopied(true); window.setTimeout(() => setCopied(false), 1600); }
+  const copyUrl = report.publicUrl || window.location.href;
+  async function copyLink() { await navigator.clipboard.writeText(copyUrl); setCopied(true); window.setTimeout(() => setCopied(false), 1600); }
   async function downloadCurrentSlide() {
     if (!cardRef.current || downloading) return;
     setDownloading(true);
@@ -184,12 +196,120 @@ function SharedWrapped({ id }: { id: string }) {
           {row.percentage !== undefined && <span><i style={{ width: `${row.percentage}%` }} /></span>}
         </div>)}</div>}
       </div>
-      {current.cta ? <a className="story-cta" href={`/donate/${report.id}`}>Review redactions <span>→</span></a> : <div className="story-tag">#behaviorwrapped</div>}
+      {current.ctaHref ? <a className="story-cta" href={current.ctaHref}>{current.ctaLabel} <span>→</span></a> : <div className="story-tag">#behaviorwrapped</div>}
       <button className="story-arrow prev" disabled={slide === 0} onClick={() => setSlide(slide - 1)} aria-label="Previous slide">‹</button>
       <button className="story-arrow next" disabled={slide === slides.length - 1} onClick={() => setSlide(slide + 1)} aria-label="Next slide">›</button>
     </section>
-    <div className="story-actions"><button onClick={copyLink}>{copied ? "Copied" : "Copy local link"}</button><button disabled={downloading} onClick={downloadCurrentSlide}>{downloading ? "Preparing image…" : "Download image"}</button></div>
-    <p className="story-foot"><ShieldIcon /> Share-safe local page · no transcript text · nothing published</p>
+    <div className="story-actions"><button onClick={copyLink}>{copied ? "Copied" : report.publicUrl ? "Copy public link" : "Copy link"}</button><button disabled={downloading} onClick={downloadCurrentSlide}>{downloading ? "Preparing image…" : "Download image"}</button></div>
+    <p className="story-foot"><ShieldIcon /> Share-safe {report.hosting?.public ? "public" : "local"} page · no transcript text</p>
+  </main>;
+}
+
+function ordinal(value: number) {
+  const remainder = value % 100;
+  if (remainder >= 11 && remainder <= 13) return `${value}th`;
+  return `${value}${value % 10 === 1 ? "st" : value % 10 === 2 ? "nd" : value % 10 === 3 ? "rd" : "th"}`;
+}
+
+function MetricLeaderboard({ title, value, percentileValue, distribution, top, formatValue, accent }: {
+  title: string;
+  value: string;
+  percentileValue: number | null;
+  distribution: DistributionBucket[];
+  top: RankedValue[];
+  formatValue: (value: number) => string;
+  accent: string;
+}) {
+  const maximum = Math.max(1, ...distribution.map((bucket) => bucket.count));
+  return <section className={`leader-metric ${accent}`}>
+    <div className="leader-metric-head"><div><span>Your result</span><h2>{title}</h2></div><strong>{value}</strong></div>
+    <div className="percentile-callout">{percentileValue === null ? "The cohort is waiting for its first members." : percentileValue === 0 ? "You’re below the 1st percentile." : `You’re at the ${ordinal(percentileValue)} percentile.`}</div>
+    <div className="distribution-chart" aria-label={`${title} distribution`}>
+      {distribution.map((bucket) => <div className="distribution-column" key={bucket.label}><span><i style={{ height: `${Math.max(bucket.count ? 8 : 0, bucket.count / maximum * 100)}%` }} /></span><b>{bucket.count}</b><small>{bucket.label}</small></div>)}
+    </div>
+    <div className="leader-top"><h3>Top opt-in users</h3>{top.length ? top.map((row) => <div key={`${row.rank}-${row.name}`}><span><b>{row.rank}</b>{row.name}</span><strong>{formatValue(row.value)}</strong></div>) : <p>No one has opted into public ranking yet.</p>}</div>
+  </section>;
+}
+
+function LeaderboardView({ id }: { id: string }) {
+  const [report, setReport] = useState<SavedReport | null>(null);
+  const [snapshot, setSnapshot] = useState<LeaderboardSnapshot | null>(null);
+  const [displayName, setDisplayName] = useState("");
+  const [publicRanked, setPublicRanked] = useState(false);
+  const [includePhrase, setIncludePhrase] = useState(true);
+  const [consent, setConsent] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function loadSnapshot() {
+    const response = await fetch(`/api/reports/${id}/leaderboard`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "snapshot" }) });
+    if (!response.ok) throw new Error((await response.json()).error || "Could not load the leaderboards.");
+    const next = await response.json() as LeaderboardSnapshot;
+    setSnapshot(next);
+    if (next.participation.joined) {
+      setDisplayName(next.participation.display_name === "Anonymous" ? "" : next.participation.display_name || "");
+      setPublicRanked(Boolean(next.participation.public_ranked));
+      setIncludePhrase(Boolean(next.participation.shares_phrase));
+    }
+  }
+
+  useEffect(() => {
+    Promise.all([
+      fetch(`/api/reports/${id}`).then(async (response) => { if (!response.ok) throw new Error("This local Wrapped was not found."); return response.json(); }),
+      loadSnapshot(),
+    ]).then(([saved]) => { setReport(saved); if (!saved.phraseCard) setIncludePhrase(false); }).catch((caught) => setError(caught.message)).finally(() => setLoading(false));
+  }, [id]);
+
+  async function join() {
+    if (!consent) return;
+    setSaving(true); setError("");
+    try {
+      const response = await fetch(`/api/reports/${id}/leaderboard`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "join", consent, displayName, publicRanked, includePhrase }) });
+      if (!response.ok) throw new Error((await response.json()).error || "Could not join the leaderboard.");
+      setSnapshot(await response.json()); setConsent(false);
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not join the leaderboard."); }
+    finally { setSaving(false); }
+  }
+
+  async function leave() {
+    if (!window.confirm("Remove your aggregate entry from the Behavior Wrapped leaderboards?")) return;
+    setSaving(true); setError("");
+    try {
+      const response = await fetch(`/api/reports/${id}/leaderboard`, { method: "DELETE" });
+      if (!response.ok) throw new Error((await response.json()).error || "Could not remove your entry.");
+      await loadSnapshot();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not remove your entry."); }
+    finally { setSaving(false); }
+  }
+
+  if (loading) return <main className="shared-loading"><div className="orb" /><p>Finding your place in the cohort…</p></main>;
+  if (error && (!report || !snapshot)) return <main className="shared-error"><h1>Leaderboard unavailable</h1><p>{error}</p><a href={`/w/${id}`}>Back to your Wrapped</a></main>;
+  if (!report || !snapshot) return null;
+
+  const ratio = snapshot.word_ratio.value;
+  const hosted = report.hosting?.public === true;
+  return <main className="leaderboard-page">
+    <a className="leader-back" href={`/w/${id}`}>← Back to your Wrapped</a>
+    <header className="leader-hero"><span className="eyebrow">Behavior Wrapped · The cohort</span><h1>Here’s where<br />you land.</h1><p>{snapshot.cohort_size.toLocaleString()} opt-in participant{snapshot.cohort_size === 1 ? "" : "s"}. Opening this page compares only the aggregate values shown below; nothing is stored unless you join.</p></header>
+    <div className="leader-grid">
+      <MetricLeaderboard title="Tokens used" value={fmtCompact(snapshot.tokens.value)} percentileValue={snapshot.tokens.percentile} distribution={snapshot.tokens.distribution} top={snapshot.tokens.top} formatValue={fmtCompact} accent="token-leader" />
+      <MetricLeaderboard title="Agent-to-you word ratio" value={`${ratio.toFixed(1)}×`} percentileValue={snapshot.word_ratio.percentile} distribution={snapshot.word_ratio.distribution} top={snapshot.word_ratio.top} formatValue={(value) => `${value.toFixed(1)}×`} accent="ratio-leader" />
+    </div>
+    <section className="phrase-board-section">
+      <div className="phrase-board-heading"><div><span className="eyebrow">The phrase wall</span><h2>Everybody’s agents<br />have a thing.</h2></div>{snapshot.phrases.global && <aside><span>Global favorite</span><strong>“{snapshot.phrases.global.phrase}”</strong><small>{snapshot.phrases.global.occurrences.toLocaleString()} times · {snapshot.phrases.global.contributors} contributor{snapshot.phrases.global.contributors === 1 ? "" : "s"}</small></aside>}</div>
+      {snapshot.phrases.wall.length ? <div className="phrase-wall">{snapshot.phrases.wall.map((item, index) => <article key={`${item.phrase}-${index}`}><p>“{item.phrase}”</p><span>{item.occurrences.toLocaleString()}× across {item.sessions} session{item.sessions === 1 ? "" : "s"}</span></article>)}</div> : <div className="empty-phrase-wall">The wall is waiting for its first favorite phrase.</div>}
+    </section>
+    {!hosted ? <section className="leader-join">
+      <div><span className="eyebrow">Completely optional</span><h2>{snapshot.participation.joined ? "Update your leaderboard entry" : "Add your dot to the distribution"}</h2><p>Stored: token count, total agent and user words, their ratio, and—if you choose—your redacted favorite phrase. No transcripts, prompts, project names, dates, code, or tool output.</p></div>
+      <div className="leader-preview"><span><small>Tokens</small><strong>{fmtCompact(report.stats.tokens)}</strong></span><span><small>Word ratio</small><strong>{ratio.toFixed(1)}×</strong></span>{report.phraseCard && <span><small>Phrase</small><strong>“{report.phraseCard.phrase}”</strong></span>}</div>
+      <label className="leader-field">Public handle (optional)<input value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={32} placeholder="Anonymous" /></label>
+      <label className="leader-check"><input type="checkbox" checked={publicRanked} onChange={(event) => setPublicRanked(event.target.checked)} /><span>Show me in the public top-user rankings.</span></label>
+      {report.phraseCard && <label className="leader-check"><input type="checkbox" checked={includePhrase} onChange={(event) => setIncludePhrase(event.target.checked)} /><span>Add my redacted phrase to the public phrase wall.</span></label>}
+      <label className="leader-check consent"><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /><span>I consent to upload and store exactly the aggregate values previewed above. I can remove them later from this Mac.</span></label>
+      {error && <p className="error" role="alert">{error}</p>}
+      <div className="leader-buttons"><button className="primary" disabled={!consent || saving} onClick={join}>{saving ? "Saving…" : snapshot.participation.joined ? "Update my entry" : "Join the leaderboard"}<span>→</span></button>{snapshot.participation.joined && <button className="leader-remove" disabled={saving} onClick={leave}>Remove my entry</button>}</div>
+    </section> : <section className="leader-public-note"><strong>Want to add your own dot?</strong><p>Run <code>npx agent-behavior-wrapped@latest</code> on your Mac. Public visitors can explore this cohort, but only the local app can add or remove an entry.</p></section>}
   </main>;
 }
 
@@ -506,6 +626,8 @@ function DonationView({ sessions, initialSelected, onBack }: { sessions: Session
 }
 
 export default function App() {
+  const leaderboardId = window.location.pathname.match(/^\/leaderboard\/([A-Za-z0-9_-]{8,32})$/)?.[1];
+  if (leaderboardId) return <LeaderboardView id={leaderboardId} />;
   const donationId = window.location.pathname.match(/^\/donate\/([A-Za-z0-9_-]{8,32})$/)?.[1];
   if (donationId) return <SavedDonationRoute id={donationId} />;
   const sharedId = window.location.pathname.match(/^\/w\/([A-Za-z0-9_-]{8,32})$/)?.[1];

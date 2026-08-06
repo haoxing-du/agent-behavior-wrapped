@@ -1,0 +1,47 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { publishPublicReport } from "../server/public-report.mjs";
+import { sanitizePublicReport } from "../worker/phrase-judge-worker.mjs";
+
+function reportFixture() {
+  return {
+    id: "shareSafe1234",
+    createdAt: "2026-08-05T12:00:00.000Z",
+    rangeLabel: "Jul 7 – Aug 5, 2026",
+    source: "Claude Code + Codex",
+    sessionIds: ["private-session-id"],
+    stats: {
+      sessions: 4, activeDays: 3, durationMinutes: 90, prompts: 20, toolCalls: 12, interruptions: 1,
+      tokens: 1_200_000, agentWords: 8_000, userWords: 2_000, agentUserWordRatio: 4,
+      averageAgentResponseWords: 400, averageUserInputWords: 100, estimatedCostUsd: 2.4,
+      tools: [{ name: "Read", count: 5 }], agents: [{ agent: "claude", name: "Claude Code", count: 4, percentage: 100 }], models: [],
+    },
+    findings: [{ id: "finding-1", kind: "scope", title: "Expanded scope", summary: "Generalized signal", confidence: { score: 0.7, label: "Medium" } }],
+    phraseCard: { phrase: "let me check that carefully", occurrences: 7, distinctSessions: 3 },
+  };
+}
+
+test("sanitizes a hosted report to a strict share-safe shape", () => {
+  const safe = sanitizePublicReport({ ...reportFixture(), evidence: { text: "private" } });
+  const serialized = JSON.stringify(safe);
+  assert.equal(serialized.includes("private-session-id"), false);
+  assert.equal(serialized.includes("evidence"), false);
+  assert.equal(safe.hosting.public, true);
+  assert.equal(safe.rangeLabel, "Your recent agent history");
+  assert.equal(safe.stats.agentUserWordRatio, 4);
+});
+
+test("the local publisher strips private session IDs before upload", async () => {
+  let uploaded;
+  const result = await publishPublicReport(reportFixture(), {
+    clientId: "b".repeat(32),
+    origin: "https://example.test",
+    fetchImpl: async (_url, request) => {
+      uploaded = JSON.parse(request.body);
+      return new Response(JSON.stringify({ public_url: "https://example.test/w/shareSafe1234" }), { status: 201, headers: { "content-type": "application/json" } });
+    },
+  });
+  assert.equal("sessionIds" in uploaded.report, false);
+  assert.equal(uploaded.report.rangeLabel, "Your recent agent history");
+  assert.equal(result.public_url, "https://example.test/w/shareSafe1234");
+});

@@ -73,6 +73,9 @@ test("averages human inputs and complete agent responses across tool-use records
   ] }]);
   assert.equal(report.stats.averageAgentResponseWords, 6);
   assert.equal(report.stats.averageUserInputWords, 2);
+  assert.equal(report.stats.agentWords, 11);
+  assert.equal(report.stats.userWords, 4);
+  assert.equal(report.stats.agentUserWordRatio, 2.75);
 });
 
 test("title-cases model families that are not hardcoded", () => {

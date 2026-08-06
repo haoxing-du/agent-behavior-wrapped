@@ -8,6 +8,7 @@ import { spawn } from "node:child_process";
 import { discoverAllSessions, readRecords, defaultDateRange, DEFAULT_WINDOW_DAYS } from "./discovery.mjs";
 import { analyzeSessions, makeDonationPreview } from "./analysis.mjs";
 import { buildPhraseCandidates, OPENROUTER_MODEL, PHRASE_JUDGE_NAME, PHRASE_JUDGE_RELAY_URL, judgePhraseCard, judgePhraseCardViaRelay } from "./phrase-card.mjs";
+import { getLeaderboardSnapshot, joinLeaderboard, leaderboardAggregateFromReport, LEADERBOARD_RELAY_ORIGIN, leaveLeaderboard, syntheticLeaderboardSnapshot } from "./leaderboard.mjs";
 import { getOrCreateClientId, loadReport } from "./store.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -19,6 +20,7 @@ const demo = process.argv.includes("--demo");
 const portArg = process.argv.find((arg) => arg.startsWith("--port="));
 const port = Number(portArg?.split("=")[1] || 4317);
 let catalog = loadCatalog();
+let demoLeaderboardParticipation = null;
 
 function loadCatalog() {
   const found = discoverAllSessions(demo ? { claudeRoot: fixtureRoot, codexRoots: [codexFixtureRoot] } : undefined);
@@ -56,7 +58,7 @@ function publicCatalog() {
     projects: catalog.projects,
     sessions: catalog.sessions.map((s, index) => ({ ...s, label: s.label || `Session ${index + 1}` })),
     defaultRange: defaultDateRange(catalog.sessions, { days: DEFAULT_WINDOW_DAYS, anchorLatest: demo }),
-    privacy: { canonicalDirectories: ["~/.claude/projects", "~/.codex/sessions", "~/.codex/archived_sessions"], networkRequests: "during-analysis" },
+    privacy: { canonicalDirectories: ["~/.claude/projects", "~/.codex/sessions", "~/.codex/archived_sessions"], networkRequests: "during-analysis-and-opt-in-leaderboards" },
     phraseJudge: { available: true, model: OPENROUTER_MODEL, name: PHRASE_JUDGE_NAME, provider: "Behavior Wrapped relay + OpenRouter", requiredOnAnalysis: true, freeEndpointDataNotice: true },
   };
 }
@@ -93,6 +95,45 @@ const server = http.createServer(async (request, response) => {
       const available = new Set(catalog.sessions.map((session) => session.id));
       const sessionIds = (report.sessionIds?.length ? report.sessionIds : catalog.sessions.map((session) => session.id)).filter((id) => available.has(id));
       return json(response, 200, { sessionIds, localPrivateSelection: true });
+    }
+    const leaderboardMatch = url.pathname.match(/^\/api\/reports\/([A-Za-z0-9_-]{8,32})\/leaderboard$/);
+    if (leaderboardMatch && new Set(["POST", "DELETE"]).has(request.method)) {
+      const report = loadReport(leaderboardMatch[1]);
+      if (!report) return json(response, 404, { error: "Saved report not found" });
+      const aggregate = leaderboardAggregateFromReport(report);
+      if (demo) {
+        if (request.method === "DELETE") {
+          demoLeaderboardParticipation = null;
+          return json(response, 200, { removed: true });
+        }
+        const body = await readBody(request);
+        if (body.action === "join") {
+          if (body.consent !== true) return json(response, 400, { error: "Explicit leaderboard consent is required." });
+          demoLeaderboardParticipation = {
+            joined: true,
+            display_name: String(body.displayName || "Anonymous").slice(0, 32),
+            public_ranked: body.publicRanked === true,
+            shares_phrase: body.includePhrase === true && Boolean(aggregate.favorite_phrase),
+          };
+        }
+        return json(response, 200, syntheticLeaderboardSnapshot(aggregate, demoLeaderboardParticipation));
+      }
+      const options = {
+        clientId: getOrCreateClientId(),
+        origin: process.env.BEHAVIOR_WRAPPED_LEADERBOARD_URL || LEADERBOARD_RELAY_ORIGIN,
+      };
+      if (request.method === "DELETE") return json(response, 200, await leaveLeaderboard(options));
+      const body = await readBody(request);
+      if (body.action === "snapshot") return json(response, 200, await getLeaderboardSnapshot(aggregate, options));
+      if (body.action === "join") {
+        return json(response, 200, await joinLeaderboard(aggregate, {
+          consent: body.consent === true,
+          display_name: typeof body.displayName === "string" ? body.displayName : "",
+          public_ranked: body.publicRanked === true,
+          include_phrase: body.includePhrase === true,
+        }, options));
+      }
+      return json(response, 400, { error: "Unknown leaderboard action." });
     }
     if (request.method === "POST" && (url.pathname === "/api/analyze" || url.pathname === "/api/donation-preview")) {
       const body = await readBody(request);

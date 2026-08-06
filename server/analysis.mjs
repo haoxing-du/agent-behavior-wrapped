@@ -228,7 +228,25 @@ export function analyzeSessions(sessionRecords) {
     tokens: modelTokenCount,
     percentage: tokens ? Number((modelTokenCount / tokens * 100).toFixed(1)) : 0,
   }));
-  const stats = { sessions: totalSessions, activeDays: activeDays.size, durationMinutes: Math.round(totalDurationMs / 60000), prompts, toolCalls, interruptions, tokens, averageAgentResponseWords: agentResponseCount ? Math.round(agentResponseWords / agentResponseCount) : 0, averageUserInputWords: userInputCount ? Math.round(userInputWords / userInputCount) : 0, tools, agents, models, estimatedCostUsd: Number(estimatedCostUsd.toFixed(2)), costEstimateMethod: "API-equivalent estimate using a local, inspectable model-family rate table." };
+  const stats = {
+    sessions: totalSessions,
+    activeDays: activeDays.size,
+    durationMinutes: Math.round(totalDurationMs / 60000),
+    prompts,
+    toolCalls,
+    interruptions,
+    tokens,
+    agentWords: agentResponseWords,
+    userWords: userInputWords,
+    agentUserWordRatio: userInputWords ? Number((agentResponseWords / userInputWords).toFixed(2)) : null,
+    averageAgentResponseWords: agentResponseCount ? Math.round(agentResponseWords / agentResponseCount) : 0,
+    averageUserInputWords: userInputCount ? Math.round(userInputWords / userInputCount) : 0,
+    tools,
+    agents,
+    models,
+    estimatedCostUsd: Number(estimatedCostUsd.toFixed(2)),
+    costEstimateMethod: "API-equivalent estimate using a local, inspectable model-family rate table.",
+  };
   return { stats, findings: analyzeBehavior(sessionRecords) };
 }
 
