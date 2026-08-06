@@ -48,6 +48,14 @@ function formatRange(sessions) {
   return `${format.format(values[0])} – ${format.format(values.at(-1))}, ${year}`;
 }
 
+async function optionalAnalysis(promise, label, warnings) {
+  try { return await promise; }
+  catch (error) {
+    warnings.push({ label, error: error?.message || "judge request failed" });
+    return null;
+  }
+}
+
 async function serverReady() {
   try {
     const response = await fetch(`${baseUrl}/api/health`);
@@ -112,6 +120,7 @@ async function createWrapped() {
   const interactionCandidates = buildInteractionToneCandidates(sessionRecords);
   const sessionTopicBundle = buildSessionTopicCandidates(sessionRecords);
   const workaroundBundle = buildWorkaroundCandidates(sessionRecords);
+  const analysisWarnings = [];
   process.stdout.write(`${muted}◇  Scanning corpus for favorite phrases, interaction patterns, usage themes, and workarounds…${reset}\r`);
   const phraseCardPromise = process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
     ? judgePhraseCard(candidates, process.env.OPENROUTER_API_KEY)
@@ -132,11 +141,19 @@ async function createWrapped() {
       : judgeWorkaroundsViaRelay(workaroundBundle, { endpoint: process.env.BEHAVIOR_WRAPPED_WORKAROUND_URL || WORKAROUND_RELAY_URL, clientId: getOrCreateClientId() })
     : Promise.resolve(emptyWorkaroundJudgment());
   const analyzed = analyzeSessions(sessionRecords);
-  const [phraseCard, interactionTone, sessionTopics, workarounds] = await Promise.all([phraseCardPromise, interactionTonePromise, sessionTopicsPromise, workaroundsPromise]);
+  const [phraseCard, interactionTone, sessionTopics, workarounds] = await Promise.all([
+    phraseCardPromise,
+    optionalAnalysis(interactionTonePromise, "interaction card", analysisWarnings),
+    optionalAnalysis(sessionTopicsPromise, "usage-topic card", analysisWarnings),
+    optionalAnalysis(workaroundsPromise, "instrumental-workaround card", analysisWarnings),
+  ]);
   analyzed.phraseCard = phraseCard;
-  applyInteractionToneJudgment(analyzed, interactionTone);
-  applySessionTopicJudgment(analyzed, sessionTopics);
+  if (interactionTone) applyInteractionToneJudgment(analyzed, interactionTone);
+  else delete analyzed.stats.interactionTone;
+  if (sessionTopics) applySessionTopicJudgment(analyzed, sessionTopics);
+  else analyzed.stats.topics = [];
   applyWorkaroundJudgment(analyzed, workarounds);
+  for (const warning of analysisWarnings) console.log(`◇  ${muted}Skipped the ${warning.label}; the judge response could not be validated.${reset}          `);
   const id = createReportId();
   const safeFindings = analyzed.findings.map(({ evidence, method, ...finding }) => finding);
   const hasPrivateWorkaroundEvidence = Boolean(analyzed.workaroundReview?.occurrences?.length || analyzed.workaroundReview?.borderline?.length);

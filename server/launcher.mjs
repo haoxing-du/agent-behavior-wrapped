@@ -54,6 +54,11 @@ function chosenRecords(ids) {
   });
 }
 
+async function optionalAnalysis(promise) {
+  try { return await promise; }
+  catch { return null; }
+}
+
 function publicCatalog() {
   return {
     rootAvailable: catalog.rootAvailable,
@@ -174,10 +179,17 @@ const server = http.createServer(async (request, response) => {
             : judgeWorkaroundsViaRelay(workaroundBundle, { endpoint: process.env.BEHAVIOR_WRAPPED_WORKAROUND_URL || WORKAROUND_RELAY_URL, clientId: getOrCreateClientId() })
           : Promise.resolve(emptyWorkaroundJudgment());
         const analyzed = analyzeSessions(records);
-        const [phraseCard, interactionTone, sessionTopics, workarounds] = await Promise.all([phraseCardPromise, interactionTonePromise, sessionTopicsPromise, workaroundsPromise]);
+        const [phraseCard, interactionTone, sessionTopics, workarounds] = await Promise.all([
+          phraseCardPromise,
+          optionalAnalysis(interactionTonePromise),
+          optionalAnalysis(sessionTopicsPromise),
+          optionalAnalysis(workaroundsPromise),
+        ]);
         analyzed.phraseCard = phraseCard;
-        applyInteractionToneJudgment(analyzed, interactionTone);
-        applySessionTopicJudgment(analyzed, sessionTopics);
+        if (interactionTone) applyInteractionToneJudgment(analyzed, interactionTone);
+        else delete analyzed.stats.interactionTone;
+        if (sessionTopics) applySessionTopicJudgment(analyzed, sessionTopics);
+        else analyzed.stats.topics = [];
         applyWorkaroundJudgment(analyzed, workarounds);
         return json(response, 200, analyzed);
       }

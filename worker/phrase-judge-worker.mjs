@@ -36,6 +36,24 @@ function json(body, status = 200) {
   });
 }
 
+function judgeResponseDiagnostic(body, requiredArrays) {
+  const message = body?.choices?.[0]?.message;
+  const content = typeof message?.content === "string" ? message.content : "";
+  const finish = safeText(body?.choices?.[0]?.finish_reason, 30) || "unknown";
+  if (!content) return { code: "empty_content", finish, content_length: 0, refusal: Boolean(message?.refusal) };
+  const attempts = [content, content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "")];
+  const start = content.indexOf("{");
+  const end = content.lastIndexOf("}");
+  if (start >= 0 && end > start) attempts.push(content.slice(start, end + 1));
+  let parsed = null;
+  for (const attempt of attempts) {
+    try { parsed = JSON.parse(attempt); break; } catch { /* Try the next bounded representation. */ }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { code: "invalid_json", finish, content_length: content.length };
+  const missing = requiredArrays.filter((key) => !Array.isArray(parsed[key]));
+  return { code: missing.length ? "missing_arrays" : "invalid_items", finish, content_length: content.length, missing };
+}
+
 function validRate(value) {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
 }
@@ -95,8 +113,12 @@ export function validateWorkaroundRelayPayload(value) {
   return value.candidates.every((candidate, index) => candidate
     && typeof candidate === "object"
     && !Array.isArray(candidate)
-    && Object.keys(candidate).sort().join("|") === "candidate_id|events"
+    && Object.keys(candidate).sort().join("|") === "candidate_id|events|proposal"
     && candidate.candidate_id === `workaround-${index + 1}`
+    && candidate.proposal
+    && typeof candidate.proposal === "object"
+    && !Array.isArray(candidate.proposal)
+    && Object.keys(candidate.proposal).sort().join("|") === "alternative_method_event_id|blocker_event_id|original_method_event_id"
     && Array.isArray(candidate.events)
     && candidate.events.length >= 2
     && candidate.events.length <= 12
@@ -107,7 +129,14 @@ export function validateWorkaroundRelayPayload(value) {
       && event.event_id === `${candidate.candidate_id}-event-${eventIndex + 1}`
       && ["user", "assistant", "tool", "system"].includes(event.role)
       && ["user_text", "assistant_text", "tool_use", "tool_blocker", "restriction"].includes(event.kind)
-      && isShareSafeTrajectoryText(event.text))) ? value.candidates : null;
+      && isShareSafeTrajectoryText(event.text))
+    && (() => {
+      const positions = new Map(candidate.events.map((event, eventIndex) => [event.event_id, eventIndex]));
+      const original = positions.get(candidate.proposal.original_method_event_id);
+      const blocker = positions.get(candidate.proposal.blocker_event_id);
+      const alternative = positions.get(candidate.proposal.alternative_method_event_id);
+      return original !== undefined && blocker !== undefined && alternative !== undefined && original < blocker && blocker < alternative;
+    })()) ? value.candidates : null;
 }
 
 function validateInteractionQuoteRelayPayload(value, prefix) {
@@ -486,12 +515,12 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
   } : null;
   if (workaroundRoute) {
     const selection = extractWorkaroundSelection(upstreamBody, candidates);
-    if (!selection) return json({ error: "Instrumental-workaround judge returned an invalid review." }, 502);
+    if (!selection) return json({ error: "Instrumental-workaround judge returned an invalid review.", diagnostic: judgeResponseDiagnostic(upstreamBody, ["confirmed", "borderline"]) }, 502);
     return json({ ...selection, model: upstreamBody.model || OPENROUTER_MODEL, usage });
   }
   if (interactionToneRoute) {
     const selection = extractInteractionToneSelection(upstreamBody, candidates);
-    if (!selection) return json({ error: "Interaction-tone judge returned an invalid classification." }, 502);
+    if (!selection) return json({ error: "Interaction-tone judge returned an invalid classification.", diagnostic: judgeResponseDiagnostic(upstreamBody, ["frustrated", "grateful"]) }, 502);
     return json({ ...selection, model: upstreamBody.model || OPENROUTER_MODEL, usage });
   }
   if (sessionTopicRoute) {

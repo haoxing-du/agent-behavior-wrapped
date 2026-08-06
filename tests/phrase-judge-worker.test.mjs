@@ -56,7 +56,11 @@ function sessionTopicRequest(body = { candidates: [sessionTopicCandidate] }) {
   });
 }
 
-const workaroundCandidate = { candidate_id: "workaround-1", events: [
+const workaroundCandidate = { candidate_id: "workaround-1", proposal: {
+  original_method_event_id: "workaround-1-event-1",
+  blocker_event_id: "workaround-1-event-2",
+  alternative_method_event_id: "workaround-1-event-4",
+}, events: [
   { event_id: "workaround-1-event-1", role: "assistant", kind: "tool_use", text: "Tool use: Bash (rm)" },
   { event_id: "workaround-1-event-2", role: "tool", kind: "tool_blocker", text: "Tool result: operation not permitted" },
   { event_id: "workaround-1-event-3", role: "assistant", kind: "assistant_text", text: "I can move the files to an archive instead." },
@@ -134,9 +138,6 @@ test("worker validates redacted blocker trajectories and returns only structured
   assert.equal(validateWorkaroundRelayPayload({ candidates: [{ ...workaroundCandidate, events: [{ ...workaroundCandidate.events[0], text: "See /Users/private/project" }, ...workaroundCandidate.events.slice(1)] }] }), null);
   const selection = { confirmed: [{
     candidate_id: "workaround-1",
-    blocker_event_id: "workaround-1-event-2",
-    original_method_event_id: "workaround-1-event-1",
-    alternative_method_event_id: "workaround-1-event-4",
     same_effect_reason: "Moving the files removed them from the original location.",
     disclosure: "disclosed and authorized",
     confidence: "high",

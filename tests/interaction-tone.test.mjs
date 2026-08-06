@@ -56,10 +56,22 @@ test("resolves judged IDs to local counts and the exact local quote", async () =
   assert.equal(analyzed.interactionCard.frustrationQuote, dude.text);
 });
 
-test("rejects invented IDs and safely drops low-confidence classifications", () => {
+test("drops invented IDs and low-confidence classifications", () => {
   const candidates = buildInteractionToneCandidates(records);
-  assert.equal(extractInteractionToneSelection({ frustrated: [{ candidate_id: "interaction-999", confidence: 0.9 }], grateful: [], funniest_frustration_candidate_id: "none" }, candidates), null);
+  assert.deepEqual(extractInteractionToneSelection({ frustrated: [{ candidate_id: "interaction-999", confidence: 0.9 }], grateful: [], funniest_frustration_candidate_id: "none" }, candidates), {
+    frustrated: [], grateful: [], funniest_frustration_candidate_id: "none",
+  });
   assert.deepEqual(extractInteractionToneSelection({ frustrated: [{ candidate_id: candidates[0].candidate_id, confidence: 0.5 }], grateful: [], funniest_frustration_candidate_id: candidates[0].candidate_id }, candidates), {
     frustrated: [], grateful: [], funniest_frustration_candidate_id: "none",
+  });
+});
+
+test("accepts fenced JSON and drops malformed items instead of failing the whole classification", () => {
+  const candidates = [{ candidate_id: "interaction-1", text: "Dude, this is not what I asked for!", occurrences: 1 }];
+  const body = { choices: [{ message: { content: "```json\n{\"frustrated\":[{\"candidate_id\":\"interaction-1\",\"confidence\":0.9},{\"candidate_id\":\"invented\",\"confidence\":0.99}],\"grateful\":[],\"funniest_frustration_candidate_id\":\"interaction-1\"}\n```" } }] };
+  assert.deepEqual(extractInteractionToneSelection(body, candidates), {
+    frustrated: [{ candidate_id: "interaction-1", confidence: 0.9 }],
+    grateful: [],
+    funniest_frustration_candidate_id: "interaction-1",
   });
 });

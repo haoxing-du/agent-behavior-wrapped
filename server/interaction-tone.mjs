@@ -117,7 +117,7 @@ export function buildOpenRouterInteractionToneRequest(candidates, model = OPENRO
     model,
     temperature: 0,
     reasoning: { effort: "none", exclude: true },
-    max_tokens: 1024,
+    max_tokens: 4096,
     messages: [
       { role: "system", content: interactionToneJudgePrompt },
       { role: "user", content: `Classify these redacted user-message candidates:\n\n${JSON.stringify(candidates)}` },
@@ -147,21 +147,33 @@ function messageContent(body) {
   return typeof content === "string" ? content : Array.isArray(content) ? content.map((part) => part?.text || "").join(" ") : "";
 }
 
-export function extractInteractionToneSelection(body, candidates) {
-  let parsed = body;
-  if (body?.choices) {
-    try { parsed = JSON.parse(messageContent(body)); }
-    catch { return null; }
+function parsedMessageObject(body) {
+  const content = messageContent(body).trim();
+  if (!content) return null;
+  const attempts = [content, content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "")];
+  const start = content.indexOf("{");
+  const end = content.lastIndexOf("}");
+  if (start >= 0 && end > start) attempts.push(content.slice(start, end + 1));
+  for (const attempt of attempts) {
+    try {
+      const parsed = JSON.parse(attempt);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+    } catch { /* Try the next bounded JSON representation. */ }
   }
+  return null;
+}
+
+export function extractInteractionToneSelection(body, candidates) {
+  const parsed = body?.choices ? parsedMessageObject(body) : body;
   const allowed = new Set(candidates.map((candidate) => candidate.candidate_id));
   const validate = (items) => {
     if (!Array.isArray(items)) return null;
     const seen = new Set();
     const result = [];
     for (const item of items) {
-      if (!allowed.has(item?.candidate_id)) return null;
+      if (!allowed.has(item?.candidate_id)) continue;
       const confidence = Number(item.confidence);
-      if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) return null;
+      if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) continue;
       if (seen.has(item.candidate_id) || confidence < MIN_CONFIDENCE) continue;
       seen.add(item.candidate_id);
       result.push({ candidate_id: item.candidate_id, confidence });
