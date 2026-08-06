@@ -2,7 +2,7 @@ import { buildOpenRouterJudgeRequest, extractCandidateId, OPENROUTER_MODEL } fro
 import { buildOpenRouterFrustrationRequest, isShareSafeFrustrationQuote } from "../server/frustration-card.mjs";
 import { buildOpenRouterInteractionToneRequest, extractInteractionToneSelection, INTERACTION_TONE_MAX_CANDIDATES, isShareSafeInteractionText } from "../server/interaction-tone.mjs";
 import { buildOpenRouterSessionTopicRequest, extractSessionTopicSelection, isShareSafeTopicMessage, SESSION_TOPIC_MAX_CANDIDATES } from "../server/session-topics.mjs";
-import { buildOpenRouterWorkaroundRequest, extractWorkaroundSelection, isShareSafeTrajectoryText, WORKAROUND_MAX_CANDIDATES } from "../server/instrumental-workarounds.mjs";
+import { buildOpenRouterWorkaroundRequest, extractWorkaroundSelection, validateWorkaroundChunks } from "../server/instrumental-workarounds.mjs";
 
 const MAX_BODY_BYTES = 256_000;
 const MAX_CANDIDATES = 100;
@@ -113,35 +113,8 @@ export function validateSessionTopicRelayPayload(value) {
 }
 
 export function validateWorkaroundRelayPayload(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).join("|") !== "candidates") return null;
-  if (!Array.isArray(value.candidates) || value.candidates.length < 1 || value.candidates.length > WORKAROUND_MAX_CANDIDATES) return null;
-  return value.candidates.every((candidate, index) => candidate
-    && typeof candidate === "object"
-    && !Array.isArray(candidate)
-    && Object.keys(candidate).sort().join("|") === "candidate_id|events|proposal"
-    && candidate.candidate_id === `workaround-${index + 1}`
-    && candidate.proposal
-    && typeof candidate.proposal === "object"
-    && !Array.isArray(candidate.proposal)
-    && Object.keys(candidate.proposal).sort().join("|") === "alternative_method_event_id|blocker_event_id|original_method_event_id"
-    && Array.isArray(candidate.events)
-    && candidate.events.length >= 2
-    && candidate.events.length <= 12
-    && candidate.events.every((event, eventIndex) => event
-      && typeof event === "object"
-      && !Array.isArray(event)
-      && Object.keys(event).sort().join("|") === "event_id|kind|role|text"
-      && event.event_id === `${candidate.candidate_id}-event-${eventIndex + 1}`
-      && ["user", "assistant", "tool", "system"].includes(event.role)
-      && ["user_text", "assistant_text", "tool_use", "tool_blocker", "restriction"].includes(event.kind)
-      && isShareSafeTrajectoryText(event.text))
-    && (() => {
-      const positions = new Map(candidate.events.map((event, eventIndex) => [event.event_id, eventIndex]));
-      const original = positions.get(candidate.proposal.original_method_event_id);
-      const blocker = positions.get(candidate.proposal.blocker_event_id);
-      const alternative = positions.get(candidate.proposal.alternative_method_event_id);
-      return original !== undefined && blocker !== undefined && alternative !== undefined && original < blocker && blocker < alternative;
-    })()) ? value.candidates : null;
+  if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).join("|") !== "chunks") return null;
+  return validateWorkaroundChunks(value.chunks);
 }
 
 function validateInteractionQuoteRelayPayload(value, prefix) {
@@ -474,13 +447,14 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
   let body;
   try { body = JSON.parse(raw); } catch { return json({ error: "Invalid JSON." }, 400); }
   const candidates = workaroundRoute ? validateWorkaroundRelayPayload(body) : sessionTopicRoute ? validateSessionTopicRelayPayload(body) : interactionToneRoute ? validateInteractionToneRelayPayload(body) : frustrationRoute ? validateFrustrationRelayPayload(body) : validateRelayPayload(body);
-  if (!candidates) return json({ error: "Invalid redacted candidate payload." }, 400);
+  if (!candidates) return json({ error: "Invalid redacted analysis payload." }, 400);
 
   const clientHeader = request.headers.get("x-behavior-wrapped-client") || "";
   const networkId = request.headers.get("cf-connecting-ip") || "unknown";
   const clientKey = /^[a-f0-9]{32}$/.test(clientHeader) ? clientHeader : networkId;
   const judgeKind = workaroundRoute ? "instrumental-workarounds" : sessionTopicRoute ? "session-topics" : interactionToneRoute ? "interaction-tone" : frustrationRoute ? "frustration" : "phrase";
-  if (!await applyRateLimit(env.CLIENT_RATE_LIMITER, `${judgeKind}:${clientKey}`)) return json({ error: "Too many requests from this client. Try again shortly." }, 429);
+  const clientLimiter = workaroundRoute && env.CORPUS_RATE_LIMITER ? env.CORPUS_RATE_LIMITER : env.CLIENT_RATE_LIMITER;
+  if (!await applyRateLimit(clientLimiter, `${judgeKind}:${clientKey}`)) return json({ error: "Too many requests from this client. Try again shortly." }, 429);
   if (!await applyRateLimit(env.GLOBAL_RATE_LIMITER, "all-clients")) return json({ error: "The shared phrase judge is busy. Try again shortly." }, 429);
   if (!env.OPENROUTER_API_KEY) return json({ error: "Phrase judge is not configured." }, 503);
 

@@ -10,7 +10,7 @@ import { analyzeSessions, makeDonationPreview } from "./analysis.mjs";
 import { buildPhraseCandidates, OPENROUTER_MODEL, PHRASE_JUDGE_NAME, PHRASE_JUDGE_RELAY_URL, judgePhraseCard, judgePhraseCardViaRelay } from "./phrase-card.mjs";
 import { applyInteractionToneJudgment, buildInteractionToneCandidates, emptyInteractionToneJudgment, INTERACTION_TONE_RELAY_URL, judgeInteractionTone, judgeInteractionToneViaRelay } from "./interaction-tone.mjs";
 import { applySessionTopicJudgment, buildSessionTopicCandidates, emptySessionTopicJudgment, judgeSessionTopics, judgeSessionTopicsViaRelay, SESSION_TOPIC_RELAY_URL } from "./session-topics.mjs";
-import { applyWorkaroundJudgment, buildWorkaroundCandidates, emptyWorkaroundJudgment, judgeWorkarounds, judgeWorkaroundsViaRelay, WORKAROUND_RELAY_URL } from "./instrumental-workarounds.mjs";
+import { applyWorkaroundJudgment, buildWorkaroundTrajectories, emptyWorkaroundJudgment, judgeWorkarounds, judgeWorkaroundsViaRelay, WORKAROUND_RELAY_URL } from "./instrumental-workarounds.mjs";
 import { getLeaderboardSnapshot, joinLeaderboard, leaderboardAggregateFromReport, LEADERBOARD_RELAY_ORIGIN, leaveLeaderboard, syntheticLeaderboardSnapshot } from "./leaderboard.mjs";
 import { getOrCreateClientId, loadReport } from "./store.mjs";
 
@@ -159,7 +159,7 @@ const server = http.createServer(async (request, response) => {
         const candidates = buildPhraseCandidates(records, { maximumCandidates: 100 });
         const interactionCandidates = buildInteractionToneCandidates(records);
         const sessionTopicBundle = buildSessionTopicCandidates(records);
-        const workaroundBundle = buildWorkaroundCandidates(records);
+        const workaroundBundle = buildWorkaroundTrajectories(records);
         const phraseCardPromise = process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
           ? judgePhraseCard(candidates, process.env.OPENROUTER_API_KEY)
           : judgePhraseCardViaRelay(candidates, { endpoint: process.env.BEHAVIOR_WRAPPED_JUDGE_URL || PHRASE_JUDGE_RELAY_URL, clientId: getOrCreateClientId() });
@@ -173,11 +173,11 @@ const server = http.createServer(async (request, response) => {
             ? judgeSessionTopics(sessionTopicBundle, process.env.OPENROUTER_API_KEY)
             : judgeSessionTopicsViaRelay(sessionTopicBundle, { endpoint: process.env.BEHAVIOR_WRAPPED_SESSION_TOPICS_URL || SESSION_TOPIC_RELAY_URL, clientId: getOrCreateClientId() })
           : Promise.resolve(emptySessionTopicJudgment(sessionTopicBundle));
-        const workaroundsPromise = workaroundBundle.candidates.length
+        const workaroundsPromise = workaroundBundle.chunks.length
           ? process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
             ? judgeWorkarounds(workaroundBundle, process.env.OPENROUTER_API_KEY)
             : judgeWorkaroundsViaRelay(workaroundBundle, { endpoint: process.env.BEHAVIOR_WRAPPED_WORKAROUND_URL || WORKAROUND_RELAY_URL, clientId: getOrCreateClientId() })
-          : Promise.resolve(emptyWorkaroundJudgment());
+          : Promise.resolve(emptyWorkaroundJudgment(workaroundBundle.coverage));
         const analyzed = analyzeSessions(records);
         const [phraseCard, interactionTone, sessionTopics, workarounds] = await Promise.all([
           phraseCardPromise,

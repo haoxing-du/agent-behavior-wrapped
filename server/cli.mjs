@@ -9,7 +9,7 @@ import { buildPhraseCandidates, judgePhraseCard, judgePhraseCardViaRelay, PHRASE
 import { requestRemoteAnalysisConsent } from "./consent.mjs";
 import { applyInteractionToneJudgment, buildInteractionToneCandidates, emptyInteractionToneJudgment, INTERACTION_TONE_RELAY_URL, judgeInteractionTone, judgeInteractionToneViaRelay } from "./interaction-tone.mjs";
 import { applySessionTopicJudgment, buildSessionTopicCandidates, emptySessionTopicJudgment, judgeSessionTopics, judgeSessionTopicsViaRelay, SESSION_TOPIC_RELAY_URL } from "./session-topics.mjs";
-import { applyWorkaroundJudgment, buildWorkaroundCandidates, emptyWorkaroundJudgment, judgeWorkarounds, judgeWorkaroundsViaRelay, WORKAROUND_RELAY_URL } from "./instrumental-workarounds.mjs";
+import { applyWorkaroundJudgment, buildWorkaroundTrajectories, emptyWorkaroundJudgment, judgeWorkarounds, judgeWorkaroundsViaRelay, WORKAROUND_RELAY_URL } from "./instrumental-workarounds.mjs";
 import { deletePublicReport, publishPublicReport, PUBLIC_REPORT_ORIGIN } from "./public-report.mjs";
 import { createReportId, deleteReport, getOrCreateClientId, listReports, saveReport, storeRoot } from "./store.mjs";
 import { judgeErrorDetails } from "./judge-debug.mjs";
@@ -127,7 +127,7 @@ async function createWrapped() {
   const candidates = buildPhraseCandidates(sessionRecords, { maximumCandidates: 100 });
   const interactionCandidates = buildInteractionToneCandidates(sessionRecords);
   const sessionTopicBundle = buildSessionTopicCandidates(sessionRecords);
-  const workaroundBundle = buildWorkaroundCandidates(sessionRecords);
+  const workaroundBundle = buildWorkaroundTrajectories(sessionRecords);
   const analysisWarnings = [];
   process.stdout.write(`${muted}◇  Scanning corpus for favorite phrases, interaction patterns, usage themes, and workarounds…${reset}\r`);
   const phraseCardPromise = process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
@@ -143,11 +143,12 @@ async function createWrapped() {
       ? judgeSessionTopics(sessionTopicBundle, process.env.OPENROUTER_API_KEY)
       : judgeSessionTopicsViaRelay(sessionTopicBundle, { endpoint: process.env.BEHAVIOR_WRAPPED_SESSION_TOPICS_URL || SESSION_TOPIC_RELAY_URL, clientId: getOrCreateClientId() })
     : Promise.resolve(emptySessionTopicJudgment(sessionTopicBundle));
-  const workaroundsPromise = workaroundBundle.candidates.length
+  const workaroundProgress = ({ index, total }) => process.stdout.write(`${muted}◇  Reviewing all redacted trajectories for instrumental workarounds · batch ${index}/${total}…${reset}\r`);
+  const workaroundsPromise = workaroundBundle.chunks.length
     ? process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
-      ? judgeWorkarounds(workaroundBundle, process.env.OPENROUTER_API_KEY)
-      : judgeWorkaroundsViaRelay(workaroundBundle, { endpoint: process.env.BEHAVIOR_WRAPPED_WORKAROUND_URL || WORKAROUND_RELAY_URL, clientId: getOrCreateClientId() })
-    : Promise.resolve(emptyWorkaroundJudgment());
+      ? judgeWorkarounds(workaroundBundle, process.env.OPENROUTER_API_KEY, { onProgress: workaroundProgress })
+      : judgeWorkaroundsViaRelay(workaroundBundle, { endpoint: process.env.BEHAVIOR_WRAPPED_WORKAROUND_URL || WORKAROUND_RELAY_URL, clientId: getOrCreateClientId(), onProgress: workaroundProgress })
+    : Promise.resolve(emptyWorkaroundJudgment(workaroundBundle.coverage));
   const analyzed = analyzeSessions(sessionRecords);
   const [phraseCard, interactionTone, sessionTopics, workarounds] = await Promise.all([
     phraseCardPromise,
@@ -168,7 +169,7 @@ async function createWrapped() {
   const id = createReportId();
   const safeFindings = analyzed.findings.map(({ evidence, method, ...finding }) => finding);
   const hasPrivateWorkaroundEvidence = Boolean(analyzed.workaroundReview?.occurrences?.length || analyzed.workaroundReview?.borderline?.length);
-  const report = { id, createdAt: new Date().toISOString(), rangeLabel: formatRange(chosenSessions), source: "Claude Code + Codex", stats: analyzed.stats, findings: safeFindings, phraseCard: analyzed.phraseCard, interactionCard: analyzed.interactionCard, workaroundCard: analyzed.workaroundCard, workaroundReview: analyzed.workaroundReview, sessionIds: chosenSessions.map((session) => session.id), privacy: { shareSafe: !hasPrivateWorkaroundEvidence, containsTranscriptText: hasPrivateWorkaroundEvidence, externalTransmission: true, transmittedData: "redacted phrase, interaction-tone, session-topic, and blocker-trajectory candidates; aggregate report statistics; and a random client ID only", externalRecipient: "Behavior Wrapped relay, OpenRouter, NVIDIA, and public report hosting" } };
+  const report = { id, createdAt: new Date().toISOString(), rangeLabel: formatRange(chosenSessions), source: "Claude Code + Codex", stats: analyzed.stats, findings: safeFindings, phraseCard: analyzed.phraseCard, interactionCard: analyzed.interactionCard, workaroundCard: analyzed.workaroundCard, workaroundReview: analyzed.workaroundReview, sessionIds: chosenSessions.map((session) => session.id), privacy: { shareSafe: !hasPrivateWorkaroundEvidence, containsTranscriptText: hasPrivateWorkaroundEvidence, externalTransmission: true, transmittedData: "redacted phrase, interaction-tone, and session-topic candidates; complete locally redacted trajectory chunks for workaround discovery; aggregate report statistics; and a random client ID only", externalRecipient: "Behavior Wrapped relay, OpenRouter, NVIDIA, and public report hosting" } };
   process.stdout.write(`${muted}◇  Publishing the share-safe Wrapped page…${reset}\r`);
   let publicUrl = null;
   try {

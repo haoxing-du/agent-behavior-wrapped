@@ -374,8 +374,8 @@ function PrivacyPanel() {
     <div>
       <span className="eyebrow">Privacy, by construction</span>
       <h3>Your transcripts stay on this Mac.</h3>
-      <p>Transcript parsing runs inside this local app. Full transcripts, code, and tool outputs stay on this Mac; only redacted phrase, interaction, topic, and blocker-trajectory candidates plus a random client ID go through the Behavior Wrapped relay to OpenRouter.</p>
-      <div className="privacy-facts"><span>✓ No account</span><span>✓ No telemetry</span><span>✓ Only redacted candidates leave</span></div>
+      <p>Transcript parsing runs inside this local app. Full transcripts, code, raw tool outputs, paths, and secrets stay on this Mac. Favorite-phrase, interaction, and topic candidates plus complete locally redacted trajectory chunks for workaround discovery go through the Behavior Wrapped relay to OpenRouter.</p>
+      <div className="privacy-facts"><span>✓ No account</span><span>✓ No telemetry</span><span>✓ Locally redacted analysis only</span></div>
     </div>
   </aside>;
 }
@@ -471,7 +471,7 @@ function Selection({ catalog, selected, setSelected, onAnalyze, loading, error }
 
         <div className={`judge-option judge-required ${catalog.phraseJudge?.available ? "" : "unavailable"}`}>
           <span className="network-mark">↗</span>
-          <span><strong>Nemotron picks the favorite phrase and judges interaction, usage themes, and workarounds</strong><small>Every analysis sends only redacted phrase, interaction, topic, and blocker-trajectory candidates plus a random client ID—not transcripts—through our rate-limited relay to OpenRouter’s free NVIDIA endpoint.</small></span>
+          <span><strong>Nemotron picks the favorite phrase and judges interaction, usage themes, and workarounds</strong><small>Workaround discovery reviews every selected session as locally redacted trajectory chunks. Code, raw tool outputs, paths, likely secrets, and PII are removed before the chunks go through our rate-limited relay to OpenRouter’s free NVIDIA endpoint.</small></span>
           <em>Nemotron 3 Ultra · shared relay</em>
         </div>
 

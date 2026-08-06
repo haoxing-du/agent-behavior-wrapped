@@ -56,18 +56,22 @@ function sessionTopicRequest(body = { candidates: [sessionTopicCandidate] }) {
   });
 }
 
-const workaroundCandidate = { candidate_id: "workaround-1", proposal: {
-  original_method_event_id: "workaround-1-event-1",
-  blocker_event_id: "workaround-1-event-2",
-  alternative_method_event_id: "workaround-1-event-4",
-}, events: [
-  { event_id: "workaround-1-event-1", role: "assistant", kind: "tool_use", text: "Tool use: Bash (rm)" },
-  { event_id: "workaround-1-event-2", role: "tool", kind: "tool_blocker", text: "Tool result: operation not permitted" },
-  { event_id: "workaround-1-event-3", role: "assistant", kind: "assistant_text", text: "I can move the files to an archive instead." },
-  { event_id: "workaround-1-event-4", role: "assistant", kind: "tool_use", text: "Tool use: Bash (mv)" },
-] };
+const workaroundChunk = {
+  trajectory_id: "trajectory-1",
+  chunk_id: "trajectory-1-chunk-1",
+  start_event: 1,
+  end_event: 4,
+  part_index: 1,
+  part_count: 1,
+  events: [
+    { event_id: "trajectory-1-event-1", role: "assistant", kind: "tool_use", text: "Tool use: Bash (rm)" },
+    { event_id: "trajectory-1-event-2", role: "tool", kind: "tool_result", text: "Tool result: operation not permitted" },
+    { event_id: "trajectory-1-event-3", role: "assistant", kind: "assistant_text", text: "I can move the files to an archive instead." },
+    { event_id: "trajectory-1-event-4", role: "assistant", kind: "tool_use", text: "Tool use: Bash (mv)" },
+  ],
+};
 
-function workaroundRequest(body = { candidates: [workaroundCandidate] }) {
+function workaroundRequest(body = { chunks: [workaroundChunk] }) {
   return new Request("https://relay.example/v1/instrumental-workarounds", {
     method: "POST",
     headers: { "content-type": "application/json", "x-behavior-wrapped-protocol": "1", "x-behavior-wrapped-client": "0123456789abcdef0123456789abcdef" },
@@ -133,11 +137,14 @@ test("worker validates session openings and returns only topic classifications",
   assert.deepEqual(await response.json(), { classifications, model: OPENROUTER_MODEL, usage: null });
 });
 
-test("worker validates redacted blocker trajectories and returns only structured workaround references", async () => {
-  assert.deepEqual(validateWorkaroundRelayPayload({ candidates: [workaroundCandidate] }), [workaroundCandidate]);
-  assert.equal(validateWorkaroundRelayPayload({ candidates: [{ ...workaroundCandidate, events: [{ ...workaroundCandidate.events[0], text: "See /Users/private/project" }, ...workaroundCandidate.events.slice(1)] }] }), null);
+test("worker validates complete redacted trajectory chunks and returns only structured workaround references", async () => {
+  assert.deepEqual(validateWorkaroundRelayPayload({ chunks: [workaroundChunk] }), [workaroundChunk]);
+  assert.equal(validateWorkaroundRelayPayload({ chunks: [{ ...workaroundChunk, events: [{ ...workaroundChunk.events[0], text: "See /Users/private/project" }, ...workaroundChunk.events.slice(1)] }] }), null);
   const selection = { confirmed: [{
-    candidate_id: "workaround-1",
+    trajectory_id: "trajectory-1",
+    original_method_event_id: "trajectory-1-event-1",
+    blocker_event_id: "trajectory-1-event-2",
+    alternative_method_event_id: "trajectory-1-event-4",
     same_effect_reason: "Moving the files removed them from the original location.",
     disclosure: "disclosed and authorized",
     confidence: "high",
