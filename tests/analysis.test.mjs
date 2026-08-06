@@ -86,6 +86,27 @@ test("title-cases model families that are not hardcoded", () => {
   assert.equal(report.stats.models[0].name, "Claude Fable 5");
 });
 
+test("counts interaction tone and classifies languages and prompt topics locally", () => {
+  const report = analyzeSessions([{ sessionId: "classifiers", records: [
+    { type: "user", message: { content: "Dude, come on, this is not what I asked for." } },
+    { type: "assistant", message: { content: "I understand. Voy a corregir esto porque ahora está claro para mí." } },
+    { type: "user", message: { content: "Please fix the React component and run the tests." } },
+    { type: "assistant", message: { content: "I fixed the component. ```js\nconst secret = true;\n``` Gracias por explicar el problema con más detalle." } },
+    { type: "user", message: { content: "Perfect, thanks!" } },
+    { type: "assistant", message: { content: "You are welcome. The implementation and tests are complete." } },
+    { type: "user", message: { content: "Draft a short email with a friendlier tone." } },
+    { type: "assistant", message: { content: "I drafted a concise email with a warmer opening and a direct close." } },
+  ] }]);
+  assert.equal(report.stats.interactionTone.frustratedMessages, 1);
+  assert.equal(report.stats.interactionTone.gratefulMessages, 1);
+  assert.equal(report.stats.interactionTone.analyzedMessages, 4);
+  assert.ok(report.stats.outputLanguages.some((item) => item.language === "Spanish" && item.words > 0));
+  assert.equal(report.stats.outputLanguages.some((item) => item.language === "English" && item.words === 4), false);
+  assert.ok(report.stats.topics.some((item) => item.topic === "Coding"));
+  assert.ok(report.stats.topics.some((item) => item.topic === "Writing"));
+  assert.equal(report.stats.topics.reduce((sum, item) => sum + item.prompts, 0), 4);
+});
+
 test("uses an inclusive rolling 30-day default window", () => {
   const sessions = [{ startedAt: "2026-07-06T00:00:00.000Z" }, { startedAt: "2026-07-07T00:00:00.000Z" }, { startedAt: "2026-08-05T00:00:00.000Z" }];
   const range = defaultDateRange(sessions, { now: new Date("2026-08-05T12:00:00.000Z") });

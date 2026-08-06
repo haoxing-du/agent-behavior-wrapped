@@ -86,6 +86,15 @@ function safeText(value, maximum = 80) {
   return typeof value === "string" ? value.normalize("NFKC").replace(/[\u0000-\u001f\u007f]/g, "").slice(0, maximum) : "";
 }
 
+function safeBreakdown(value, labelKey, countKey, allowedLabels) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, allowedLabels.size).flatMap((item) => {
+    const label = safeText(item?.[labelKey], 40);
+    if (!allowedLabels.has(label)) return [];
+    return [{ [labelKey]: label, [countKey]: Math.round(safeNumber(item?.[countKey], 1_000_000_000)), percentage: safeNumber(item?.percentage, 100) }];
+  });
+}
+
 export function sanitizePublicReport(value) {
   if (!value || typeof value !== "object" || Array.isArray(value) || !/^[A-Za-z0-9_-]{8,32}$/.test(value.id || "")) return null;
   const stats = value.stats;
@@ -107,6 +116,13 @@ export function sanitizePublicReport(value) {
       interruptions: Math.round(safeNumber(stats.interruptions)), tokens: Math.round(safeNumber(stats.tokens)), agentWords: Math.round(safeNumber(stats.agentWords)),
       userWords: Math.round(safeNumber(stats.userWords)), agentUserWordRatio: safeNumber(stats.agentUserWordRatio, 10_000),
       averageAgentResponseWords: Math.round(safeNumber(stats.averageAgentResponseWords)), averageUserInputWords: Math.round(safeNumber(stats.averageUserInputWords)),
+      interactionTone: {
+        frustratedMessages: Math.round(safeNumber(stats.interactionTone?.frustratedMessages, 1_000_000)),
+        gratefulMessages: Math.round(safeNumber(stats.interactionTone?.gratefulMessages, 1_000_000)),
+        analyzedMessages: Math.round(safeNumber(stats.interactionTone?.analyzedMessages, 1_000_000)),
+      },
+      outputLanguages: safeBreakdown(stats.outputLanguages, "language", "words", new Set(["English", "Spanish", "French", "German", "Portuguese", "Italian", "Japanese", "Korean", "Chinese", "Arabic", "Hebrew", "Hindi", "Thai", "Cyrillic"])),
+      topics: safeBreakdown(stats.topics, "topic", "prompts", new Set(["Coding", "Writing", "Personal advice", "Research & search", "Planning", "Data & analysis", "Other"])),
       estimatedCostUsd: safeNumber(stats.estimatedCostUsd),
       tools: Array.isArray(stats.tools) ? stats.tools.slice(0, 6).map((item) => ({ name: safeText(item?.name, 40), count: Math.round(safeNumber(item?.count, 100_000_000)) })) : [],
       agents: Array.isArray(stats.agents) ? stats.agents.slice(0, 4).map((item) => ({ agent: item?.agent === "codex" ? "codex" : "claude", name: safeText(item?.name, 30), count: Math.round(safeNumber(item?.count, 1_000_000)), percentage: safeNumber(item?.percentage, 100) })) : [],

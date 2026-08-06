@@ -3,6 +3,27 @@ import { safeEvidenceText, redactText } from "./privacy.mjs";
 
 const wordSegmenter = new Intl.Segmenter("en", { granularity: "word" });
 
+const gratitudePattern = /\b(?:thank(?:s| you)?|thx|tysm|much appreciated|appreciate (?:it|that|you)|nice work|great job|good job|perfect|awesome)\b/i;
+const frustrationPattern = /\b(?:bro|bruh|dude|come on|seriously|what (?:are|were) you doing|this is ridiculous|clearly not|not what i (?:asked|meant|wanted)|i already (?:said|told|asked)|you (?:keep|ignored|missed|broke|failed)|how many times|for the last time|wtf|wth)\b|\b(?:damn|hell)\b/i;
+const negativeTonePattern = /\b(?:wrong|broken|ridiculous|ignored|missed|failed|stop|again|not what)\b/i;
+
+const languageLexicons = [
+  ["Spanish", new Set("el la los las una unas para pero porque como esto esta este muy más con del quiero puede puedes hacer gracias ahora".split(" "))],
+  ["French", new Set("le la les des une pour mais parce avec dans est sont cette ça très plus vous peux peut faire merci maintenant".split(" "))],
+  ["German", new Set("der die das den dem ein eine für aber weil mit ist sind diese sehr mehr ich du können bitte danke jetzt".split(" "))],
+  ["Portuguese", new Set("uma para mas porque com isso esta este muito mais você pode fazer obrigado agora não".split(" "))],
+  ["Italian", new Set("il lo la gli le una per ma perché con questo questa molto più puoi fare grazie adesso non".split(" "))],
+];
+
+const topicRules = [
+  ["Coding", /\b(?:code|coding|bug|function|class|api|database|component|frontend|backend|deploy|repository|repo|git|test|typescript|javascript|python|react|npm|css|html|sql|terminal|command|build|implement|refactor|debug|package|server|cli|script|compile|lint|endpoint|schema|migration)\b|\.(?:js|jsx|ts|tsx|py|rs|go|java|rb|css|html|sql|json|yaml|yml)\b/gi],
+  ["Writing", /\b(?:write|rewrite|edit|draft|copy|essay|article|email|post|tone|grammar|wording|proofread|document|memo|blog|story|resume|cover letter|headline|paragraph)\b/gi],
+  ["Personal advice", /\b(?:personal advice|relationship|partner|friend|family|career|life advice|anxious|anxiety|stressed|feel|feeling|should i|help me decide|therapy|therapist|breakup|dating)\b/gi],
+  ["Research & search", /\b(?:search|find|look up|research|compare|comparison|what is|who is|when did|sources?|citations?|latest|recommend|recommendation|investigate|explain|overview)\b/gi],
+  ["Planning", /\b(?:plan|roadmap|schedule|itinerary|organize|prioritize|steps|strategy|milestones?|timeline|prepare|checklist|agenda|project plan)\b/gi],
+  ["Data & analysis", /\b(?:analyze|analysis|data|dataset|spreadsheet|csv|metrics?|chart|statistics?|trend|distribution|correlation|survey|dashboard|visualization)\b/gi],
+];
+
 function contentBlocks(record) {
   const content = record?.message?.content ?? record?.content;
   if (Array.isArray(content)) return content;
@@ -18,6 +39,106 @@ function wordCount(value) {
   let count = 0;
   for (const part of wordSegmenter.segment(value)) if (part.isWordLike) count++;
   return count;
+}
+
+function proseText(value) {
+  return String(value || "")
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`[^`\n]+`/g, " ")
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/\b(?:[A-Za-z]:)?[/.~][^\s]+/g, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isFrustratedMessage(value) {
+  const text = proseText(value);
+  if (!text) return false;
+  if (frustrationPattern.test(text)) return true;
+  const capsWords = text.match(/\b[A-Z]{4,}\b/g)?.filter((word) => !/^(?:README|JSON|HTML|HTTP|HTTPS|API|SQL|CSS|TODO|URL|CLI)$/.test(word)) || [];
+  return (capsWords.length >= 2 || /[!?]{3,}/.test(text)) && negativeTonePattern.test(text);
+}
+
+function isGratefulMessage(value) {
+  return gratitudePattern.test(proseText(value));
+}
+
+function scriptCount(value, expression) {
+  return value.match(expression)?.length || 0;
+}
+
+function languageForChunk(value) {
+  const letters = scriptCount(value, /\p{L}/gu);
+  if (!letters) return null;
+  const scripts = [
+    ["Japanese", scriptCount(value, /[\p{Script=Hiragana}\p{Script=Katakana}]/gu)],
+    ["Korean", scriptCount(value, /\p{Script=Hangul}/gu)],
+    ["Chinese", scriptCount(value, /\p{Script=Han}/gu)],
+    ["Arabic", scriptCount(value, /\p{Script=Arabic}/gu)],
+    ["Hebrew", scriptCount(value, /\p{Script=Hebrew}/gu)],
+    ["Hindi", scriptCount(value, /\p{Script=Devanagari}/gu)],
+    ["Thai", scriptCount(value, /\p{Script=Thai}/gu)],
+    ["Cyrillic", scriptCount(value, /\p{Script=Cyrillic}/gu)],
+  ];
+  const [script, count] = scripts.sort((left, right) => right[1] - left[1])[0];
+  if (count >= 2 && count / letters >= 0.15) return script;
+  const words = value.toLocaleLowerCase().match(/\p{Script=Latin}+(?:['’]\p{Script=Latin}+)*/gu) || [];
+  if (!words.length) return null;
+  const uniqueWords = new Set(words);
+  let best = ["English", 0];
+  for (const [language, lexicon] of languageLexicons) {
+    const score = [...uniqueWords].reduce((sum, word) => sum + (lexicon.has(word) ? 1 : 0), 0);
+    if (score > best[1]) best = [language, score];
+  }
+  return best[1] >= 2 ? best[0] : "English";
+}
+
+function languageBreakdown(texts) {
+  const counts = new Map();
+  for (const value of texts) {
+    const prose = proseText(value);
+    if (!prose) continue;
+    for (const chunk of prose.split(/(?<=[.!?。！？])\s+|\n+/)) {
+      const words = wordCount(chunk);
+      const language = words >= 2 ? languageForChunk(chunk) : null;
+      if (language) counts.set(language, (counts.get(language) || 0) + words);
+    }
+  }
+  const total = [...counts.values()].reduce((sum, value) => sum + value, 0);
+  return [...counts]
+    .sort((left, right) => right[1] - left[1])
+    .map(([language, words]) => ({ language, words, percentage: total ? Number((words / total * 100).toFixed(1)) : 0 }));
+}
+
+function topicScores(value) {
+  return topicRules.map(([topic, pattern]) => {
+    pattern.lastIndex = 0;
+    return [topic, [...String(value || "").matchAll(pattern)].length];
+  });
+}
+
+function topicBreakdown(sessionRecords) {
+  const counts = new Map();
+  let total = 0;
+  for (const { records } of sessionRecords) {
+    let previousTopic = null;
+    for (const record of records) {
+      if (record.type !== "user" || record.isMeta) continue;
+      const text = visibleText(record);
+      if (!text) continue;
+      const scores = topicScores(text).sort((left, right) => right[1] - left[1]);
+      let topic = scores[0][1] > 0 ? scores[0][0] : null;
+      if (!topic && wordCount(text) <= 8) topic = previousTopic;
+      topic ||= "Other";
+      if (topic !== "Other") previousTopic = topic;
+      counts.set(topic, (counts.get(topic) || 0) + 1);
+      total++;
+    }
+  }
+  return [...counts]
+    .sort((left, right) => right[1] - left[1])
+    .map(([topic, prompts]) => ({ topic, prompts, percentage: total ? Number((prompts / total * 100).toFixed(1)) : 0 }));
 }
 
 function toolUses(record) {
@@ -167,6 +288,9 @@ export function analyzeSessions(sessionRecords) {
   let userInputCount = 0;
   let agentResponseWords = 0;
   let agentResponseCount = 0;
+  let frustratedMessages = 0;
+  let gratefulMessages = 0;
+  const assistantProse = [];
   for (const { records, agent = "claude" } of sessionRecords) {
     agentCounts.set(agent, (agentCounts.get(agent) || 0) + 1);
     const timestamps = records.map((r) => r.timestamp).filter(Boolean).map((value) => new Date(value).getTime()).filter(Number.isFinite);
@@ -187,9 +311,12 @@ export function analyzeSessions(sessionRecords) {
         hasCurrentPrompt = true;
         userInputWords += wordCount(text);
         userInputCount++;
+        if (isFrustratedMessage(text)) frustratedMessages++;
+        if (isGratefulMessage(text)) gratefulMessages++;
       } else if (record.type === "assistant" && hasCurrentPrompt && text) {
         currentResponseWords += wordCount(text);
       }
+      if (record.type === "assistant" && text) assistantProse.push(text);
       const d = day(record.timestamp);
       if (d) activeDays.add(d);
       if (record.type === "user" && !record.isMeta && text) prompts++;
@@ -241,6 +368,16 @@ export function analyzeSessions(sessionRecords) {
     agentUserWordRatio: userInputWords ? Number((agentResponseWords / userInputWords).toFixed(2)) : null,
     averageAgentResponseWords: agentResponseCount ? Math.round(agentResponseWords / agentResponseCount) : 0,
     averageUserInputWords: userInputCount ? Math.round(userInputWords / userInputCount) : 0,
+    interactionTone: {
+      frustratedMessages,
+      gratefulMessages,
+      analyzedMessages: userInputCount,
+      method: "Counts user messages matching conservative frustration or gratitude phrase patterns; this is an approximate tone signal, not a judgment of emotion.",
+    },
+    outputLanguages: languageBreakdown(assistantProse),
+    languageMethod: "Estimates natural-language word share in assistant text after removing fenced code, inline code, URLs, paths, and markup. Script detection and small Latin-language lexicons are approximate.",
+    topics: topicBreakdown(sessionRecords),
+    topicMethod: "Assigns each user prompt to its highest-scoring local keyword category; short follow-ups inherit the preceding topic in that session.",
     tools,
     agents,
     models,

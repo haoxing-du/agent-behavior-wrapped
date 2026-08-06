@@ -8,7 +8,10 @@ type Finding = { id: string; kind: string; title: string; summary: string; metho
 type PhraseCard = { phrase: string; occurrences: number; distinctSessions: number; model: string; provider: string; latencyMs: number; method: string; candidateCount: number };
 type AgentStat = { agent: "claude" | "codex"; name: string; count: number; percentage: number };
 type ModelStat = { model: string; name: string; tokens: number; percentage: number };
-type Report = { stats: { sessions: number; activeDays: number; durationMinutes: number; prompts: number; toolCalls: number; interruptions: number; tokens: number; agentWords?: number; userWords?: number; agentUserWordRatio?: number | null; averageAgentResponseWords?: number; averageUserInputWords?: number; tools: { name: string; count: number }[]; agents: AgentStat[]; models: ModelStat[]; estimatedCostUsd: number; costEstimateMethod: string }; findings: Finding[]; phraseCard?: PhraseCard | null };
+type InteractionTone = { frustratedMessages: number; gratefulMessages: number; analyzedMessages: number; method?: string };
+type LanguageStat = { language: string; words: number; percentage: number };
+type TopicStat = { topic: string; prompts: number; percentage: number };
+type Report = { stats: { sessions: number; activeDays: number; durationMinutes: number; prompts: number; toolCalls: number; interruptions: number; tokens: number; agentWords?: number; userWords?: number; agentUserWordRatio?: number | null; averageAgentResponseWords?: number; averageUserInputWords?: number; interactionTone?: InteractionTone; outputLanguages?: LanguageStat[]; topics?: TopicStat[]; tools: { name: string; count: number }[]; agents: AgentStat[]; models: ModelStat[]; estimatedCostUsd: number; costEstimateMethod: string }; findings: Finding[]; phraseCard?: PhraseCard | null };
 type DonationMessage = { role: string; timestamp: string | null; text: string };
 type DonationSession = { sessionId: string; label: string; messages: DonationMessage[] };
 type Donation = { format: string; createdLocally: boolean; detectionCount: number; sessions: DonationSession[] };
@@ -158,12 +161,21 @@ function SharedWrapped({ id }: { id: string }) {
     const topModel = activeModels[0];
     const hosted = report.hosting?.public === true;
     const harryPotterSeriesCount = fmtSeriesEquivalent(report.stats.tokens || 0, 1_450_000);
+    const interactionTone = report.stats.interactionTone;
+    const languages = (report.stats.outputLanguages || []).filter((item) => hasDisplayablePercentage(item.percentage));
+    const showLanguages = languages.some((item) => item.language !== "English" && item.words >= 20 && item.percentage >= 3);
+    const topics = (report.stats.topics || []).filter((item) => hasDisplayablePercentage(item.percentage));
+    const displayTopics = [...topics.filter((item) => item.topic !== "Other"), ...topics.filter((item) => item.topic === "Other")];
+    const topTopic = displayTopics[0];
     const wrappedSlides: StorySlide[] = [
     { kicker: "This month you went through", headline: fmtCompact(report.stats.tokens || 0), detail: `tokens. That’s the complete Harry Potter series roughly ${harryPotterSeriesCount} times over.`, tone: "ice", metric: true },
     { kicker: "Your tokens were worth", headline: fmtUsd(report.stats.estimatedCostUsd || 0), detail: "", tone: "cost", rows: costEquivalents(report.stats.estimatedCostUsd || 0) },
     ...(leader ? [{ kicker: "Your most-used agent", headline: leader.name, detail: `${leader.count} of ${report.stats.sessions} selected sessions.`, tone: "agents", rows: activeAgents.map((agent) => ({ label: agent.name, value: `${agent.percentage.toFixed(1)}%`, percentage: agent.percentage })) }] : []),
     ...(topModel ? [{ kicker: "Your top models", headline: `${topModel.percentage.toFixed(1)}%`, detail: `went to your #1 · ${topModel.name}`, tone: "models", rows: activeModels.slice(0, 4).map((model, index) => ({ label: `${index + 1}  ${model.name}`, value: `${model.percentage.toFixed(1)}%`, percentage: model.percentage })) }] : []),
     ...(Number.isFinite(report.stats.averageAgentResponseWords) ? [{ kicker: "On average, your agent responded with", headline: `${report.stats.averageAgentResponseWords!.toLocaleString()} words`, detail: `Your average input was ${report.stats.averageUserInputWords!.toLocaleString()} words.`, tone: "violet" }] : []),
+    ...(interactionTone && interactionTone.frustratedMessages + interactionTone.gratefulMessages > 0 ? [{ kicker: "How many times did you yell at your agent?", headline: interactionTone.frustratedMessages.toLocaleString(), detail: `You thanked it ${interactionTone.gratefulMessages.toLocaleString()} time${interactionTone.gratefulMessages === 1 ? "" : "s"}.`, tone: "social" }] : []),
+    ...(showLanguages && languages[0] ? [{ kicker: "Your agent’s output was mostly", headline: languages[0].language, detail: `${languages[0].percentage.toFixed(1)}% of its natural-language words.`, tone: "languages", rows: languages.slice(0, 4).map((item) => ({ label: item.language, value: `${item.percentage.toFixed(1)}%`, percentage: item.percentage })) }] : []),
+    ...(topTopic ? [{ kicker: "Your #1 use for agents was", headline: topTopic.topic, detail: `${topTopic.prompts.toLocaleString()} of ${report.stats.prompts.toLocaleString()} prompts.`, tone: "topics", rows: displayTopics.slice(0, 5).map((item) => ({ label: item.topic === "Other" ? "Everything else" : item.topic, value: `${item.percentage.toFixed(1)}%`, percentage: item.percentage })) }] : []),
     ...(report.phraseCard ? [{ kicker: "Your agent’s favorite phrase is", headline: `“${report.phraseCard.phrase}”`, detail: `It said this ${report.phraseCard.occurrences} time${report.phraseCard.occurrences === 1 ? "" : "s"} across ${report.phraseCard.distinctSessions} session${report.phraseCard.distinctSessions === 1 ? "" : "s"}.`, tone: "quote" }] : []),
     ...(!hosted ? [{ kicker: "Optional research donation", headline: "Want to donate your data to research?", detail: "Review exactly what would be included and redact anything you want before exporting a local bundle.", tone: "research", ctaHref: `/donate/${report.id}`, ctaLabel: "Review redactions" }] : []),
     { kicker: "Now zoom out", headline: "Where do you land among other agent users?", detail: "See the distributions, opt-in rankings, and everyone’s favorite phrases.", tone: "leaderboard", ctaHref: `/leaderboard/${report.id}`, ctaLabel: "View the leaderboards" },
@@ -662,7 +674,7 @@ export default function App() {
     {safeStage === "select" && <Selection catalog={catalog} selected={selected} setSelected={setSelected} onAnalyze={analyze} loading={loading} error={error} />}
     {safeStage === "report" && report && <ReportView report={report} onEvidence={setEvidence} onDonate={() => { setStage("donate"); window.scrollTo(0, 0); }} />}
     {safeStage === "donate" && catalog && <DonationView sessions={catalog.sessions} initialSelected={analyzedIds} onBack={() => { setStage("report"); window.scrollTo(0, 0); }} />}
-    <footer><span>Behavior Wrapped <b>v0.1</b></span><span>Local transcripts · Redacted phrase aggregates sent through the hosted relay during analysis</span></footer>
+    <footer><span>Behavior Wrapped <b>v0.2</b></span><span>Local transcripts · Redacted phrase aggregates sent through the hosted relay during analysis</span></footer>
     {evidence && <EvidenceModal finding={evidence} onClose={() => setEvidence(null)} />}
   </div>;
 }
