@@ -156,8 +156,10 @@ function SharedWrapped({ id }: { id: string }) {
   const slides = useMemo<StorySlide[]>(() => {
     if (!report) return [];
     const agents = report.stats.agents?.length ? report.stats.agents : [{ agent: "claude" as const, name: "Claude Code", count: report.stats.sessions, percentage: 100 }];
-    const activeAgents = agents.filter((agent) => hasDisplayablePercentage(agent.percentage));
-    const leader = [...activeAgents].sort((left, right) => right.count - left.count)[0];
+    const activeAgents = agents
+      .filter((agent) => hasDisplayablePercentage(agent.percentage))
+      .sort((left, right) => right.percentage - left.percentage || right.count - left.count || left.name.localeCompare(right.name));
+    const leader = activeAgents[0];
     const activeModels = (report.stats.models || []).filter((model) => hasDisplayablePercentage(model.percentage));
     const topModel = activeModels[0];
     const hosted = report.hosting?.public === true;

@@ -61,6 +61,18 @@ test("discovers and normalizes Claude Code and Codex sessions together", () => {
   assert.ok(report.stats.estimatedCostUsd > 0);
 });
 
+test("sorts agent usage from highest percentage to lowest", () => {
+  const report = analyzeSessions([
+    { sessionId: "codex-one", agent: "codex", records: [] },
+    { sessionId: "codex-two", agent: "codex", records: [] },
+    { sessionId: "claude-one", agent: "claude", records: [] },
+  ]);
+  assert.deepEqual(report.stats.agents.map(({ agent, percentage }) => ({ agent, percentage })), [
+    { agent: "codex", percentage: 66.7 },
+    { agent: "claude", percentage: 33.3 },
+  ]);
+});
+
 test("averages human inputs and complete agent responses across tool-use records", () => {
   const report = analyzeSessions([{ sessionId: "word-lengths", records: [
     { type: "user", message: { content: "Please check this." } },

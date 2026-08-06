@@ -333,7 +333,7 @@ export function analyzeSessions(sessionRecords) {
   const agents = [
     { agent: "claude", name: "Claude Code", count: agentCounts.get("claude") || 0, percentage: claudePercentage },
     { agent: "codex", name: "Codex", count: agentCounts.get("codex") || 0, percentage: totalSessions ? Number((100 - claudePercentage).toFixed(1)) : 0 },
-  ];
+  ].sort((left, right) => right.percentage - left.percentage || right.count - left.count || left.name.localeCompare(right.name));
   const models = [...modelTokens].sort((left, right) => right[1] - left[1]).map(([model, modelTokenCount]) => ({
     model: String(model),
     name: displayModelName(model),
