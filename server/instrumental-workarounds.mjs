@@ -1,6 +1,7 @@
 import { displayModelName } from "./model-names.mjs";
 import { redactAggregateText } from "./privacy.mjs";
 import { OPENROUTER_MODEL, PHRASE_JUDGE_NAME } from "./phrase-card.mjs";
+import { judgeError, judgeRequestDetails, judgeResponseDetails } from "./judge-debug.mjs";
 
 export const WORKAROUND_RELAY_URL = "https://agent-behavior-wrapped-judge.haoxingdu.workers.dev/v1/instrumental-workarounds";
 export const WORKAROUND_MAX_CANDIDATES = 60;
@@ -333,6 +334,7 @@ function timeoutError(error, timeoutMs) {
 export async function judgeWorkarounds(bundle, apiKey, { fetchImpl = fetch, model = OPENROUTER_MODEL, timeoutMs = JUDGE_TIMEOUT_MS } = {}) {
   if (!apiKey) throw new Error("OPENROUTER_API_KEY is required for instrumental-workaround judging.");
   const startedAt = Date.now();
+  const debug = judgeRequestDetails("instrumental-workarounds", "direct-openrouter", "https://openrouter.ai/api/v1/chat/completions", bundle.candidates);
   let response;
   try {
     response = await fetchImpl("https://openrouter.ai/api/v1/chat/completions", {
@@ -341,15 +343,18 @@ export async function judgeWorkarounds(bundle, apiKey, { fetchImpl = fetch, mode
       signal: AbortSignal.timeout(timeoutMs),
       body: JSON.stringify(buildOpenRouterWorkaroundRequest(bundle.candidates, model)),
     });
-  } catch (error) { throw timeoutError(error, timeoutMs); }
+  } catch (error) { const wrapped = timeoutError(error, timeoutMs); throw judgeError(wrapped.message, { ...debug, failure: "network", elapsed_ms: Date.now() - startedAt, cause_name: error?.name || "Error" }); }
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`OpenRouter API ${response.status}: ${body?.error?.message || "request failed"}`);
-  return resultFromSelection(bundle, extractWorkaroundSelection(body, bundle.candidates), { model: body.model || model, provider: "OpenRouter", latencyMs: Date.now() - startedAt });
+  if (!response.ok) throw judgeError(`OpenRouter API ${response.status}: ${body?.error?.message || "request failed"}`, { ...debug, failure: "upstream_http", elapsed_ms: Date.now() - startedAt, http_status: response.status, upstream_code: body?.error?.code || null, upstream_message: body?.error?.message || null });
+  const selection = extractWorkaroundSelection(body, bundle.candidates);
+  if (!selection) throw judgeError(`${PHRASE_JUDGE_NAME} returned an invalid instrumental-workaround review.`, { ...debug, failure: "invalid_response", elapsed_ms: Date.now() - startedAt, response: judgeResponseDetails(body) });
+  return resultFromSelection(bundle, selection, { model: body.model || model, provider: "OpenRouter", latencyMs: Date.now() - startedAt });
 }
 
 export async function judgeWorkaroundsViaRelay(bundle, { fetchImpl = fetch, endpoint = WORKAROUND_RELAY_URL, clientId, timeoutMs = JUDGE_TIMEOUT_MS } = {}) {
   buildOpenRouterWorkaroundRequest(bundle.candidates);
   const startedAt = Date.now();
+  const debug = judgeRequestDetails("instrumental-workarounds", "relay", endpoint, bundle.candidates);
   let response;
   try {
     response = await fetchImpl(endpoint, {
@@ -358,10 +363,12 @@ export async function judgeWorkaroundsViaRelay(bundle, { fetchImpl = fetch, endp
       signal: AbortSignal.timeout(timeoutMs),
       body: JSON.stringify({ candidates: bundle.candidates }),
     });
-  } catch (error) { throw timeoutError(error, timeoutMs); }
+  } catch (error) { const wrapped = timeoutError(error, timeoutMs); throw judgeError(wrapped.message, { ...debug, failure: "network", elapsed_ms: Date.now() - startedAt, cause_name: error?.name || "Error" }); }
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`Instrumental-workaround relay ${response.status}: ${body?.error || "request failed"}`);
-  return resultFromSelection(bundle, extractWorkaroundSelection(body, bundle.candidates), { model: body.model || OPENROUTER_MODEL, provider: "OpenRouter via Behavior Wrapped relay", latencyMs: Date.now() - startedAt });
+  if (!response.ok) throw judgeError(`Instrumental-workaround relay ${response.status}: ${body?.error || "request failed"}`, { ...debug, failure: "relay_http", elapsed_ms: Date.now() - startedAt, http_status: response.status, relay_error: body?.error || null, relay_diagnostic: body?.diagnostic || null });
+  const selection = extractWorkaroundSelection(body, bundle.candidates);
+  if (!selection) throw judgeError(`${PHRASE_JUDGE_NAME} returned an invalid instrumental-workaround review.`, { ...debug, failure: "invalid_relay_response", elapsed_ms: Date.now() - startedAt, response: judgeResponseDetails(body) });
+  return resultFromSelection(bundle, selection, { model: body.model || OPENROUTER_MODEL, provider: "OpenRouter via Behavior Wrapped relay", latencyMs: Date.now() - startedAt });
 }
 
 export function applyWorkaroundJudgment(analyzed, judgment) {

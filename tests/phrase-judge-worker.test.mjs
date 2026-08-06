@@ -187,3 +187,12 @@ test("worker rate limits before calling OpenRouter", async () => {
   assert.equal(response.status, 429);
   assert.equal(called, false);
 });
+
+test("worker returns privacy-safe upstream diagnostics without credentials or candidates", async () => {
+  const response = await handleRequest(relayRequest(), env(), async () => new Response(JSON.stringify({ error: { code: 429, message: "Provider rate limit reached" } }), { status: 429, headers: { "content-type": "application/json" } }));
+  const body = await response.json();
+  assert.equal(response.status, 502);
+  assert.deepEqual(body.diagnostic, { code: "upstream_http", status: 429, upstream_code: "429", upstream_message: "Provider rate limit reached" });
+  assert.equal(JSON.stringify(body).includes("server-secret"), false);
+  assert.equal(JSON.stringify(body).includes(candidate.phrase), false);
+});

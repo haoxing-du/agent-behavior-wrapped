@@ -12,6 +12,7 @@ import { applySessionTopicJudgment, buildSessionTopicCandidates, emptySessionTop
 import { applyWorkaroundJudgment, buildWorkaroundCandidates, emptyWorkaroundJudgment, judgeWorkarounds, judgeWorkaroundsViaRelay, WORKAROUND_RELAY_URL } from "./instrumental-workarounds.mjs";
 import { deletePublicReport, publishPublicReport, PUBLIC_REPORT_ORIGIN } from "./public-report.mjs";
 import { createReportId, deleteReport, getOrCreateClientId, listReports, saveReport, storeRoot } from "./store.mjs";
+import { judgeErrorDetails } from "./judge-debug.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.dirname(here);
@@ -20,6 +21,7 @@ const codexFixtureRoot = path.join(root, "fixtures", "codex-sessions");
 const port = Number(process.env.BEHAVIOR_WRAPPED_PORT || 4317);
 const baseUrl = `http://127.0.0.1:${port}`;
 const command = process.argv[2];
+const verbose = process.argv.includes("--verbose") || process.argv.includes("--debug") || process.env.BEHAVIOR_WRAPPED_DEBUG === "1";
 const muted = "\x1b[2m"; const bright = "\x1b[1m"; const lime = "\x1b[38;2;201;242;75m"; const purple = "\x1b[38;2;141;92;255m"; const reset = "\x1b[0m";
 
 const mark = `${lime}
@@ -51,9 +53,15 @@ function formatRange(sessions) {
 async function optionalAnalysis(promise, label, warnings) {
   try { return await promise; }
   catch (error) {
-    warnings.push({ label, error: error?.message || "judge request failed" });
+    warnings.push({ label, error });
     return null;
   }
+}
+
+function printJudgeDebug(label, error) {
+  if (!verbose) return;
+  console.error(`${muted}[judge debug] ${label}${reset}`);
+  console.error(JSON.stringify(judgeErrorDetails(error), null, 2));
 }
 
 async function serverReady() {
@@ -153,7 +161,10 @@ async function createWrapped() {
   if (sessionTopics) applySessionTopicJudgment(analyzed, sessionTopics);
   else analyzed.stats.topics = [];
   applyWorkaroundJudgment(analyzed, workarounds);
-  for (const warning of analysisWarnings) console.log(`◇  ${muted}Skipped the ${warning.label}; the judge response could not be validated.${reset}          `);
+  for (const warning of analysisWarnings) {
+    console.log(`◇  ${muted}Skipped the ${warning.label}; the judge request failed or its response could not be validated.${reset}          `);
+    printJudgeDebug(warning.label, warning.error);
+  }
   const id = createReportId();
   const safeFindings = analyzed.findings.map(({ evidence, method, ...finding }) => finding);
   const hasPrivateWorkaroundEvidence = Boolean(analyzed.workaroundReview?.occurrences?.length || analyzed.workaroundReview?.borderline?.length);
@@ -200,9 +211,11 @@ try {
     const deleted = deleteReport(id);
     console.log(deleted ? `Deleted report ${id}.` : "That saved report was not found.");
   } else if (command === "help" || command === "--help" || command === "-h") {
-    console.log("behavior-wrapped [--demo] [--days=30] [--no-open]\nbehavior-wrapped list\nbehavior-wrapped open [id]\nbehavior-wrapped delete <id>");
+    console.log("behavior-wrapped [--demo] [--days=30] [--no-open] [--verbose|--debug]\nbehavior-wrapped list\nbehavior-wrapped open [id]\nbehavior-wrapped delete <id>");
   } else await createWrapped();
 } catch (error) {
+  printJudgeDebug("required analysis", error);
   console.error(`\n${bright}Could not create your Wrapped.${reset} ${error.message}\n`);
+  if (!verbose && error?.judgeDetails) console.error(`${muted}Rerun with --verbose for privacy-safe judge diagnostics.${reset}\n`);
   process.exitCode = 1;
 }

@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { discoverSessions, readRecords } from "../server/discovery.mjs";
 import { buildPhraseCandidates, OPENROUTER_MODEL, judgePhraseCard, judgePhraseCardViaRelay } from "../server/phrase-card.mjs";
+import { judgeErrorDetails } from "../server/judge-debug.mjs";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "projects");
 
@@ -152,6 +153,11 @@ test("relay returns only a candidate ID and the client resolves exact local text
 
 test("relay errors do not expose an OpenRouter credential", async () => {
   const candidate = buildPhraseCandidates(fixtureRecords())[0];
-  const fetchImpl = async () => new Response(JSON.stringify({ error: "Phrase judge is temporarily unavailable." }), { status: 502, headers: { "content-type": "application/json" } });
-  await assert.rejects(judgePhraseCardViaRelay([candidate], { fetchImpl }), /temporarily unavailable/);
+  const fetchImpl = async () => new Response(JSON.stringify({ error: "Phrase judge is temporarily unavailable.", diagnostic: { code: "upstream_http", status: 429 } }), { status: 502, headers: { "content-type": "application/json" } });
+  const error = await judgePhraseCardViaRelay([candidate], { fetchImpl }).catch((caught) => caught);
+  assert.match(error.message, /temporarily unavailable/);
+  const details = judgeErrorDetails(error);
+  assert.equal(details.http_status, 502);
+  assert.deepEqual(details.relay_diagnostic, { code: "upstream_http", status: 429 });
+  assert.equal(JSON.stringify(details).includes(candidate.phrase), false);
 });

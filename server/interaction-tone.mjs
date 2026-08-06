@@ -1,5 +1,6 @@
 import { redactAggregateText } from "./privacy.mjs";
 import { OPENROUTER_MODEL, PHRASE_JUDGE_NAME } from "./phrase-card.mjs";
+import { judgeError, judgeRequestDetails, judgeResponseDetails } from "./judge-debug.mjs";
 
 export const INTERACTION_TONE_RELAY_URL = "https://agent-behavior-wrapped-judge.haoxingdu.workers.dev/v1/interaction-tone";
 export const INTERACTION_TONE_MAX_CANDIDATES = 120;
@@ -228,6 +229,7 @@ function timeoutError(error, timeoutMs) {
 export async function judgeInteractionTone(candidates, apiKey, { fetchImpl = fetch, model = OPENROUTER_MODEL, timeoutMs = JUDGE_TIMEOUT_MS } = {}) {
   if (!apiKey) throw new Error("OPENROUTER_API_KEY is required for interaction-tone judging.");
   const startedAt = Date.now();
+  const debug = judgeRequestDetails("interaction-tone", "direct-openrouter", "https://openrouter.ai/api/v1/chat/completions", candidates);
   let response;
   try {
     response = await fetchImpl("https://openrouter.ai/api/v1/chat/completions", {
@@ -236,15 +238,18 @@ export async function judgeInteractionTone(candidates, apiKey, { fetchImpl = fet
       signal: AbortSignal.timeout(timeoutMs),
       body: JSON.stringify(buildOpenRouterInteractionToneRequest(candidates, model)),
     });
-  } catch (error) { throw timeoutError(error, timeoutMs); }
+  } catch (error) { const wrapped = timeoutError(error, timeoutMs); throw judgeError(wrapped.message, { ...debug, failure: "network", elapsed_ms: Date.now() - startedAt, cause_name: error?.name || "Error" }); }
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`OpenRouter API ${response.status}: ${body?.error?.message || "request failed"}`);
-  return resultFromSelection(candidates, extractInteractionToneSelection(body, candidates), { model: body.model || model, provider: "OpenRouter", latencyMs: Date.now() - startedAt });
+  if (!response.ok) throw judgeError(`OpenRouter API ${response.status}: ${body?.error?.message || "request failed"}`, { ...debug, failure: "upstream_http", elapsed_ms: Date.now() - startedAt, http_status: response.status, upstream_code: body?.error?.code || null, upstream_message: body?.error?.message || null });
+  const selection = extractInteractionToneSelection(body, candidates);
+  if (!selection) throw judgeError(`${PHRASE_JUDGE_NAME} returned an invalid interaction-tone classification.`, { ...debug, failure: "invalid_response", elapsed_ms: Date.now() - startedAt, response: judgeResponseDetails(body) });
+  return resultFromSelection(candidates, selection, { model: body.model || model, provider: "OpenRouter", latencyMs: Date.now() - startedAt });
 }
 
 export async function judgeInteractionToneViaRelay(candidates, { fetchImpl = fetch, endpoint = INTERACTION_TONE_RELAY_URL, clientId, timeoutMs = JUDGE_TIMEOUT_MS } = {}) {
   buildOpenRouterInteractionToneRequest(candidates);
   const startedAt = Date.now();
+  const debug = judgeRequestDetails("interaction-tone", "relay", endpoint, candidates);
   let response;
   try {
     response = await fetchImpl(endpoint, {
@@ -253,10 +258,12 @@ export async function judgeInteractionToneViaRelay(candidates, { fetchImpl = fet
       signal: AbortSignal.timeout(timeoutMs),
       body: JSON.stringify({ candidates }),
     });
-  } catch (error) { throw timeoutError(error, timeoutMs); }
+  } catch (error) { const wrapped = timeoutError(error, timeoutMs); throw judgeError(wrapped.message, { ...debug, failure: "network", elapsed_ms: Date.now() - startedAt, cause_name: error?.name || "Error" }); }
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`Interaction-tone relay ${response.status}: ${body?.error || "request failed"}`);
-  return resultFromSelection(candidates, extractInteractionToneSelection(body, candidates), { model: body.model || OPENROUTER_MODEL, provider: "OpenRouter via Behavior Wrapped relay", latencyMs: Date.now() - startedAt });
+  if (!response.ok) throw judgeError(`Interaction-tone relay ${response.status}: ${body?.error || "request failed"}`, { ...debug, failure: "relay_http", elapsed_ms: Date.now() - startedAt, http_status: response.status, relay_error: body?.error || null, relay_diagnostic: body?.diagnostic || null });
+  const selection = extractInteractionToneSelection(body, candidates);
+  if (!selection) throw judgeError(`${PHRASE_JUDGE_NAME} returned an invalid interaction-tone classification.`, { ...debug, failure: "invalid_relay_response", elapsed_ms: Date.now() - startedAt, response: judgeResponseDetails(body) });
+  return resultFromSelection(candidates, selection, { model: body.model || OPENROUTER_MODEL, provider: "OpenRouter via Behavior Wrapped relay", latencyMs: Date.now() - startedAt });
 }
 
 export function applyInteractionToneJudgment(analyzed, judgment) {

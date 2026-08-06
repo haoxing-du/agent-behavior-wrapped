@@ -24,6 +24,8 @@ The local deck includes an optional research-donation review with automatic reda
 
 When developing from this repository, run `npm install`, then `npm run wrapped`. Add `--demo` to use synthetic fixtures or `--no-open` to leave the browser closed.
 
+For privacy-safe judge diagnostics, run `npm run wrapped -- --verbose` (or `--debug`). Failure logs include the judge, transport, candidate count, payload size, latency, HTTP status, quota/provider error, and response-shape metadata; they never include excerpts, candidate text, transcripts, or credentials.
+
 Every Wrapped uses the free Nemotron 3 Ultra model through the hosted Behavior Wrapped relay and OpenRouter for favorite-phrase selection and behavioral classifications. Only redacted candidate excerpts, canonical blocker/tool summaries, counts, and a random installation ID are sent; full transcripts, raw tool output, code, paths, command arguments, and detected secrets are not included. The relay accepts only fixed schemas, uses a fixed free model, and rate-limits clients before attaching its server-side OpenRouter credential.
 
 Saved reports are managed with:

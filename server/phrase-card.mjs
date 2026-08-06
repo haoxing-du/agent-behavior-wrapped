@@ -1,4 +1,5 @@
 import { redactAggregateText } from "./privacy.mjs";
+import { judgeError, judgeRequestDetails, judgeResponseDetails } from "./judge-debug.mjs";
 
 export const OPENROUTER_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free";
 export const PHRASE_JUDGE_NAME = "Nemotron 3 Ultra";
@@ -204,6 +205,7 @@ export async function judgePhraseCard(candidates, apiKey, { fetchImpl = fetch, m
   if (!apiKey) throw new Error("OPENROUTER_API_KEY is required for the standard phrase card.");
   if (!candidates.length) throw new Error("Not enough repeated, share-safe phrases were found for a phrase card.");
   const startedAt = Date.now();
+  const debug = judgeRequestDetails("favorite-phrase", "direct-openrouter", "https://openrouter.ai/api/v1/chat/completions", candidates);
   const request = {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}`, "x-title": "Behavior Wrapped" },
@@ -214,12 +216,13 @@ export async function judgePhraseCard(candidates, apiKey, { fetchImpl = fetch, m
   try {
     response = await fetchImpl("https://openrouter.ai/api/v1/chat/completions", request);
   } catch (error) {
-    throw timeoutMessage(error, timeoutMs);
+    const wrapped = timeoutMessage(error, timeoutMs);
+    throw judgeError(wrapped.message, { ...debug, failure: "network", elapsed_ms: Date.now() - startedAt, cause_name: error?.name || "Error" });
   }
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`OpenRouter API ${response.status}: ${body?.error?.message || "request failed"}`);
+  if (!response.ok) throw judgeError(`OpenRouter API ${response.status}: ${body?.error?.message || "request failed"}`, { ...debug, failure: "upstream_http", elapsed_ms: Date.now() - startedAt, http_status: response.status, upstream_code: body?.error?.code || null, upstream_message: body?.error?.message || null });
   const candidateId = extractCandidateId(body, candidates);
-  if (!candidateId) throw new Error(`${PHRASE_JUDGE_NAME} did not identify exactly one supplied phrase candidate.`);
+  if (!candidateId) throw judgeError(`${PHRASE_JUDGE_NAME} did not identify exactly one supplied phrase candidate.`, { ...debug, failure: "invalid_response", elapsed_ms: Date.now() - startedAt, response: judgeResponseDetails(body) });
   return phraseCardFromSelection(candidates, candidateId, {
     model: body.model || model,
     provider: "OpenRouter",
@@ -234,6 +237,7 @@ export async function judgePhraseCardViaRelay(candidates, { fetchImpl = fetch, e
   const payload = JSON.stringify(candidates);
   assertSafePayload(payload);
   const startedAt = Date.now();
+  const debug = judgeRequestDetails("favorite-phrase", "relay", endpoint, candidates);
   let response;
   try {
     response = await fetchImpl(endpoint, {
@@ -247,12 +251,13 @@ export async function judgePhraseCardViaRelay(candidates, { fetchImpl = fetch, e
       body: JSON.stringify({ candidates }),
     });
   } catch (error) {
-    throw timeoutMessage(error, timeoutMs);
+    const wrapped = timeoutMessage(error, timeoutMs);
+    throw judgeError(wrapped.message, { ...debug, failure: "network", elapsed_ms: Date.now() - startedAt, cause_name: error?.name || "Error" });
   }
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`Favorite-phrase relay ${response.status}: ${body?.error || "request failed"}`);
+  if (!response.ok) throw judgeError(`Favorite-phrase relay ${response.status}: ${body?.error || "request failed"}`, { ...debug, failure: "relay_http", elapsed_ms: Date.now() - startedAt, http_status: response.status, relay_error: body?.error || null, relay_diagnostic: body?.diagnostic || null });
   const candidateId = candidates.some((candidate) => candidate.candidate_id === body?.candidate_id) ? body.candidate_id : null;
-  if (!candidateId) throw new Error(`${PHRASE_JUDGE_NAME} did not identify exactly one supplied phrase candidate.`);
+  if (!candidateId) throw judgeError(`${PHRASE_JUDGE_NAME} did not identify exactly one supplied phrase candidate.`, { ...debug, failure: "invalid_relay_response", elapsed_ms: Date.now() - startedAt, response: judgeResponseDetails(body) });
   return phraseCardFromSelection(candidates, candidateId, {
     model: body.model || OPENROUTER_MODEL,
     provider: "OpenRouter via Behavior Wrapped relay",

@@ -1,5 +1,6 @@
 import { redactAggregateText } from "./privacy.mjs";
 import { OPENROUTER_MODEL, PHRASE_JUDGE_NAME } from "./phrase-card.mjs";
+import { judgeError, judgeRequestDetails, judgeResponseDetails } from "./judge-debug.mjs";
 
 export const SESSION_TOPIC_RELAY_URL = "https://agent-behavior-wrapped-judge.haoxingdu.workers.dev/v1/session-topics";
 export const SESSION_TOPIC_MAX_CANDIDATES = 250;
@@ -208,6 +209,7 @@ function timeoutError(error, timeoutMs) {
 export async function judgeSessionTopics(bundle, apiKey, { fetchImpl = fetch, model = OPENROUTER_MODEL, timeoutMs = JUDGE_TIMEOUT_MS } = {}) {
   if (!apiKey) throw new Error("OPENROUTER_API_KEY is required for session-topic judging.");
   const startedAt = Date.now();
+  const debug = judgeRequestDetails("session-topics", "direct-openrouter", "https://openrouter.ai/api/v1/chat/completions", bundle.candidates);
   let response;
   try {
     response = await fetchImpl("https://openrouter.ai/api/v1/chat/completions", {
@@ -216,15 +218,18 @@ export async function judgeSessionTopics(bundle, apiKey, { fetchImpl = fetch, mo
       signal: AbortSignal.timeout(timeoutMs),
       body: JSON.stringify(buildOpenRouterSessionTopicRequest(bundle.candidates, model)),
     });
-  } catch (error) { throw timeoutError(error, timeoutMs); }
+  } catch (error) { const wrapped = timeoutError(error, timeoutMs); throw judgeError(wrapped.message, { ...debug, failure: "network", elapsed_ms: Date.now() - startedAt, cause_name: error?.name || "Error" }); }
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`OpenRouter API ${response.status}: ${body?.error?.message || "request failed"}`);
-  return resultFromSelection(bundle, extractSessionTopicSelection(body, bundle.candidates), { model: body.model || model, provider: "OpenRouter", latencyMs: Date.now() - startedAt });
+  if (!response.ok) throw judgeError(`OpenRouter API ${response.status}: ${body?.error?.message || "request failed"}`, { ...debug, failure: "upstream_http", elapsed_ms: Date.now() - startedAt, http_status: response.status, upstream_code: body?.error?.code || null, upstream_message: body?.error?.message || null });
+  const selection = extractSessionTopicSelection(body, bundle.candidates);
+  if (!selection) throw judgeError(`${PHRASE_JUDGE_NAME} returned an invalid session-topic classification.`, { ...debug, failure: "invalid_response", elapsed_ms: Date.now() - startedAt, response: judgeResponseDetails(body) });
+  return resultFromSelection(bundle, selection, { model: body.model || model, provider: "OpenRouter", latencyMs: Date.now() - startedAt });
 }
 
 export async function judgeSessionTopicsViaRelay(bundle, { fetchImpl = fetch, endpoint = SESSION_TOPIC_RELAY_URL, clientId, timeoutMs = JUDGE_TIMEOUT_MS } = {}) {
   buildOpenRouterSessionTopicRequest(bundle.candidates);
   const startedAt = Date.now();
+  const debug = judgeRequestDetails("session-topics", "relay", endpoint, bundle.candidates);
   let response;
   try {
     response = await fetchImpl(endpoint, {
@@ -233,10 +238,12 @@ export async function judgeSessionTopicsViaRelay(bundle, { fetchImpl = fetch, en
       signal: AbortSignal.timeout(timeoutMs),
       body: JSON.stringify({ candidates: bundle.candidates }),
     });
-  } catch (error) { throw timeoutError(error, timeoutMs); }
+  } catch (error) { const wrapped = timeoutError(error, timeoutMs); throw judgeError(wrapped.message, { ...debug, failure: "network", elapsed_ms: Date.now() - startedAt, cause_name: error?.name || "Error" }); }
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`Session-topic relay ${response.status}: ${body?.error || "request failed"}`);
-  return resultFromSelection(bundle, extractSessionTopicSelection(body, bundle.candidates), { model: body.model || OPENROUTER_MODEL, provider: "OpenRouter via Behavior Wrapped relay", latencyMs: Date.now() - startedAt });
+  if (!response.ok) throw judgeError(`Session-topic relay ${response.status}: ${body?.error || "request failed"}`, { ...debug, failure: "relay_http", elapsed_ms: Date.now() - startedAt, http_status: response.status, relay_error: body?.error || null, relay_diagnostic: body?.diagnostic || null });
+  const selection = extractSessionTopicSelection(body, bundle.candidates);
+  if (!selection) throw judgeError(`${PHRASE_JUDGE_NAME} returned an invalid session-topic classification.`, { ...debug, failure: "invalid_relay_response", elapsed_ms: Date.now() - startedAt, response: judgeResponseDetails(body) });
+  return resultFromSelection(bundle, selection, { model: body.model || OPENROUTER_MODEL, provider: "OpenRouter via Behavior Wrapped relay", latencyMs: Date.now() - startedAt });
 }
 
 export function applySessionTopicJudgment(analyzed, judgment) {

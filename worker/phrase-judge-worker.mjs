@@ -54,6 +54,11 @@ function judgeResponseDiagnostic(body, requiredArrays) {
   return { code: missing.length ? "missing_arrays" : "invalid_items", finish, content_length: content.length, missing };
 }
 
+function safeUpstreamMessage(value) {
+  const message = safeText(value, 240);
+  return /(?:Bearer\s+\S+|(?:sk|gh[oprsu])[-_][A-Za-z0-9_-]{12,})/i.test(message) ? "[REDACTED]" : message;
+}
+
 function validRate(value) {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
 }
@@ -496,7 +501,7 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
       name: error?.name || null,
       message: String(error?.message || "request failed").slice(0, 240),
     }));
-    return json({ error: "Card judge is temporarily unavailable." }, 502);
+    return json({ error: "Card judge is temporarily unavailable.", diagnostic: { code: "upstream_fetch_error", name: safeText(error?.name, 60) || "Error", message: safeUpstreamMessage(error?.message || "request failed") } }, 502);
   }
   const upstreamBody = await upstream.json().catch(() => ({}));
   if (!upstream.ok) {
@@ -506,7 +511,7 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
       code: upstreamBody?.error?.code || null,
       message: String(upstreamBody?.error?.message || "request failed").slice(0, 240),
     }));
-    return json({ error: "Card judge is temporarily unavailable." }, 502);
+    return json({ error: "Card judge is temporarily unavailable.", diagnostic: { code: "upstream_http", status: upstream.status, upstream_code: safeText(String(upstreamBody?.error?.code ?? ""), 80) || null, upstream_message: safeUpstreamMessage(upstreamBody?.error?.message || "request failed") } }, 502);
   }
   const usage = upstreamBody.usage ? {
     prompt_tokens: upstreamBody.usage.prompt_tokens || 0,
