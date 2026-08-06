@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
+import { semanticToolUse } from "./tool-semantics.mjs";
 
 const canonicalClaudeRoot = path.join(os.homedir(), ".claude", "projects");
 const canonicalCodexRoots = [path.join(os.homedir(), ".codex", "sessions"), path.join(os.homedir(), ".codex", "archived_sessions")];
@@ -171,16 +172,26 @@ function textBlocks(content) {
   });
 }
 
-const commandActions = new Set(["rm", "mv", "cp", "trash", "mkdir", "chmod", "chown", "sudo", "brew", "npm", "npx", "pnpm", "yarn", "pip", "pip3", "python", "python3", "node", "git", "curl", "wget", "install"]);
+const restrictionEligibleActions = new Set(["confirm", "copy", "delete", "download", "edit", "hide", "install", "link", "mount", "move", "write"]);
 
-function safeCommandAction(argumentsValue) {
-  let parsed = argumentsValue;
-  if (typeof parsed === "string") {
-    try { parsed = JSON.parse(parsed); } catch { parsed = {}; }
+function codexOutputText(value) {
+  if (typeof value === "string") return value;
+  if (!Array.isArray(value)) return "";
+  return value.map((part) => typeof part === "string" ? part : typeof part?.text === "string" ? part.text : "").join("\n");
+}
+
+function codexOutputStatus(value) {
+  if (!Array.isArray(value)) return { wrapped: false, failed: false };
+  const texts = value.map((part) => typeof part === "string" ? part : typeof part?.text === "string" ? part.text : "").filter(Boolean);
+  const wrapped = texts.some((text) => /^Script (?:completed|failed)\b/i.test(text.trim()));
+  if (texts.some((text) => /^Script failed\b/i.test(text.trim()))) return { wrapped, failed: true };
+  for (const text of texts) {
+    try {
+      const parsed = JSON.parse(text);
+      if (Number.isInteger(parsed?.exit_code) && parsed.exit_code !== 0) return { wrapped, failed: true };
+    } catch { /* Not a serialized execution result. */ }
   }
-  const command = typeof parsed?.cmd === "string" ? parsed.cmd : typeof parsed?.command === "string" ? parsed.command : "";
-  const words = command.toLowerCase().match(/[a-z][a-z0-9_-]*/g) || [];
-  return words.find((word) => commandActions.has(word)) || null;
+  return { wrapped, failed: false };
 }
 
 function restrictionErrorSummary(value) {
@@ -190,6 +201,7 @@ function restrictionErrorSummary(value) {
     [/permission denied/i, "permission denied"],
     [/(?:explicitly )?(?:prohibited|not allowed|blocked|denied by (?:policy|safeguard|sandbox))/i, "blocked by restriction"],
     [/requires? (?:administrator|admin|root) (?:access|privileges?|permission)/i, "administrator access required"],
+    [/sudo:[\s\S]{0,160}(?:password is required|terminal is required)/i, "administrator password required"],
     [/(?:sandbox|safeguard) (?:violation|restriction|denial)/i, "sandbox restriction"],
     [/(?:capability|command|tool) (?:is )?(?:unavailable|unsupported)/i, "capability unavailable"],
   ];
@@ -199,6 +211,8 @@ function restrictionErrorSummary(value) {
 function normalizeCodexRecords(records) {
   const normalized = [];
   let currentModel = "Codex model";
+  const pendingTools = new Map();
+  const anonymousTools = [];
   let previousUsage = { input_tokens: 0, output_tokens: 0, cache_write_input_tokens: 0, cached_input_tokens: 0 };
   for (const record of records) {
     const payload = record?.payload || {};
@@ -208,11 +222,21 @@ function normalizeCodexRecords(records) {
       const content = textBlocks(payload.content);
       if (content.length) normalized.push({ type: payload.role, timestamp: record.timestamp, message: { content, ...(payload.role === "assistant" ? { model: currentModel } : {}) } });
     } else if (record.type === "response_item" && (payload.type === "function_call" || payload.type === "custom_tool_call")) {
-      normalized.push({ type: "assistant", timestamp: record.timestamp, message: { model: currentModel, content: [{ type: "tool_use", name: payload.name || "Unknown tool", action_hint: safeCommandAction(payload.arguments) }] } });
+      const toolName = payload.name || "Unknown tool";
+      const semantics = semanticToolUse({ name: toolName, argumentsValue: payload.arguments, inputValue: payload.input });
+      if (typeof payload.call_id === "string" && payload.call_id) pendingTools.set(payload.call_id, semantics);
+      else anonymousTools.push(semantics);
+      normalized.push({ type: "assistant", timestamp: record.timestamp, message: { model: currentModel, content: [{ type: "tool_use", name: toolName, action_hint: semantics.action, method_hint: semantics.method }] } });
     } else if (record.type === "response_item" && (payload.type === "function_call_output" || payload.type === "custom_tool_call_output")) {
-      const output = typeof payload.output === "string" ? payload.output : "";
-      const errorSummary = restrictionErrorSummary(output);
-      normalized.push({ type: "user", isMeta: true, timestamp: record.timestamp, message: { content: [{ type: "tool_result", is_error: Boolean(errorSummary) || /(?:^|\b)(?:error|failed|failure)(?:\b|:)/i.test(output), error_summary: errorSummary }] } });
+      const callId = typeof payload.call_id === "string" && payload.call_id ? payload.call_id : null;
+      const semantics = callId ? pendingTools.get(callId) : anonymousTools.shift();
+      if (callId) pendingTools.delete(callId);
+      const output = codexOutputText(payload.output);
+      const status = codexOutputStatus(payload.output);
+      const unwrappedFailure = !status.wrapped && /(?:^|\b)(?:error|failed|failure)(?:\b|:)/i.test(output);
+      const canSummarizeRestriction = status.failed || (!status.wrapped && restrictionEligibleActions.has(semantics?.action));
+      const errorSummary = canSummarizeRestriction ? restrictionErrorSummary(output) : null;
+      normalized.push({ type: "user", isMeta: true, timestamp: record.timestamp, message: { content: [{ type: "tool_result", is_error: Boolean(errorSummary) || status.failed || unwrappedFailure, error_summary: errorSummary }] } });
     } else if (record.type === "event_msg" && payload.type === "turn_aborted") {
       normalized.push({ type: "system", subtype: "interrupt", timestamp: record.timestamp, content: "interrupt" });
     } else if (record.type === "event_msg" && payload.type === "token_count" && payload.info?.total_token_usage) {

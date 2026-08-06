@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { discoverSessions, discoverAllSessions, defaultDateRange, sessionsInDefaultWindow, readRecords } from "../server/discovery.mjs";
@@ -59,6 +61,43 @@ test("discovers and normalizes Claude Code and Codex sessions together", () => {
   assert.equal(report.stats.models[0].name, "Claude Opus 4.8");
   assert.equal(report.stats.models[1].name, "GPT-5.6 Sol");
   assert.ok(report.stats.estimatedCostUsd > 0);
+});
+
+test("normalizes structured Codex tool records into private-safe workaround evidence", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "behavior-wrapped-codex-"));
+  const file = path.join(directory, "structured.jsonl");
+  const records = [
+    { timestamp: "2026-08-01T00:00:00.000Z", type: "turn_context", payload: { model: "gpt-5.6-sol" } },
+    { timestamp: "2026-08-01T00:00:01.000Z", type: "response_item", payload: { type: "custom_tool_call", call_id: "delete-call", name: "exec", input: "const r = await tools.exec_command({cmd:\"rm -rf /Users/private/project/cache\"});" } },
+    { timestamp: "2026-08-01T00:00:02.000Z", type: "response_item", payload: { type: "custom_tool_call_output", call_id: "delete-call", output: [{ type: "input_text", text: "Script failed" }, { type: "input_text", text: "Rejected: rm commands are not permitted. Private details follow." }] } },
+    { timestamp: "2026-08-01T00:00:03.000Z", type: "response_item", payload: { type: "custom_tool_call", call_id: "edit-call", name: "exec", input: "text(await tools.apply_patch(patch))" } },
+  ];
+  fs.writeFileSync(file, `${records.map((record) => JSON.stringify(record)).join("\n")}\n`);
+  const normalized = readRecords(file, "codex");
+  const blocks = normalized.flatMap((record) => record.message?.content || []);
+  assert.equal(blocks.find((block) => block.type === "tool_use")?.action_hint, "delete");
+  assert.equal(blocks.find((block) => block.type === "tool_use")?.method_hint, "shell");
+  assert.equal(blocks.filter((block) => block.type === "tool_use")[1]?.action_hint, "edit");
+  const result = blocks.find((block) => block.type === "tool_result");
+  assert.equal(result.is_error, true);
+  assert.equal(result.error_summary, "operation not permitted");
+  assert.equal(JSON.stringify(normalized).includes("/Users/private"), false);
+  assert.equal(JSON.stringify(normalized).includes("Private details"), false);
+});
+
+test("pairs interleaved Codex tool outputs with their call IDs", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "behavior-wrapped-codex-pairing-"));
+  const file = path.join(directory, "interleaved.jsonl");
+  const records = [
+    { timestamp: "2026-08-01T00:00:00.000Z", type: "response_item", payload: { type: "function_call", call_id: "delete-call", name: "exec_command", arguments: JSON.stringify({ cmd: "rm generated" }) } },
+    { timestamp: "2026-08-01T00:00:01.000Z", type: "response_item", payload: { type: "function_call", call_id: "read-call", name: "read_file", arguments: JSON.stringify({ path: "private-file" }) } },
+    { timestamp: "2026-08-01T00:00:02.000Z", type: "response_item", payload: { type: "function_call_output", call_id: "read-call", output: "completed" } },
+    { timestamp: "2026-08-01T00:00:03.000Z", type: "response_item", payload: { type: "function_call_output", call_id: "delete-call", output: "Permission denied" } },
+  ];
+  fs.writeFileSync(file, `${records.map((record) => JSON.stringify(record)).join("\n")}\n`);
+  const results = readRecords(file, "codex").flatMap((record) => record.message?.content || []).filter((block) => block.type === "tool_result");
+  assert.equal(results[0].error_summary, null);
+  assert.equal(results[1].error_summary, "permission denied");
 });
 
 test("sorts agent usage from highest percentage to lowest", () => {

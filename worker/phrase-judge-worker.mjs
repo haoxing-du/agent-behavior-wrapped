@@ -197,7 +197,7 @@ export function sanitizePublicReport(value) {
     return name && /^[\p{L}\p{N} ._+-]+$/u.test(name) && count > 0 ? [{ name, count }] : [];
   }) : [];
   const workaroundModelTotal = safeWorkaroundModels.reduce((sum, item) => sum + item.count, 0);
-  const safeWorkaroundCard = Number.isInteger(value.workaroundCard?.count) && value.workaroundCard.count > 0 && workaroundModelTotal === value.workaroundCard.count ? {
+  const safeWorkaroundCard = Number.isInteger(value.workaroundCard?.count) && value.workaroundCard.count >= 0 && workaroundModelTotal === value.workaroundCard.count ? {
     count: Math.round(safeNumber(value.workaroundCard.count, 1_000_000)),
     models: safeWorkaroundModels,
   } : null;
@@ -494,7 +494,7 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
   } : null;
   if (workaroundRoute) {
     const selection = extractWorkaroundSelection(upstreamBody, candidates);
-    if (!selection) return json({ error: "Instrumental-workaround judge returned an invalid review.", diagnostic: judgeResponseDiagnostic(upstreamBody, ["confirmed", "borderline"]) }, 502);
+    if (!selection) return json({ error: "Instrumental-workaround judge returned an invalid review.", diagnostic: judgeResponseDiagnostic(upstreamBody, ["verdicts"]) }, 502);
     return json({ ...selection, model: upstreamBody.model || OPENROUTER_MODEL, usage });
   }
   if (interactionToneRoute) {

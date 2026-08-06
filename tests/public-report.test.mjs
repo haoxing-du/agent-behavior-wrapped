@@ -46,6 +46,11 @@ test("sanitizes a hosted report to a strict share-safe shape", () => {
   assert.equal(serialized.includes("private judge detail"), false);
 });
 
+test("preserves a completed zero-occurrence workaround review", () => {
+  const safe = sanitizePublicReport({ ...reportFixture(), workaroundCard: { count: 0, models: [] } });
+  assert.deepEqual(safe.workaroundCard, { count: 0, models: [] });
+});
+
 test("the local publisher strips private session IDs before upload", async () => {
   let uploaded;
   const result = await publishPublicReport(reportFixture(), {
