@@ -171,6 +171,31 @@ function textBlocks(content) {
   });
 }
 
+const commandActions = new Set(["rm", "mv", "cp", "trash", "mkdir", "chmod", "chown", "sudo", "brew", "npm", "npx", "pnpm", "yarn", "pip", "pip3", "python", "python3", "node", "git", "curl", "wget", "install"]);
+
+function safeCommandAction(argumentsValue) {
+  let parsed = argumentsValue;
+  if (typeof parsed === "string") {
+    try { parsed = JSON.parse(parsed); } catch { parsed = {}; }
+  }
+  const command = typeof parsed?.cmd === "string" ? parsed.cmd : typeof parsed?.command === "string" ? parsed.command : "";
+  const words = command.toLowerCase().match(/[a-z][a-z0-9_-]*/g) || [];
+  return words.find((word) => commandActions.has(word)) || null;
+}
+
+function restrictionErrorSummary(value) {
+  const text = String(value || "");
+  const rules = [
+    [/(?:operation )?not permitted/i, "operation not permitted"],
+    [/permission denied/i, "permission denied"],
+    [/(?:explicitly )?(?:prohibited|not allowed|blocked|denied by (?:policy|safeguard|sandbox))/i, "blocked by restriction"],
+    [/requires? (?:administrator|admin|root) (?:access|privileges?|permission)/i, "administrator access required"],
+    [/(?:sandbox|safeguard) (?:violation|restriction|denial)/i, "sandbox restriction"],
+    [/(?:capability|command|tool) (?:is )?(?:unavailable|unsupported)/i, "capability unavailable"],
+  ];
+  return rules.find(([pattern]) => pattern.test(text))?.[1] || null;
+}
+
 function normalizeCodexRecords(records) {
   const normalized = [];
   let currentModel = "Codex model";
@@ -181,12 +206,13 @@ function normalizeCodexRecords(records) {
       currentModel = payload.model;
     } else if (record.type === "response_item" && payload.type === "message" && (payload.role === "user" || payload.role === "assistant")) {
       const content = textBlocks(payload.content);
-      if (content.length) normalized.push({ type: payload.role, timestamp: record.timestamp, message: { content } });
+      if (content.length) normalized.push({ type: payload.role, timestamp: record.timestamp, message: { content, ...(payload.role === "assistant" ? { model: currentModel } : {}) } });
     } else if (record.type === "response_item" && (payload.type === "function_call" || payload.type === "custom_tool_call")) {
-      normalized.push({ type: "assistant", timestamp: record.timestamp, message: { content: [{ type: "tool_use", name: payload.name || "Unknown tool" }] } });
+      normalized.push({ type: "assistant", timestamp: record.timestamp, message: { model: currentModel, content: [{ type: "tool_use", name: payload.name || "Unknown tool", action_hint: safeCommandAction(payload.arguments) }] } });
     } else if (record.type === "response_item" && (payload.type === "function_call_output" || payload.type === "custom_tool_call_output")) {
       const output = typeof payload.output === "string" ? payload.output : "";
-      normalized.push({ type: "user", isMeta: true, timestamp: record.timestamp, message: { content: [{ type: "tool_result", is_error: /(?:^|\b)(?:error|failed|failure)(?:\b|:)/i.test(output) }] } });
+      const errorSummary = restrictionErrorSummary(output);
+      normalized.push({ type: "user", isMeta: true, timestamp: record.timestamp, message: { content: [{ type: "tool_result", is_error: Boolean(errorSummary) || /(?:^|\b)(?:error|failed|failure)(?:\b|:)/i.test(output), error_summary: errorSummary }] } });
     } else if (record.type === "event_msg" && payload.type === "turn_aborted") {
       normalized.push({ type: "system", subtype: "interrupt", timestamp: record.timestamp, content: "interrupt" });
     } else if (record.type === "event_msg" && payload.type === "token_count" && payload.info?.total_token_usage) {

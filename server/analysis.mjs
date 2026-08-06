@@ -1,6 +1,9 @@
 import crypto from "node:crypto";
 import { safeEvidenceText, redactText } from "./privacy.mjs";
 import { isFrustratedMessage, isGratefulMessage } from "./frustration-card.mjs";
+import { displayModelName } from "./model-names.mjs";
+
+export { displayModelName } from "./model-names.mjs";
 
 const wordSegmenter = new Intl.Segmenter("en", { granularity: "word" });
 
@@ -42,11 +45,76 @@ function proseText(value) {
   return String(value || "")
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/`[^`\n]+`/g, " ")
+    .replace(/^\s*>.*$/gm, " ")
     .replace(/https?:\/\/\S+/g, " ")
     .replace(/\b(?:[A-Za-z]:)?[/.~][^\s]+/g, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+const anomalyScripts = [
+  { language: "Japanese", locale: "ja", expression: /[\p{Script=Hiragana}\p{Script=Katakana}]/gu },
+  { language: "Korean", locale: "ko", expression: /\p{Script=Hangul}/gu },
+  { language: "Chinese", locale: "zh", expression: /\p{Script=Han}/gu },
+  { language: "Arabic", locale: "ar", expression: /\p{Script=Arabic}/gu },
+  { language: "Hebrew", locale: "he", expression: /\p{Script=Hebrew}/gu },
+  { language: "Hindi", locale: "hi", expression: /\p{Script=Devanagari}/gu },
+  { language: "Thai", locale: "th", expression: /\p{Script=Thai}/gu },
+  { language: "Cyrillic", locale: "ru", expression: /\p{Script=Cyrillic}/gu },
+];
+const anomalySegmenters = new Map(anomalyScripts.map(({ language, locale }) => [language, new Intl.Segmenter(locale, { granularity: "word" })]));
+
+function scriptWords(value, script) {
+  script.expression.lastIndex = 0;
+  if (!script.expression.test(value)) return 0;
+  if (script.language === "Chinese" && /[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(value)) return 0;
+  let words = 0;
+  for (const part of anomalySegmenters.get(script.language).segment(value)) {
+    script.expression.lastIndex = 0;
+    if (part.isWordLike && script.expression.test(part.segment)) words++;
+  }
+  return words;
+}
+
+function containsScript(value, script) {
+  script.expression.lastIndex = 0;
+  return script.expression.test(String(value || ""));
+}
+
+function languageAnomalyBreakdown(sessionRecords) {
+  const totals = new Map();
+  for (const { records } of sessionRecords) {
+    const allAssistantProse = records.filter((record) => record.type === "assistant").map((record) => proseText(visibleText(record))).filter(Boolean).join(" ");
+    const dominantLanguage = languageForChunk(allAssistantProse);
+    if (!dominantLanguage) continue;
+    let precedingUser = "";
+    let responseParts = [];
+    const inspectResponse = () => {
+      const response = responseParts.join(" ");
+      responseParts = [];
+      if (!response) return;
+      for (const script of anomalyScripts) {
+        if (script.language === dominantLanguage || containsScript(precedingUser, script)) continue;
+        const words = scriptWords(response, script);
+        if (words < 2) continue;
+        const item = totals.get(script.language) || { language: script.language, words: 0, occurrences: 0 };
+        item.words += words;
+        item.occurrences++;
+        totals.set(script.language, item);
+      }
+    };
+    for (const record of records) {
+      const text = visibleText(record);
+      if (record.type === "user" && !record.isMeta && text) {
+        inspectResponse();
+        precedingUser = proseText(text);
+      } else if (record.type === "assistant" && text) responseParts.push(proseText(text));
+    }
+    inspectResponse();
+  }
+  const languages = [...totals.values()].sort((left, right) => right.words - left.words || right.occurrences - left.occurrences);
+  return languages.length ? { ...languages[0], languages } : null;
 }
 
 function scriptCount(value, expression) {
@@ -157,21 +225,6 @@ function excerptAround(records, center, sessionId) {
 
 function finding(kind, title, summary, method, score, evidence) {
   return { id: crypto.randomUUID(), kind, title, summary, method, confidence: confidence(score), evidence };
-}
-
-function displayModelName(value) {
-  const raw = String(value || "Unknown model");
-  if (raw === "<synthetic>") return "Synthetic model";
-  const claude = raw.match(/^claude-([a-z]+)-(\d+)-(\d+)$/i);
-  if (claude) return `Claude ${claude[1][0].toUpperCase()}${claude[1].slice(1).toLowerCase()} ${claude[2]}.${claude[3]}`;
-  const gpt = raw.match(/^gpt-(\d+)[.-](\d+)(?:-([a-z]+))?$/i);
-  if (gpt) return `GPT-${gpt[1]}.${gpt[2]}${gpt[3] ? ` ${gpt[3][0].toUpperCase()}${gpt[3].slice(1).toLowerCase()}` : ""}`;
-  return raw
-    .replace(/^claude-/i, "Claude ")
-    .replace(/^gpt-/i, "GPT-")
-    .replace(/-(\d+)-(\d+)(?=$|-)/g, "$1.$2")
-    .replace(/-/g, " ")
-    .replace(/\b[a-z]+\b/gi, (word) => word.toLowerCase() === "gpt" ? "GPT" : word[0].toUpperCase() + word.slice(1).toLowerCase());
 }
 
 function ratesFor(model, agent) {
@@ -360,6 +413,7 @@ export function analyzeSessions(sessionRecords) {
       method: "Counts user messages matching conservative frustration or gratitude phrase patterns; this is an approximate tone signal, not a judgment of emotion.",
     },
     outputLanguages: languageBreakdown(assistantProse),
+    languageAnomaly: languageAnomalyBreakdown(sessionRecords),
     languageMethod: "Estimates natural-language word share in assistant text after removing fenced code, inline code, URLs, paths, and markup. Script detection and small Latin-language lexicons are approximate.",
     topics: topicBreakdown(sessionRecords),
     topicMethod: "Assigns each user prompt to its highest-scoring local keyword category; short follow-ups inherit the preceding topic in that session.",

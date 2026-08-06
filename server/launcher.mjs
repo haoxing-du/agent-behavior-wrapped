@@ -10,6 +10,7 @@ import { analyzeSessions, makeDonationPreview } from "./analysis.mjs";
 import { buildPhraseCandidates, OPENROUTER_MODEL, PHRASE_JUDGE_NAME, PHRASE_JUDGE_RELAY_URL, judgePhraseCard, judgePhraseCardViaRelay } from "./phrase-card.mjs";
 import { applyInteractionToneJudgment, buildInteractionToneCandidates, emptyInteractionToneJudgment, INTERACTION_TONE_RELAY_URL, judgeInteractionTone, judgeInteractionToneViaRelay } from "./interaction-tone.mjs";
 import { applySessionTopicJudgment, buildSessionTopicCandidates, emptySessionTopicJudgment, judgeSessionTopics, judgeSessionTopicsViaRelay, SESSION_TOPIC_RELAY_URL } from "./session-topics.mjs";
+import { applyWorkaroundJudgment, buildWorkaroundCandidates, emptyWorkaroundJudgment, judgeWorkarounds, judgeWorkaroundsViaRelay, WORKAROUND_RELAY_URL } from "./instrumental-workarounds.mjs";
 import { getLeaderboardSnapshot, joinLeaderboard, leaderboardAggregateFromReport, LEADERBOARD_RELAY_ORIGIN, leaveLeaderboard, syntheticLeaderboardSnapshot } from "./leaderboard.mjs";
 import { getOrCreateClientId, loadReport } from "./store.mjs";
 
@@ -87,8 +88,15 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "GET" && reportMatch) {
       const report = loadReport(reportMatch[1]);
       if (!report) return json(response, 404, { error: "Saved report not found" });
-      const { sessionIds, ...shareSafeReport } = report;
+      const { sessionIds, workaroundReview, ...shareSafeReport } = report;
+      shareSafeReport.privacy = { ...shareSafeReport.privacy, shareSafe: true, containsTranscriptText: false };
       return json(response, 200, shareSafeReport);
+    }
+    const workaroundReviewMatch = url.pathname.match(/^\/api\/reports\/([A-Za-z0-9_-]{8,32})\/workaround-review$/);
+    if (request.method === "GET" && workaroundReviewMatch) {
+      const report = loadReport(workaroundReviewMatch[1]);
+      if (!report) return json(response, 404, { error: "Saved report not found" });
+      return json(response, 200, report.workaroundReview || { occurrences: [], borderline: [] });
     }
     const selectionMatch = url.pathname.match(/^\/api\/reports\/([A-Za-z0-9_-]{8,32})\/selection$/);
     if (request.method === "GET" && selectionMatch) {
@@ -146,6 +154,7 @@ const server = http.createServer(async (request, response) => {
         const candidates = buildPhraseCandidates(records, { maximumCandidates: 100 });
         const interactionCandidates = buildInteractionToneCandidates(records);
         const sessionTopicBundle = buildSessionTopicCandidates(records);
+        const workaroundBundle = buildWorkaroundCandidates(records);
         const phraseCardPromise = process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
           ? judgePhraseCard(candidates, process.env.OPENROUTER_API_KEY)
           : judgePhraseCardViaRelay(candidates, { endpoint: process.env.BEHAVIOR_WRAPPED_JUDGE_URL || PHRASE_JUDGE_RELAY_URL, clientId: getOrCreateClientId() });
@@ -159,11 +168,17 @@ const server = http.createServer(async (request, response) => {
             ? judgeSessionTopics(sessionTopicBundle, process.env.OPENROUTER_API_KEY)
             : judgeSessionTopicsViaRelay(sessionTopicBundle, { endpoint: process.env.BEHAVIOR_WRAPPED_SESSION_TOPICS_URL || SESSION_TOPIC_RELAY_URL, clientId: getOrCreateClientId() })
           : Promise.resolve(emptySessionTopicJudgment(sessionTopicBundle));
+        const workaroundsPromise = workaroundBundle.candidates.length
+          ? process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
+            ? judgeWorkarounds(workaroundBundle, process.env.OPENROUTER_API_KEY)
+            : judgeWorkaroundsViaRelay(workaroundBundle, { endpoint: process.env.BEHAVIOR_WRAPPED_WORKAROUND_URL || WORKAROUND_RELAY_URL, clientId: getOrCreateClientId() })
+          : Promise.resolve(emptyWorkaroundJudgment());
         const analyzed = analyzeSessions(records);
-        const [phraseCard, interactionTone, sessionTopics] = await Promise.all([phraseCardPromise, interactionTonePromise, sessionTopicsPromise]);
+        const [phraseCard, interactionTone, sessionTopics, workarounds] = await Promise.all([phraseCardPromise, interactionTonePromise, sessionTopicsPromise, workaroundsPromise]);
         analyzed.phraseCard = phraseCard;
         applyInteractionToneJudgment(analyzed, interactionTone);
         applySessionTopicJudgment(analyzed, sessionTopics);
+        applyWorkaroundJudgment(analyzed, workarounds);
         return json(response, 200, analyzed);
       }
       const labels = new Map(publicCatalog().sessions.map((s) => [s.id, s]));

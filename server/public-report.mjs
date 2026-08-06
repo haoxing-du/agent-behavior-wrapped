@@ -2,8 +2,9 @@ export const PUBLIC_REPORT_ORIGIN = "https://agent-behavior-wrapped-judge.haoxin
 const REQUEST_TIMEOUT_MS = 15_000;
 
 export async function publishPublicReport(report, { clientId, fetchImpl = fetch, origin = PUBLIC_REPORT_ORIGIN } = {}) {
-  const { sessionIds, ...shareSafeReport } = report;
+  const { sessionIds, workaroundReview, ...shareSafeReport } = report;
   shareSafeReport.rangeLabel = "Your recent agent history";
+  shareSafeReport.privacy = { shareSafe: true, containsTranscriptText: false, externalTransmission: true };
   const serialized = JSON.stringify(shareSafeReport);
   if (/"(?:sessionIds|evidence|transcript|tool_result|tool_use)"\s*:/.test(serialized)) throw new Error("The report contains private fields and was not published.");
   let response;

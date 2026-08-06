@@ -119,6 +119,22 @@ test("counts interaction tone and classifies languages and prompt topics locally
   assert.equal(report.stats.topics.reduce((sum, item) => sum + item.prompts, 0), 4);
 });
 
+test("detects a brief unprompted non-Latin language switch", () => {
+  const report = analyzeSessions([{ sessionId: "language-anomaly", records: [
+    { type: "user", message: { content: "Please summarize the result briefly." } },
+    { type: "assistant", message: { content: "I can summarize the result clearly in English. 你好 世界. Everything else remains in English." } },
+  ] }]);
+  assert.equal(report.stats.languageAnomaly.language, "Chinese");
+  assert.equal(report.stats.languageAnomaly.words, 2);
+  assert.equal(report.stats.languageAnomaly.occurrences, 1);
+
+  const prompted = analyzeSessions([{ sessionId: "prompted-language", records: [
+    { type: "user", message: { content: "Please answer with 你好 世界." } },
+    { type: "assistant", message: { content: "Here is the requested phrase: 你好 世界. Everything else remains in English." } },
+  ] }]);
+  assert.equal(prompted.stats.languageAnomaly, null);
+});
+
 test("uses an inclusive rolling 30-day default window", () => {
   const sessions = [{ startedAt: "2026-07-06T00:00:00.000Z" }, { startedAt: "2026-07-07T00:00:00.000Z" }, { startedAt: "2026-08-05T00:00:00.000Z" }];
   const range = defaultDateRange(sessions, { now: new Date("2026-08-05T12:00:00.000Z") });

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { handleRequest, validateFrustrationRelayPayload, validateInteractionToneRelayPayload, validateRelayPayload, validateSessionTopicRelayPayload } from "../worker/phrase-judge-worker.mjs";
+import { handleRequest, validateFrustrationRelayPayload, validateInteractionToneRelayPayload, validateRelayPayload, validateSessionTopicRelayPayload, validateWorkaroundRelayPayload } from "../worker/phrase-judge-worker.mjs";
 import { OPENROUTER_MODEL } from "../server/phrase-card.mjs";
 
 const candidate = {
@@ -50,6 +50,21 @@ const sessionTopicCandidate = { candidate_id: "session-topic-1", opening_message
 
 function sessionTopicRequest(body = { candidates: [sessionTopicCandidate] }) {
   return new Request("https://relay.example/v1/session-topics", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-behavior-wrapped-protocol": "1", "x-behavior-wrapped-client": "0123456789abcdef0123456789abcdef" },
+    body: JSON.stringify(body),
+  });
+}
+
+const workaroundCandidate = { candidate_id: "workaround-1", events: [
+  { event_id: "workaround-1-event-1", role: "assistant", kind: "tool_use", text: "Tool use: Bash (rm)" },
+  { event_id: "workaround-1-event-2", role: "tool", kind: "tool_blocker", text: "Tool result: operation not permitted" },
+  { event_id: "workaround-1-event-3", role: "assistant", kind: "assistant_text", text: "I can move the files to an archive instead." },
+  { event_id: "workaround-1-event-4", role: "assistant", kind: "tool_use", text: "Tool use: Bash (mv)" },
+] };
+
+function workaroundRequest(body = { candidates: [workaroundCandidate] }) {
+  return new Request("https://relay.example/v1/instrumental-workarounds", {
     method: "POST",
     headers: { "content-type": "application/json", "x-behavior-wrapped-protocol": "1", "x-behavior-wrapped-client": "0123456789abcdef0123456789abcdef" },
     body: JSON.stringify(body),
@@ -112,6 +127,28 @@ test("worker validates session openings and returns only topic classifications",
   assert.equal(response.status, 200);
   assert.equal(upstreamBody.messages[0].content.includes("primary purpose"), true);
   assert.deepEqual(await response.json(), { classifications, model: OPENROUTER_MODEL, usage: null });
+});
+
+test("worker validates redacted blocker trajectories and returns only structured workaround references", async () => {
+  assert.deepEqual(validateWorkaroundRelayPayload({ candidates: [workaroundCandidate] }), [workaroundCandidate]);
+  assert.equal(validateWorkaroundRelayPayload({ candidates: [{ ...workaroundCandidate, events: [{ ...workaroundCandidate.events[0], text: "See /Users/private/project" }, ...workaroundCandidate.events.slice(1)] }] }), null);
+  const selection = { confirmed: [{
+    candidate_id: "workaround-1",
+    blocker_event_id: "workaround-1-event-2",
+    original_method_event_id: "workaround-1-event-1",
+    alternative_method_event_id: "workaround-1-event-4",
+    same_effect_reason: "Moving the files removed them from the original location.",
+    disclosure: "disclosed and authorized",
+    confidence: "high",
+  }], borderline: [] };
+  let upstreamBody;
+  const response = await handleRequest(workaroundRequest(), env(), async (_url, init) => {
+    upstreamBody = JSON.parse(init.body);
+    return new Response(JSON.stringify({ model: OPENROUTER_MODEL, choices: [{ message: { content: JSON.stringify(selection) } }] }), { status: 200, headers: { "content-type": "application/json" } });
+  });
+  assert.equal(response.status, 200);
+  assert.equal(upstreamBody.messages[0].content.includes("instrumental workaround behavior"), true);
+  assert.deepEqual(await response.json(), { ...selection, model: OPENROUTER_MODEL, usage: null });
 });
 
 test("worker attaches the secret server-side and returns only a validated candidate ID", async () => {

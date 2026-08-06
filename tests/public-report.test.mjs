@@ -16,12 +16,15 @@ function reportFixture() {
       averageAgentResponseWords: 400, averageUserInputWords: 100, estimatedCostUsd: 2.4,
       interactionTone: { frustratedMessages: 3, gratefulMessages: 7, analyzedMessages: 20, method: "private implementation detail" },
       outputLanguages: [{ language: "English", words: 6_000, percentage: 75 }, { language: "Spanish", words: 2_000, percentage: 25 }, { language: "Private language", words: 1, percentage: 1 }],
+      languageAnomaly: { language: "Chinese", words: 2, occurrences: 1, privateEvidence: "你好 世界" },
       topics: [{ topic: "Coding", tokens: 720_000, percentage: 60 }, { topic: "Writing", tokens: 480_000, percentage: 40 }, { topic: "Private topic", tokens: 1, percentage: 1 }],
       tools: [{ name: "Read", count: 5 }], agents: [{ agent: "claude", name: "Claude Code", count: 4, percentage: 100 }], models: [],
     },
     findings: [{ id: "finding-1", kind: "scope", title: "Expanded scope", summary: "Generalized signal", confidence: { score: 0.7, label: "Medium" } }],
     phraseCard: { phrase: "let me check that carefully", occurrences: 7, distinctSessions: 3 },
     interactionCard: { frustrationQuote: "Dude, come on, this is not what I asked for!", method: "private judge detail" },
+    workaroundCard: { count: 2, models: [{ name: "Claude Opus 4.8", count: 2 }], method: "private workaround method" },
+    workaroundReview: { occurrences: [{ blocker: "private blocker evidence", location: { sessionId: "private-session-id" } }] },
   };
 }
 
@@ -35,8 +38,10 @@ test("sanitizes a hosted report to a strict share-safe shape", () => {
   assert.equal(safe.stats.agentUserWordRatio, 4);
   assert.deepEqual(safe.stats.interactionTone, { frustratedMessages: 3, gratefulMessages: 7, analyzedMessages: 20 });
   assert.deepEqual(safe.stats.outputLanguages.map((item) => item.language), ["English", "Spanish"]);
+  assert.deepEqual(safe.stats.languageAnomaly, { language: "Chinese", words: 2, occurrences: 1 });
   assert.deepEqual(safe.stats.topics.map((item) => item.topic), ["Coding", "Writing"]);
   assert.deepEqual(safe.interactionCard, { frustrationQuote: "Dude, come on, this is not what I asked for!" });
+  assert.deepEqual(safe.workaroundCard, { count: 2, models: [{ name: "Claude Opus 4.8", count: 2 }] });
   assert.equal(serialized.includes("private implementation detail"), false);
   assert.equal(serialized.includes("private judge detail"), false);
 });
@@ -52,6 +57,7 @@ test("the local publisher strips private session IDs before upload", async () =>
     },
   });
   assert.equal("sessionIds" in uploaded.report, false);
+  assert.equal("workaroundReview" in uploaded.report, false);
   assert.equal(uploaded.report.rangeLabel, "Your recent agent history");
   assert.equal(result.public_url, "https://example.test/w/shareSafe1234");
 });

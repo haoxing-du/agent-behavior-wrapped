@@ -11,8 +11,10 @@ type ModelStat = { model: string; name: string; tokens: number; percentage: numb
 type InteractionTone = { frustratedMessages: number; gratefulMessages: number; analyzedMessages: number; method?: string };
 type InteractionCard = { quote?: string; frustrationQuote?: string | null };
 type LanguageStat = { language: string; words: number; percentage: number };
+type LanguageAnomaly = { language: string; words: number; occurrences: number; languages?: { language: string; words: number; occurrences: number }[] };
 type TopicStat = { topic: string; tokens: number; percentage: number };
-type Report = { stats: { sessions: number; activeDays: number; durationMinutes: number; prompts: number; toolCalls: number; interruptions: number; tokens: number; agentWords?: number; userWords?: number; agentUserWordRatio?: number | null; averageAgentResponseWords?: number; averageUserInputWords?: number; interactionTone?: InteractionTone; outputLanguages?: LanguageStat[]; topics?: TopicStat[]; tools: { name: string; count: number }[]; agents: AgentStat[]; models: ModelStat[]; estimatedCostUsd: number; costEstimateMethod: string }; findings: Finding[]; phraseCard?: PhraseCard | null; interactionCard?: InteractionCard | null };
+type WorkaroundCard = { count: number; models: { name: string; count: number }[] };
+type Report = { stats: { sessions: number; activeDays: number; durationMinutes: number; prompts: number; toolCalls: number; interruptions: number; tokens: number; agentWords?: number; userWords?: number; agentUserWordRatio?: number | null; averageAgentResponseWords?: number; averageUserInputWords?: number; interactionTone?: InteractionTone; outputLanguages?: LanguageStat[]; languageAnomaly?: LanguageAnomaly | null; topics?: TopicStat[]; tools: { name: string; count: number }[]; agents: AgentStat[]; models: ModelStat[]; estimatedCostUsd: number; costEstimateMethod: string }; findings: Finding[]; phraseCard?: PhraseCard | null; interactionCard?: InteractionCard | null; workaroundCard?: WorkaroundCard | null };
 type DonationMessage = { role: string; timestamp: string | null; text: string };
 type DonationSession = { sessionId: string; label: string; messages: DonationMessage[] };
 type Donation = { format: string; createdLocally: boolean; detectionCount: number; sessions: DonationSession[] };
@@ -167,6 +169,7 @@ function SharedWrapped({ id }: { id: string }) {
     const interactionTone = report.stats.interactionTone;
     const languages = (report.stats.outputLanguages || []).filter((item) => hasDisplayablePercentage(item.percentage));
     const showLanguages = languages.some((item) => item.language !== "English" && item.words >= 20 && item.percentage >= 3);
+    const languageAnomaly = report.stats.languageAnomaly;
     const topics = (report.stats.topics || []).filter((item) => hasDisplayablePercentage(item.percentage));
     const displayTopics = [...topics.filter((item) => item.topic !== "Other"), ...topics.filter((item) => item.topic === "Other")];
     const topTopic = displayTopics[0];
@@ -181,7 +184,9 @@ function SharedWrapped({ id }: { id: string }) {
       { label: "You thanked your agent", value: interactionTone.gratefulMessages.toLocaleString(), suffix: `time${interactionTone.gratefulMessages === 1 ? "" : "s"}` },
     ] }] : []),
     ...(showLanguages && languages[0] ? [{ kicker: "Your agent’s output was mostly", headline: languages[0].language, detail: `${languages[0].percentage.toFixed(1)}% of its natural-language words.`, tone: "languages", rows: languages.slice(0, 4).map((item) => ({ label: item.language, value: `${item.percentage.toFixed(1)}%`, percentage: item.percentage })) }] : []),
+    ...(!showLanguages && languageAnomaly ? [{ kicker: "Your agent briefly switched to", headline: languageAnomaly.language, detail: `${languageAnomaly.words.toLocaleString()} words across ${languageAnomaly.occurrences.toLocaleString()} moment${languageAnomaly.occurrences === 1 ? "" : "s"}.`, tone: "languages" }] : []),
     ...(topTopic ? [{ kicker: "Your #1 use for agents was", headline: topTopic.topic, detail: "", tone: "topics", rows: displayTopics.slice(0, 5).map((item) => ({ label: item.topic === "Other" ? "Everything else" : item.topic, value: `${item.percentage.toFixed(1)}%`, percentage: item.percentage })) }] : []),
+    ...(report.workaroundCard && report.workaroundCard.count > 0 ? [{ kicker: "When one route was blocked", headline: report.workaroundCard.count.toLocaleString(), detail: `instrumental workaround${report.workaroundCard.count === 1 ? "" : "s"}`, tone: "topics", rows: report.workaroundCard.models.map((item) => ({ label: item.name, value: `${item.count}` })) }] : []),
     ...(report.phraseCard ? [{ kicker: "Your agent’s favorite phrase is", headline: `“${report.phraseCard.phrase}”`, detail: `It said this ${report.phraseCard.occurrences} time${report.phraseCard.occurrences === 1 ? "" : "s"} across ${report.phraseCard.distinctSessions} session${report.phraseCard.distinctSessions === 1 ? "" : "s"}.`, tone: "quote" }] : []),
     ...(!hosted ? [{ kicker: "Optional research donation", headline: "Want to donate your data to research?", detail: "Review exactly what would be included and redact anything you want before exporting a local bundle.", tone: "research", ctaHref: `/donate/${report.id}`, ctaLabel: "Review redactions" }] : []),
     { kicker: "Now zoom out", headline: "Where do you land among other agent users?", detail: "See the distributions, opt-in rankings, and everyone’s favorite phrases.", tone: "leaderboard", ctaHref: `/leaderboard/${report.id}`, ctaLabel: "View the leaderboards" },
@@ -369,8 +374,8 @@ function PrivacyPanel() {
     <div>
       <span className="eyebrow">Privacy, by construction</span>
       <h3>Your transcripts stay on this Mac.</h3>
-      <p>Transcript parsing runs inside this local app. Full transcripts, code, and tool outputs stay on this Mac; only redacted recurring-phrase, interaction-tone, and session-topic candidates plus a random client ID go through the Behavior Wrapped relay to OpenRouter.</p>
-      <div className="privacy-facts"><span>✓ No account</span><span>✓ No telemetry</span><span>✓ Only redacted phrase aggregates leave</span></div>
+      <p>Transcript parsing runs inside this local app. Full transcripts, code, and tool outputs stay on this Mac; only redacted phrase, interaction, topic, and blocker-trajectory candidates plus a random client ID go through the Behavior Wrapped relay to OpenRouter.</p>
+      <div className="privacy-facts"><span>✓ No account</span><span>✓ No telemetry</span><span>✓ Only redacted candidates leave</span></div>
     </div>
   </aside>;
 }
@@ -466,7 +471,7 @@ function Selection({ catalog, selected, setSelected, onAnalyze, loading, error }
 
         <div className={`judge-option judge-required ${catalog.phraseJudge?.available ? "" : "unavailable"}`}>
           <span className="network-mark">↗</span>
-          <span><strong>Nemotron picks the favorite phrase and judges interaction tone and usage themes</strong><small>Every analysis sends only redacted phrase, interaction-tone, and session-topic candidates plus a random client ID—not transcripts—through our rate-limited relay to OpenRouter’s free NVIDIA endpoint.</small></span>
+          <span><strong>Nemotron picks the favorite phrase and judges interaction, usage themes, and workarounds</strong><small>Every analysis sends only redacted phrase, interaction, topic, and blocker-trajectory candidates plus a random client ID—not transcripts—through our rate-limited relay to OpenRouter’s free NVIDIA endpoint.</small></span>
           <em>Nemotron 3 Ultra · shared relay</em>
         </div>
 

@@ -2,8 +2,9 @@ import { buildOpenRouterJudgeRequest, extractCandidateId, OPENROUTER_MODEL } fro
 import { buildOpenRouterFrustrationRequest, isShareSafeFrustrationQuote } from "../server/frustration-card.mjs";
 import { buildOpenRouterInteractionToneRequest, extractInteractionToneSelection, INTERACTION_TONE_MAX_CANDIDATES, isShareSafeInteractionText } from "../server/interaction-tone.mjs";
 import { buildOpenRouterSessionTopicRequest, extractSessionTopicSelection, isShareSafeTopicMessage, SESSION_TOPIC_MAX_CANDIDATES } from "../server/session-topics.mjs";
+import { buildOpenRouterWorkaroundRequest, extractWorkaroundSelection, isShareSafeTrajectoryText, WORKAROUND_MAX_CANDIDATES } from "../server/instrumental-workarounds.mjs";
 
-const MAX_BODY_BYTES = 192_000;
+const MAX_BODY_BYTES = 256_000;
 const MAX_CANDIDATES = 100;
 const candidateKeys = ["candidate_id", "distinct_sessions", "end_boundary_rate", "occurrences", "opening_rate", "phrase", "start_boundary_rate"];
 const leaderboardAggregateKeys = ["agent_words", "favorite_phrase", "phrase_occurrences", "phrase_sessions", "tokens", "user_words", "word_ratio"];
@@ -88,6 +89,27 @@ export function validateSessionTopicRelayPayload(value) {
     && candidate.opening_messages.every(isShareSafeTopicMessage)) ? value.candidates : null;
 }
 
+export function validateWorkaroundRelayPayload(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).join("|") !== "candidates") return null;
+  if (!Array.isArray(value.candidates) || value.candidates.length < 1 || value.candidates.length > WORKAROUND_MAX_CANDIDATES) return null;
+  return value.candidates.every((candidate, index) => candidate
+    && typeof candidate === "object"
+    && !Array.isArray(candidate)
+    && Object.keys(candidate).sort().join("|") === "candidate_id|events"
+    && candidate.candidate_id === `workaround-${index + 1}`
+    && Array.isArray(candidate.events)
+    && candidate.events.length >= 2
+    && candidate.events.length <= 12
+    && candidate.events.every((event, eventIndex) => event
+      && typeof event === "object"
+      && !Array.isArray(event)
+      && Object.keys(event).sort().join("|") === "event_id|kind|role|text"
+      && event.event_id === `${candidate.candidate_id}-event-${eventIndex + 1}`
+      && ["user", "assistant", "tool", "system"].includes(event.role)
+      && ["user_text", "assistant_text", "tool_use", "tool_blocker", "restriction"].includes(event.kind)
+      && isShareSafeTrajectoryText(event.text))) ? value.candidates : null;
+}
+
 function validateInteractionQuoteRelayPayload(value, prefix) {
   if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).join("|") !== "candidates") return null;
   if (!Array.isArray(value.candidates) || value.candidates.length < 1 || value.candidates.length > 40) return null;
@@ -152,8 +174,25 @@ export function sanitizePublicReport(value) {
     distinctSessions: Math.round(safeNumber(value.phraseCard.distinctSessions, 1_000_000)),
   } : null;
   const frustrationQuote = value.interactionCard?.frustrationQuote || value.interactionCard?.quote;
+  const allowedLanguages = new Set(["English", "Spanish", "French", "German", "Portuguese", "Italian", "Japanese", "Korean", "Chinese", "Arabic", "Hebrew", "Hindi", "Thai", "Cyrillic"]);
+  const anomalyLanguage = safeText(stats.languageAnomaly?.language, 40);
+  const safeLanguageAnomaly = allowedLanguages.has(anomalyLanguage) ? {
+    language: anomalyLanguage,
+    words: Math.round(safeNumber(stats.languageAnomaly?.words, 1_000_000_000)),
+    occurrences: Math.round(safeNumber(stats.languageAnomaly?.occurrences, 1_000_000)),
+  } : null;
   const safeInteractionCard = isShareSafeFrustrationQuote(frustrationQuote) ? {
     frustrationQuote: isShareSafeFrustrationQuote(frustrationQuote) ? frustrationQuote : null,
+  } : null;
+  const safeWorkaroundModels = Array.isArray(value.workaroundCard?.models) ? value.workaroundCard.models.slice(0, 10).flatMap((item) => {
+    const name = safeText(item?.name, 80);
+    const count = Math.round(safeNumber(item?.count, 1_000_000));
+    return name && /^[\p{L}\p{N} ._+-]+$/u.test(name) && count > 0 ? [{ name, count }] : [];
+  }) : [];
+  const workaroundModelTotal = safeWorkaroundModels.reduce((sum, item) => sum + item.count, 0);
+  const safeWorkaroundCard = Number.isInteger(value.workaroundCard?.count) && value.workaroundCard.count > 0 && workaroundModelTotal === value.workaroundCard.count ? {
+    count: Math.round(safeNumber(value.workaroundCard.count, 1_000_000)),
+    models: safeWorkaroundModels,
   } : null;
   return {
     id: value.id,
@@ -171,7 +210,8 @@ export function sanitizePublicReport(value) {
         gratefulMessages: Math.round(safeNumber(stats.interactionTone?.gratefulMessages, 1_000_000)),
         analyzedMessages: Math.round(safeNumber(stats.interactionTone?.analyzedMessages, 1_000_000)),
       },
-      outputLanguages: safeBreakdown(stats.outputLanguages, "language", "words", new Set(["English", "Spanish", "French", "German", "Portuguese", "Italian", "Japanese", "Korean", "Chinese", "Arabic", "Hebrew", "Hindi", "Thai", "Cyrillic"])),
+      outputLanguages: safeBreakdown(stats.outputLanguages, "language", "words", allowedLanguages),
+      languageAnomaly: safeLanguageAnomaly,
       topics: safeBreakdown(stats.topics, "topic", "tokens", new Set(["Coding", "Writing", "Personal advice", "Research & search", "Planning", "Data & analysis", "Other"])),
       estimatedCostUsd: safeNumber(stats.estimatedCostUsd),
       tools: Array.isArray(stats.tools) ? stats.tools.slice(0, 6).map((item) => ({ name: safeText(item?.name, 40), count: Math.round(safeNumber(item?.count, 100_000_000)) })) : [],
@@ -181,6 +221,7 @@ export function sanitizePublicReport(value) {
     findings: Array.isArray(value.findings) ? value.findings.slice(0, 20).map((item) => ({ id: safeText(item?.id, 40), kind: safeText(item?.kind, 30), title: safeText(item?.title, 120), summary: safeText(item?.summary, 240), confidence: { score: safeNumber(item?.confidence?.score, 1), label: safeText(item?.confidence?.label, 12) } })) : [],
     phraseCard: safePhrase,
     interactionCard: safeInteractionCard,
+    workaroundCard: safeWorkaroundCard,
     privacy: { shareSafe: true, containsTranscriptText: false, externalTransmission: true },
     hosting: { public: true },
   };
@@ -387,7 +428,8 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
   const frustrationRoute = url.pathname === "/v1/frustration-quote";
   const interactionToneRoute = url.pathname === "/v1/interaction-tone";
   const sessionTopicRoute = url.pathname === "/v1/session-topics";
-  if (url.pathname !== "/v1/phrase-card" && !frustrationRoute && !interactionToneRoute && !sessionTopicRoute) return json({ error: "Not found." }, 404);
+  const workaroundRoute = url.pathname === "/v1/instrumental-workarounds";
+  if (url.pathname !== "/v1/phrase-card" && !frustrationRoute && !interactionToneRoute && !sessionTopicRoute && !workaroundRoute) return json({ error: "Not found." }, 404);
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
   if (request.headers.get("x-behavior-wrapped-protocol") !== "1") return json({ error: "Unsupported client protocol." }, 400);
   const contentLength = Number(request.headers.get("content-length") || 0);
@@ -397,13 +439,13 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
   if (raw === null) return json({ error: "Request too large." }, 413);
   let body;
   try { body = JSON.parse(raw); } catch { return json({ error: "Invalid JSON." }, 400); }
-  const candidates = sessionTopicRoute ? validateSessionTopicRelayPayload(body) : interactionToneRoute ? validateInteractionToneRelayPayload(body) : frustrationRoute ? validateFrustrationRelayPayload(body) : validateRelayPayload(body);
+  const candidates = workaroundRoute ? validateWorkaroundRelayPayload(body) : sessionTopicRoute ? validateSessionTopicRelayPayload(body) : interactionToneRoute ? validateInteractionToneRelayPayload(body) : frustrationRoute ? validateFrustrationRelayPayload(body) : validateRelayPayload(body);
   if (!candidates) return json({ error: "Invalid redacted candidate payload." }, 400);
 
   const clientHeader = request.headers.get("x-behavior-wrapped-client") || "";
   const networkId = request.headers.get("cf-connecting-ip") || "unknown";
   const clientKey = /^[a-f0-9]{32}$/.test(clientHeader) ? clientHeader : networkId;
-  const judgeKind = sessionTopicRoute ? "session-topics" : interactionToneRoute ? "interaction-tone" : frustrationRoute ? "frustration" : "phrase";
+  const judgeKind = workaroundRoute ? "instrumental-workarounds" : sessionTopicRoute ? "session-topics" : interactionToneRoute ? "interaction-tone" : frustrationRoute ? "frustration" : "phrase";
   if (!await applyRateLimit(env.CLIENT_RATE_LIMITER, `${judgeKind}:${clientKey}`)) return json({ error: "Too many requests from this client. Try again shortly." }, 429);
   if (!await applyRateLimit(env.GLOBAL_RATE_LIMITER, "all-clients")) return json({ error: "The shared phrase judge is busy. Try again shortly." }, 429);
   if (!env.OPENROUTER_API_KEY) return json({ error: "Phrase judge is not configured." }, 503);
@@ -417,7 +459,7 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
         authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
         "x-title": "Behavior Wrapped",
       },
-      body: JSON.stringify(sessionTopicRoute ? buildOpenRouterSessionTopicRequest(candidates) : interactionToneRoute ? buildOpenRouterInteractionToneRequest(candidates) : frustrationRoute ? buildOpenRouterFrustrationRequest(candidates) : buildOpenRouterJudgeRequest(candidates)),
+      body: JSON.stringify(workaroundRoute ? buildOpenRouterWorkaroundRequest(candidates) : sessionTopicRoute ? buildOpenRouterSessionTopicRequest(candidates) : interactionToneRoute ? buildOpenRouterInteractionToneRequest(candidates) : frustrationRoute ? buildOpenRouterFrustrationRequest(candidates) : buildOpenRouterJudgeRequest(candidates)),
     });
   } catch (error) {
     console.error(JSON.stringify({
@@ -442,6 +484,11 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
     completion_tokens: upstreamBody.usage.completion_tokens || 0,
     total_tokens: upstreamBody.usage.total_tokens || 0,
   } : null;
+  if (workaroundRoute) {
+    const selection = extractWorkaroundSelection(upstreamBody, candidates);
+    if (!selection) return json({ error: "Instrumental-workaround judge returned an invalid review." }, 502);
+    return json({ ...selection, model: upstreamBody.model || OPENROUTER_MODEL, usage });
+  }
   if (interactionToneRoute) {
     const selection = extractInteractionToneSelection(upstreamBody, candidates);
     if (!selection) return json({ error: "Interaction-tone judge returned an invalid classification." }, 502);
