@@ -55,6 +55,8 @@ test("worker attaches the secret server-side and returns only a validated candid
   assert.equal(response.status, 200);
   assert.equal(authorization, "Bearer server-secret");
   assert.equal(upstreamBody.model, OPENROUTER_MODEL);
+  assert.equal(upstreamBody.max_tokens, 32);
+  assert.deepEqual(upstreamBody.reasoning, { effort: "none", exclude: true });
   assert.deepEqual(upstreamBody.response_format.json_schema.schema.properties.candidate_id.enum, ["phrase-1"]);
   assert.deepEqual(body, {
     candidate_id: "phrase-1",

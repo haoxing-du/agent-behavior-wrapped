@@ -12,6 +12,7 @@ const MIN_PHRASE_TOKENS = 4;
 const MAX_PHRASE_TOKENS = 10;
 const MAX_PHRASE_CANDIDATES = 100;
 const PHRASE_JUDGE_TIMEOUT_MS = 60_000;
+const PHRASE_JUDGE_MAX_TOKENS = 32;
 
 function visibleText(record) {
   const content = record?.message?.content ?? record?.content;
@@ -152,7 +153,11 @@ export function buildOpenRouterJudgeRequest(candidates, model = OPENROUTER_MODEL
   return {
     model,
     temperature: 0,
-    reasoning: { exclude: true },
+    // This is a small editorial classification task. Nemotron enables high-effort
+    // reasoning by default, so merely hiding its reasoning still generates hundreds
+    // of unnecessary tokens before returning the candidate ID.
+    reasoning: { effort: "none", exclude: true },
+    max_tokens: PHRASE_JUDGE_MAX_TOKENS,
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: `Choose one candidate from this redacted aggregate list:\n\n${payload}` },

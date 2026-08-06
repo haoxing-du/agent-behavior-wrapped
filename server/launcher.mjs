@@ -100,11 +100,12 @@ const server = http.createServer(async (request, response) => {
       const records = chosenRecords(ids);
       if (!records.length) return json(response, 400, { error: "Choose at least one available session." });
       if (url.pathname === "/api/analyze") {
-        const analyzed = analyzeSessions(records);
         const candidates = buildPhraseCandidates(records, { maximumCandidates: 100 });
-        analyzed.phraseCard = process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
-          ? await judgePhraseCard(candidates, process.env.OPENROUTER_API_KEY)
-          : await judgePhraseCardViaRelay(candidates, { endpoint: process.env.BEHAVIOR_WRAPPED_JUDGE_URL || PHRASE_JUDGE_RELAY_URL, clientId: getOrCreateClientId() });
+        const phraseCardPromise = process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
+          ? judgePhraseCard(candidates, process.env.OPENROUTER_API_KEY)
+          : judgePhraseCardViaRelay(candidates, { endpoint: process.env.BEHAVIOR_WRAPPED_JUDGE_URL || PHRASE_JUDGE_RELAY_URL, clientId: getOrCreateClientId() });
+        const analyzed = analyzeSessions(records);
+        analyzed.phraseCard = await phraseCardPromise;
         return json(response, 200, analyzed);
       }
       const labels = new Map(publicCatalog().sessions.map((s) => [s.id, s]));

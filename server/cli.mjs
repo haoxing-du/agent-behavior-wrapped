@@ -98,12 +98,13 @@ async function createWrapped() {
     const session = catalog.index.get(publicSession.id);
     return { sessionId: session.id, agent: session.agent, records: readRecords(session.file, session.agent) };
   });
-  const analyzed = analyzeSessions(sessionRecords);
   const candidates = buildPhraseCandidates(sessionRecords, { maximumCandidates: 100 });
   process.stdout.write(`${muted}◇  Scanning corpus for the agent's favorite phrase…${reset}\r`);
-  analyzed.phraseCard = process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
-    ? await judgePhraseCard(candidates, process.env.OPENROUTER_API_KEY)
-    : await judgePhraseCardViaRelay(candidates, { endpoint: process.env.BEHAVIOR_WRAPPED_JUDGE_URL || PHRASE_JUDGE_RELAY_URL, clientId: getOrCreateClientId() });
+  const phraseCardPromise = process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
+    ? judgePhraseCard(candidates, process.env.OPENROUTER_API_KEY)
+    : judgePhraseCardViaRelay(candidates, { endpoint: process.env.BEHAVIOR_WRAPPED_JUDGE_URL || PHRASE_JUDGE_RELAY_URL, clientId: getOrCreateClientId() });
+  const analyzed = analyzeSessions(sessionRecords);
+  analyzed.phraseCard = await phraseCardPromise;
   const id = createReportId();
   const safeFindings = analyzed.findings.map(({ evidence, method, ...finding }) => finding);
   const report = { id, createdAt: new Date().toISOString(), rangeLabel: formatRange(chosenSessions), source: "Claude Code + Codex", stats: analyzed.stats, findings: safeFindings, phraseCard: analyzed.phraseCard, sessionIds: chosenSessions.map((session) => session.id), privacy: { shareSafe: true, containsTranscriptText: false, externalTransmission: true, transmittedData: "redacted aggregate phrase candidates and a random client ID only", externalRecipient: "Behavior Wrapped relay, OpenRouter, and NVIDIA" } };
