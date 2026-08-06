@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { handleRequest, validateFrustrationRelayPayload, validateRelayPayload } from "../worker/phrase-judge-worker.mjs";
+import { handleRequest, validateFrustrationRelayPayload, validateGratitudeRelayPayload, validateRelayPayload } from "../worker/phrase-judge-worker.mjs";
 import { OPENROUTER_MODEL } from "../server/phrase-card.mjs";
 
 const candidate = {
@@ -36,6 +36,8 @@ function frustrationRequest(body = { candidates: [frustrationCandidate] }) {
   });
 }
 
+const gratitudeCandidate = { candidate_id: "gratitude-1", quote: "Thank you so much—this genuinely made my day!" };
+
 function env(rateLimitSuccess = true) {
   const limiter = { limit: async () => ({ success: rateLimitSuccess }) };
   return { OPENROUTER_API_KEY: "server-secret", CLIENT_RATE_LIMITER: limiter, GLOBAL_RATE_LIMITER: limiter };
@@ -60,6 +62,23 @@ test("worker validates and judges only narrow share-safe frustration quotes", as
   assert.deepEqual(upstreamBody.response_format.json_schema.schema.properties.candidate_id.enum, ["frustration-1"]);
   assert.equal(upstreamBody.messages[0].content.includes("funniest supplied user call-out"), true);
   assert.deepEqual(await response.json(), { candidate_id: "frustration-1", model: OPENROUTER_MODEL, usage: null });
+});
+
+test("worker validates and judges only narrow share-safe gratitude quotes", async () => {
+  assert.deepEqual(validateGratitudeRelayPayload({ candidates: [gratitudeCandidate] }), [gratitudeCandidate]);
+  const request = new Request("https://relay.example/v1/gratitude-quote", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-behavior-wrapped-protocol": "1", "x-behavior-wrapped-client": "0123456789abcdef0123456789abcdef" },
+    body: JSON.stringify({ candidates: [gratitudeCandidate] }),
+  });
+  let upstreamBody;
+  const response = await handleRequest(request, env(), async (_url, init) => {
+    upstreamBody = JSON.parse(init.body);
+    return new Response(JSON.stringify({ model: OPENROUTER_MODEL, choices: [{ message: { content: "{\"candidate_id\":\"gratitude-1\"}" } }] }), { status: 200, headers: { "content-type": "application/json" } });
+  });
+  assert.equal(response.status, 200);
+  assert.equal(upstreamBody.messages[0].content.includes("most wholesome supplied user thank-you"), true);
+  assert.deepEqual((await response.json()).candidate_id, "gratitude-1");
 });
 
 test("worker attaches the secret server-side and returns only a validated candidate ID", async () => {

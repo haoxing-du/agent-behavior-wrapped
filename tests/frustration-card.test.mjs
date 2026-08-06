@@ -2,9 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   buildFrustrationQuoteCandidates,
+  buildGratitudeQuoteCandidates,
   buildOpenRouterFrustrationRequest,
+  buildOpenRouterGratitudeRequest,
   isShareSafeFrustrationQuote,
   judgeFrustrationQuoteViaRelay,
+  judgeGratitudeQuoteViaRelay,
 } from "../server/frustration-card.mjs";
 
 const safeQuote = "Dude, come on, this is clearly not what I asked for!!!";
@@ -45,4 +48,21 @@ test("resolves the relay selection to the exact local quote", async () => {
   assert.deepEqual(outbound, { candidates: [candidate] });
   assert.equal(result.quote, safeQuote);
   assert.equal(result.provider, "OpenRouter via Behavior Wrapped relay");
+});
+
+test("builds gratitude candidates and asks for the most wholesome exact message", async () => {
+  const quote = "Thank you so much—this genuinely made my day!";
+  const candidates = buildGratitudeQuoteCandidates([{ sessionId: "synthetic", records: [
+    { type: "user", message: { content: quote } },
+    { type: "user", message: { content: "Thanks, token=sk-test_12345678901234567890" } },
+  ] }]);
+  assert.deepEqual(candidates, [{ candidate_id: "gratitude-1", quote }]);
+  const request = buildOpenRouterGratitudeRequest(candidates);
+  assert.equal(request.messages[0].content.includes("most wholesome supplied user thank-you"), true);
+  assert.deepEqual(request.response_format.json_schema.schema.properties.candidate_id.enum, ["gratitude-1"]);
+  const result = await judgeGratitudeQuoteViaRelay(candidates, {
+    endpoint: "https://relay.example/v1/gratitude-quote",
+    fetchImpl: async () => new Response(JSON.stringify({ candidate_id: "gratitude-1" }), { status: 200, headers: { "content-type": "application/json" } }),
+  });
+  assert.equal(result.quote, quote);
 });

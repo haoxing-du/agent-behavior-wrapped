@@ -1,5 +1,5 @@
 import { buildOpenRouterJudgeRequest, extractCandidateId, OPENROUTER_MODEL } from "../server/phrase-card.mjs";
-import { buildOpenRouterFrustrationRequest, isShareSafeFrustrationQuote } from "../server/frustration-card.mjs";
+import { buildOpenRouterFrustrationRequest, buildOpenRouterGratitudeRequest, isShareSafeFrustrationQuote } from "../server/frustration-card.mjs";
 
 const MAX_BODY_BYTES = 48_000;
 const MAX_CANDIDATES = 100;
@@ -55,13 +55,21 @@ export function validateRelayPayload(value) {
 }
 
 export function validateFrustrationRelayPayload(value) {
+  return validateInteractionQuoteRelayPayload(value, "frustration");
+}
+
+export function validateGratitudeRelayPayload(value) {
+  return validateInteractionQuoteRelayPayload(value, "gratitude");
+}
+
+function validateInteractionQuoteRelayPayload(value, prefix) {
   if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).join("|") !== "candidates") return null;
   if (!Array.isArray(value.candidates) || value.candidates.length < 1 || value.candidates.length > 40) return null;
   return value.candidates.every((candidate, index) => candidate
     && typeof candidate === "object"
     && !Array.isArray(candidate)
     && Object.keys(candidate).sort().join("|") === "candidate_id|quote"
-    && candidate.candidate_id === `frustration-${index + 1}`
+    && candidate.candidate_id === `${prefix}-${index + 1}`
     && isShareSafeFrustrationQuote(candidate.quote)) ? value.candidates : null;
 }
 
@@ -117,7 +125,12 @@ export function sanitizePublicReport(value) {
     occurrences: Math.round(safeNumber(value.phraseCard.occurrences, 10_000_000)),
     distinctSessions: Math.round(safeNumber(value.phraseCard.distinctSessions, 1_000_000)),
   } : null;
-  const safeInteractionCard = isShareSafeFrustrationQuote(value.interactionCard?.quote) ? { quote: value.interactionCard.quote } : null;
+  const frustrationQuote = value.interactionCard?.frustrationQuote || value.interactionCard?.quote;
+  const gratitudeQuote = value.interactionCard?.gratitudeQuote;
+  const safeInteractionCard = isShareSafeFrustrationQuote(frustrationQuote) || isShareSafeFrustrationQuote(gratitudeQuote) ? {
+    frustrationQuote: isShareSafeFrustrationQuote(frustrationQuote) ? frustrationQuote : null,
+    gratitudeQuote: isShareSafeFrustrationQuote(gratitudeQuote) ? gratitudeQuote : null,
+  } : null;
   return {
     id: value.id,
     createdAt: /^\d{4}-\d{2}-\d{2}T/.test(value.createdAt || "") ? value.createdAt : new Date().toISOString(),
@@ -348,7 +361,8 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
     return handleLeaderboard(request, env);
   }
   const frustrationRoute = url.pathname === "/v1/frustration-quote";
-  if (url.pathname !== "/v1/phrase-card" && !frustrationRoute) return json({ error: "Not found." }, 404);
+  const gratitudeRoute = url.pathname === "/v1/gratitude-quote";
+  if (url.pathname !== "/v1/phrase-card" && !frustrationRoute && !gratitudeRoute) return json({ error: "Not found." }, 404);
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
   if (request.headers.get("x-behavior-wrapped-protocol") !== "1") return json({ error: "Unsupported client protocol." }, 400);
   const contentLength = Number(request.headers.get("content-length") || 0);
@@ -358,13 +372,14 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
   if (raw === null) return json({ error: "Request too large." }, 413);
   let body;
   try { body = JSON.parse(raw); } catch { return json({ error: "Invalid JSON." }, 400); }
-  const candidates = frustrationRoute ? validateFrustrationRelayPayload(body) : validateRelayPayload(body);
+  const candidates = frustrationRoute ? validateFrustrationRelayPayload(body) : gratitudeRoute ? validateGratitudeRelayPayload(body) : validateRelayPayload(body);
   if (!candidates) return json({ error: "Invalid redacted candidate payload." }, 400);
 
   const clientHeader = request.headers.get("x-behavior-wrapped-client") || "";
   const networkId = request.headers.get("cf-connecting-ip") || "unknown";
   const clientKey = /^[a-f0-9]{32}$/.test(clientHeader) ? clientHeader : networkId;
-  if (!await applyRateLimit(env.CLIENT_RATE_LIMITER, `${frustrationRoute ? "frustration" : "phrase"}:${clientKey}`)) return json({ error: "Too many requests from this client. Try again shortly." }, 429);
+  const judgeKind = frustrationRoute ? "frustration" : gratitudeRoute ? "gratitude" : "phrase";
+  if (!await applyRateLimit(env.CLIENT_RATE_LIMITER, `${judgeKind}:${clientKey}`)) return json({ error: "Too many requests from this client. Try again shortly." }, 429);
   if (!await applyRateLimit(env.GLOBAL_RATE_LIMITER, "all-clients")) return json({ error: "The shared phrase judge is busy. Try again shortly." }, 429);
   if (!env.OPENROUTER_API_KEY) return json({ error: "Phrase judge is not configured." }, 503);
 
@@ -377,7 +392,7 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
         authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
         "x-title": "Behavior Wrapped",
       },
-      body: JSON.stringify(frustrationRoute ? buildOpenRouterFrustrationRequest(candidates) : buildOpenRouterJudgeRequest(candidates)),
+      body: JSON.stringify(frustrationRoute ? buildOpenRouterFrustrationRequest(candidates) : gratitudeRoute ? buildOpenRouterGratitudeRequest(candidates) : buildOpenRouterJudgeRequest(candidates)),
     });
   } catch (error) {
     console.error(JSON.stringify({

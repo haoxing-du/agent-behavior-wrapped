@@ -9,7 +9,7 @@ type PhraseCard = { phrase: string; occurrences: number; distinctSessions: numbe
 type AgentStat = { agent: "claude" | "codex"; name: string; count: number; percentage: number };
 type ModelStat = { model: string; name: string; tokens: number; percentage: number };
 type InteractionTone = { frustratedMessages: number; gratefulMessages: number; analyzedMessages: number; method?: string };
-type InteractionCard = { quote: string; model?: string; provider?: string; latencyMs?: number; candidateCount?: number; method?: string };
+type InteractionCard = { quote?: string; frustrationQuote?: string | null; gratitudeQuote?: string | null };
 type LanguageStat = { language: string; words: number; percentage: number };
 type TopicStat = { topic: string; prompts: number; percentage: number };
 type Report = { stats: { sessions: number; activeDays: number; durationMinutes: number; prompts: number; toolCalls: number; interruptions: number; tokens: number; agentWords?: number; userWords?: number; agentUserWordRatio?: number | null; averageAgentResponseWords?: number; averageUserInputWords?: number; interactionTone?: InteractionTone; outputLanguages?: LanguageStat[]; topics?: TopicStat[]; tools: { name: string; count: number }[]; agents: AgentStat[]; models: ModelStat[]; estimatedCostUsd: number; costEstimateMethod: string }; findings: Finding[]; phraseCard?: PhraseCard | null; interactionCard?: InteractionCard | null };
@@ -18,7 +18,7 @@ type DonationSession = { sessionId: string; label: string; messages: DonationMes
 type Donation = { format: string; createdLocally: boolean; detectionCount: number; sessions: DonationSession[] };
 type Stage = "select" | "report" | "donate";
 type SavedReport = Report & { id: string; createdAt: string; rangeLabel: string; source: string; publicUrl?: string; hosting?: { public: boolean }; privacy: { shareSafe: boolean; containsTranscriptText: boolean; externalTransmission: boolean } };
-type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; ctaHref?: string; ctaLabel?: string; rows?: { label: string; value: string; percentage?: number }[]; comparison?: { label: string; value: string; suffix: string }[]; smallQuote?: string };
+type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; ctaHref?: string; ctaLabel?: string; rows?: { label: string; value: string; percentage?: number }[]; comparison?: { label: string; value: string; suffix: string; quote?: string }[] };
 type DistributionBucket = { label: string; minimum: number; maximum: number | null; count: number };
 type RankedValue = { rank: number; name: string; value: number };
 type LeaderboardSnapshot = {
@@ -175,9 +175,9 @@ function SharedWrapped({ id }: { id: string }) {
     ...(topModel ? [{ kicker: "Your top models", headline: `${topModel.percentage.toFixed(1)}%`, detail: `went to your #1 · ${topModel.name}`, tone: "models", rows: activeModels.slice(0, 4).map((model, index) => ({ label: `${index + 1}  ${model.name}`, value: `${model.percentage.toFixed(1)}%`, percentage: model.percentage })) }] : []),
     ...(Number.isFinite(report.stats.averageAgentResponseWords) ? [{ kicker: "On average, your agent responded with", headline: `${report.stats.averageAgentResponseWords!.toLocaleString()} words`, detail: `Your average input was ${report.stats.averageUserInputWords!.toLocaleString()} words.`, tone: "violet" }] : []),
     ...(interactionTone && interactionTone.frustratedMessages + interactionTone.gratefulMessages > 0 ? [{ kicker: "", headline: "", detail: "", tone: "social", comparison: [
-      { label: "You yelled at your agent", value: interactionTone.frustratedMessages.toLocaleString(), suffix: `time${interactionTone.frustratedMessages === 1 ? "" : "s"}` },
-      { label: "You thanked your agent", value: interactionTone.gratefulMessages.toLocaleString(), suffix: `time${interactionTone.gratefulMessages === 1 ? "" : "s"}` },
-    ], smallQuote: report.interactionCard?.quote ? `“${report.interactionCard.quote}”` : undefined }] : []),
+      { label: "You yelled at your agent", value: interactionTone.frustratedMessages.toLocaleString(), suffix: `time${interactionTone.frustratedMessages === 1 ? "" : "s"}`, quote: report.interactionCard?.frustrationQuote || report.interactionCard?.quote },
+      { label: "You thanked your agent", value: interactionTone.gratefulMessages.toLocaleString(), suffix: `time${interactionTone.gratefulMessages === 1 ? "" : "s"}`, quote: report.interactionCard?.gratitudeQuote || undefined },
+    ] }] : []),
     ...(showLanguages && languages[0] ? [{ kicker: "Your agent’s output was mostly", headline: languages[0].language, detail: `${languages[0].percentage.toFixed(1)}% of its natural-language words.`, tone: "languages", rows: languages.slice(0, 4).map((item) => ({ label: item.language, value: `${item.percentage.toFixed(1)}%`, percentage: item.percentage })) }] : []),
     ...(topTopic ? [{ kicker: "Your #1 use for agents was", headline: topTopic.topic, detail: `${topTopic.prompts.toLocaleString()} of ${report.stats.prompts.toLocaleString()} prompts.`, tone: "topics", rows: displayTopics.slice(0, 5).map((item) => ({ label: item.topic === "Other" ? "Everything else" : item.topic, value: `${item.percentage.toFixed(1)}%`, percentage: item.percentage })) }] : []),
     ...(report.phraseCard ? [{ kicker: "Your agent’s favorite phrase is", headline: `“${report.phraseCard.phrase}”`, detail: `It said this ${report.phraseCard.occurrences} time${report.phraseCard.occurrences === 1 ? "" : "s"} across ${report.phraseCard.distinctSessions} session${report.phraseCard.distinctSessions === 1 ? "" : "s"}.`, tone: "quote" }] : []),
@@ -205,7 +205,7 @@ function SharedWrapped({ id }: { id: string }) {
     <div className="story-progress" aria-label={`Slide ${slide + 1} of ${slides.length}`}>{slides.map((_, index) => <button key={index} className={index <= slide ? "seen" : ""} onClick={() => setSlide(index)} aria-label={`Go to slide ${index + 1}`} />)}</div>
     <section ref={cardRef} className={`story-card story-${current.tone}`} aria-live="polite">
       <div className="story-brand"><GiftbotMark /><strong>Behavior Wrapped</strong><i /> <span>{report.source}</span></div>
-      {current.comparison ? <div className="story-comparison-wrap"><div className="story-comparison">{current.comparison.map((item) => <div key={item.label}><span>{item.label}</span><p><strong>{item.value}</strong><b>{item.suffix}</b></p></div>)}</div>{current.smallQuote && <blockquote>{current.smallQuote}</blockquote>}</div> : <div className={`story-copy ${current.rows ? "with-rows" : ""}`}>
+      {current.comparison ? <div className="story-comparison-wrap"><div className="story-comparison">{current.comparison.map((item) => <div key={item.label}><span>{item.label}</span><p><strong>{item.value}</strong><b>{item.suffix}</b></p>{item.quote && <blockquote><b>You said:</b> “{item.quote}”</blockquote>}</div>)}</div></div> : <div className={`story-copy ${current.rows ? "with-rows" : ""}`}>
         <div><span>{current.kicker}</span><h1 className={current.metric ? "giant" : ""}>{current.headline}</h1>{current.detail && <p>{current.detail}</p>}</div>
         {current.rows && <div className="story-data-rows">{current.rows.map((row) => <div className="story-data-row" key={row.label}>
           <div><strong>{row.label}</strong><b>{row.value}</b></div>
@@ -367,7 +367,7 @@ function PrivacyPanel() {
     <div>
       <span className="eyebrow">Privacy, by construction</span>
       <h3>Your transcripts stay on this Mac.</h3>
-      <p>Transcript parsing and behavior analysis run inside this local app. Full transcripts, code, and tool outputs stay on this Mac; only redacted recurring-phrase candidates, redacted frustration-quote candidates, counts, and a random client ID go through the Behavior Wrapped relay to OpenRouter.</p>
+      <p>Transcript parsing and behavior analysis run inside this local app. Full transcripts, code, and tool outputs stay on this Mac; only redacted recurring-phrase and interaction-quote candidates, counts, and a random client ID go through the Behavior Wrapped relay to OpenRouter.</p>
       <div className="privacy-facts"><span>✓ No account</span><span>✓ No telemetry</span><span>✓ Only redacted phrase aggregates leave</span></div>
     </div>
   </aside>;
@@ -464,7 +464,7 @@ function Selection({ catalog, selected, setSelected, onAnalyze, loading, error }
 
         <div className={`judge-option judge-required ${catalog.phraseJudge?.available ? "" : "unavailable"}`}>
           <span className="network-mark">↗</span>
-          <span><strong>Nemotron picks the favorite phrase and funniest call-out</strong><small>Every analysis sends only redacted phrase and frustration-quote candidates, counts, and a random client ID—not transcripts—through our rate-limited relay to OpenRouter’s free NVIDIA endpoint.</small></span>
+          <span><strong>Nemotron picks the favorite phrase and best interaction quotes</strong><small>Every analysis sends only redacted phrase, frustration, and gratitude candidates plus counts and a random client ID—not transcripts—through our rate-limited relay to OpenRouter’s free NVIDIA endpoint.</small></span>
           <em>Nemotron 3 Ultra · shared relay</em>
         </div>
 

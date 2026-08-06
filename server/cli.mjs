@@ -6,7 +6,7 @@ import { spawn } from "node:child_process";
 import { discoverAllSessions, readRecords, sessionsInDefaultWindow, DEFAULT_WINDOW_DAYS } from "./discovery.mjs";
 import { analyzeSessions } from "./analysis.mjs";
 import { buildPhraseCandidates, judgePhraseCard, judgePhraseCardViaRelay, PHRASE_JUDGE_NAME, PHRASE_JUDGE_RELAY_URL } from "./phrase-card.mjs";
-import { buildFrustrationQuoteCandidates, FRUSTRATION_JUDGE_RELAY_URL, judgeFrustrationQuote, judgeFrustrationQuoteViaRelay } from "./frustration-card.mjs";
+import { buildFrustrationQuoteCandidates, buildGratitudeQuoteCandidates, FRUSTRATION_JUDGE_RELAY_URL, GRATITUDE_JUDGE_RELAY_URL, judgeFrustrationQuote, judgeFrustrationQuoteViaRelay, judgeGratitudeQuote, judgeGratitudeQuoteViaRelay } from "./frustration-card.mjs";
 import { deletePublicReport, publishPublicReport, PUBLIC_REPORT_ORIGIN } from "./public-report.mjs";
 import { createReportId, deleteReport, getOrCreateClientId, listReports, saveReport, storeRoot } from "./store.mjs";
 
@@ -102,7 +102,8 @@ async function createWrapped() {
   });
   const candidates = buildPhraseCandidates(sessionRecords, { maximumCandidates: 100 });
   const frustrationCandidates = buildFrustrationQuoteCandidates(sessionRecords);
-  process.stdout.write(`${muted}◇  Scanning corpus for the agent's favorite phrase and funniest call-out…${reset}\r`);
+  const gratitudeCandidates = buildGratitudeQuoteCandidates(sessionRecords);
+  process.stdout.write(`${muted}◇  Scanning corpus for the agent's favorite phrase and best quotes…${reset}\r`);
   const phraseCardPromise = process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
     ? judgePhraseCard(candidates, process.env.OPENROUTER_API_KEY)
     : judgePhraseCardViaRelay(candidates, { endpoint: process.env.BEHAVIOR_WRAPPED_JUDGE_URL || PHRASE_JUDGE_RELAY_URL, clientId: getOrCreateClientId() });
@@ -111,11 +112,18 @@ async function createWrapped() {
       ? judgeFrustrationQuote(frustrationCandidates, process.env.OPENROUTER_API_KEY)
       : judgeFrustrationQuoteViaRelay(frustrationCandidates, { endpoint: process.env.BEHAVIOR_WRAPPED_FRUSTRATION_JUDGE_URL || FRUSTRATION_JUDGE_RELAY_URL, clientId: getOrCreateClientId() })
     : Promise.resolve(null);
+  const gratitudeCardPromise = gratitudeCandidates.length
+    ? process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
+      ? judgeGratitudeQuote(gratitudeCandidates, process.env.OPENROUTER_API_KEY)
+      : judgeGratitudeQuoteViaRelay(gratitudeCandidates, { endpoint: process.env.BEHAVIOR_WRAPPED_GRATITUDE_JUDGE_URL || GRATITUDE_JUDGE_RELAY_URL, clientId: getOrCreateClientId() })
+    : Promise.resolve(null);
   const analyzed = analyzeSessions(sessionRecords);
-  [analyzed.phraseCard, analyzed.interactionCard] = await Promise.all([phraseCardPromise, interactionCardPromise]);
+  const [phraseCard, frustrationCard, gratitudeCard] = await Promise.all([phraseCardPromise, interactionCardPromise, gratitudeCardPromise]);
+  analyzed.phraseCard = phraseCard;
+  analyzed.interactionCard = frustrationCard || gratitudeCard ? { frustrationQuote: frustrationCard?.quote || null, gratitudeQuote: gratitudeCard?.quote || null } : null;
   const id = createReportId();
   const safeFindings = analyzed.findings.map(({ evidence, method, ...finding }) => finding);
-  const report = { id, createdAt: new Date().toISOString(), rangeLabel: formatRange(chosenSessions), source: "Claude Code + Codex", stats: analyzed.stats, findings: safeFindings, phraseCard: analyzed.phraseCard, interactionCard: analyzed.interactionCard, sessionIds: chosenSessions.map((session) => session.id), privacy: { shareSafe: true, containsTranscriptText: false, externalTransmission: true, transmittedData: "redacted phrase and frustration-quote candidates, aggregate report statistics, and a random client ID only", externalRecipient: "Behavior Wrapped relay, OpenRouter, NVIDIA, and public report hosting" } };
+  const report = { id, createdAt: new Date().toISOString(), rangeLabel: formatRange(chosenSessions), source: "Claude Code + Codex", stats: analyzed.stats, findings: safeFindings, phraseCard: analyzed.phraseCard, interactionCard: analyzed.interactionCard, sessionIds: chosenSessions.map((session) => session.id), privacy: { shareSafe: true, containsTranscriptText: false, externalTransmission: true, transmittedData: "redacted phrase, frustration-quote, and gratitude-quote candidates, aggregate report statistics, and a random client ID only", externalRecipient: "Behavior Wrapped relay, OpenRouter, NVIDIA, and public report hosting" } };
   process.stdout.write(`${muted}◇  Publishing the share-safe Wrapped page…${reset}\r`);
   let publicUrl = null;
   try {

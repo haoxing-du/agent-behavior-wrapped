@@ -1,10 +1,8 @@
 import crypto from "node:crypto";
 import { safeEvidenceText, redactText } from "./privacy.mjs";
-import { isFrustratedMessage } from "./frustration-card.mjs";
+import { isFrustratedMessage, isGratefulMessage } from "./frustration-card.mjs";
 
 const wordSegmenter = new Intl.Segmenter("en", { granularity: "word" });
-
-const gratitudePattern = /\b(?:thank(?:s| you)?|thx|tysm|much appreciated|appreciate (?:it|that|you)|nice work|great job|good job|perfect|awesome)\b/i;
 
 const languageLexicons = [
   ["Spanish", new Set("el la los las una unas para pero porque como esto esta este muy más con del quiero puede puedes hacer gracias ahora".split(" "))],
@@ -49,10 +47,6 @@ function proseText(value) {
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-function isGratefulMessage(value) {
-  return gratitudePattern.test(proseText(value));
 }
 
 function scriptCount(value, expression) {
