@@ -16,7 +16,7 @@ function reportFixture() {
       averageAgentResponseWords: 400, averageUserInputWords: 100, estimatedCostUsd: 2.4,
       interactionTone: { frustratedMessages: 3, gratefulMessages: 7, analyzedMessages: 20, method: "private implementation detail" },
       outputLanguages: [{ language: "English", words: 6_000, percentage: 75 }, { language: "Spanish", words: 2_000, percentage: 25 }, { language: "Private language", words: 1, percentage: 1 }],
-      topics: [{ topic: "Coding", prompts: 12, percentage: 60 }, { topic: "Writing", prompts: 8, percentage: 40 }, { topic: "Private topic", prompts: 1, percentage: 1 }],
+      topics: [{ topic: "Coding", tokens: 720_000, percentage: 60 }, { topic: "Writing", tokens: 480_000, percentage: 40 }, { topic: "Private topic", tokens: 1, percentage: 1 }],
       tools: [{ name: "Read", count: 5 }], agents: [{ agent: "claude", name: "Claude Code", count: 4, percentage: 100 }], models: [],
     },
     findings: [{ id: "finding-1", kind: "scope", title: "Expanded scope", summary: "Generalized signal", confidence: { score: 0.7, label: "Medium" } }],

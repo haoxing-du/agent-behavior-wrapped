@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { handleRequest, validateFrustrationRelayPayload, validateInteractionToneRelayPayload, validateRelayPayload } from "../worker/phrase-judge-worker.mjs";
+import { handleRequest, validateFrustrationRelayPayload, validateInteractionToneRelayPayload, validateRelayPayload, validateSessionTopicRelayPayload } from "../worker/phrase-judge-worker.mjs";
 import { OPENROUTER_MODEL } from "../server/phrase-card.mjs";
 
 const candidate = {
@@ -40,6 +40,16 @@ const interactionCandidate = { candidate_id: "interaction-1", text: "Dude, this 
 
 function interactionRequest(body = { candidates: [interactionCandidate] }) {
   return new Request("https://relay.example/v1/interaction-tone", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-behavior-wrapped-protocol": "1", "x-behavior-wrapped-client": "0123456789abcdef0123456789abcdef" },
+    body: JSON.stringify(body),
+  });
+}
+
+const sessionTopicCandidate = { candidate_id: "session-topic-1", opening_messages: ["Implement a local behavior report.", "Now add tests."] };
+
+function sessionTopicRequest(body = { candidates: [sessionTopicCandidate] }) {
+  return new Request("https://relay.example/v1/session-topics", {
     method: "POST",
     headers: { "content-type": "application/json", "x-behavior-wrapped-protocol": "1", "x-behavior-wrapped-client": "0123456789abcdef0123456789abcdef" },
     body: JSON.stringify(body),
@@ -88,6 +98,20 @@ test("worker validates interaction candidates and returns classifications withou
   assert.equal(response.status, 200);
   assert.equal(upstreamBody.messages[0].content.includes("Evaluate each supplied excerpt independently"), true);
   assert.deepEqual(await response.json(), { ...selection, model: OPENROUTER_MODEL, usage: null });
+});
+
+test("worker validates session openings and returns only topic classifications", async () => {
+  assert.deepEqual(validateSessionTopicRelayPayload({ candidates: [sessionTopicCandidate] }), [sessionTopicCandidate]);
+  assert.equal(validateSessionTopicRelayPayload({ candidates: [{ ...sessionTopicCandidate, opening_messages: ["See https://private.example"] }] }), null);
+  const classifications = [{ candidate_id: "session-topic-1", topic: "Coding", confidence: 0.93 }];
+  let upstreamBody;
+  const response = await handleRequest(sessionTopicRequest(), env(), async (_url, init) => {
+    upstreamBody = JSON.parse(init.body);
+    return new Response(JSON.stringify({ model: OPENROUTER_MODEL, choices: [{ message: { content: JSON.stringify({ classifications }) } }] }), { status: 200, headers: { "content-type": "application/json" } });
+  });
+  assert.equal(response.status, 200);
+  assert.equal(upstreamBody.messages[0].content.includes("primary purpose"), true);
+  assert.deepEqual(await response.json(), { classifications, model: OPENROUTER_MODEL, usage: null });
 });
 
 test("worker attaches the secret server-side and returns only a validated candidate ID", async () => {

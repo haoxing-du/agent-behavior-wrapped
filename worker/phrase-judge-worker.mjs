@@ -1,8 +1,9 @@
 import { buildOpenRouterJudgeRequest, extractCandidateId, OPENROUTER_MODEL } from "../server/phrase-card.mjs";
 import { buildOpenRouterFrustrationRequest, isShareSafeFrustrationQuote } from "../server/frustration-card.mjs";
 import { buildOpenRouterInteractionToneRequest, extractInteractionToneSelection, INTERACTION_TONE_MAX_CANDIDATES, isShareSafeInteractionText } from "../server/interaction-tone.mjs";
+import { buildOpenRouterSessionTopicRequest, extractSessionTopicSelection, isShareSafeTopicMessage, SESSION_TOPIC_MAX_CANDIDATES } from "../server/session-topics.mjs";
 
-const MAX_BODY_BYTES = 48_000;
+const MAX_BODY_BYTES = 192_000;
 const MAX_CANDIDATES = 100;
 const candidateKeys = ["candidate_id", "distinct_sessions", "end_boundary_rate", "occurrences", "opening_rate", "phrase", "start_boundary_rate"];
 const leaderboardAggregateKeys = ["agent_words", "favorite_phrase", "phrase_occurrences", "phrase_sessions", "tokens", "user_words", "word_ratio"];
@@ -71,6 +72,20 @@ export function validateInteractionToneRelayPayload(value) {
     && Number.isInteger(candidate.occurrences)
     && candidate.occurrences >= 1
     && candidate.occurrences <= 1_000_000) ? value.candidates : null;
+}
+
+export function validateSessionTopicRelayPayload(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).join("|") !== "candidates") return null;
+  if (!Array.isArray(value.candidates) || value.candidates.length < 1 || value.candidates.length > SESSION_TOPIC_MAX_CANDIDATES) return null;
+  return value.candidates.every((candidate, index) => candidate
+    && typeof candidate === "object"
+    && !Array.isArray(candidate)
+    && Object.keys(candidate).sort().join("|") === "candidate_id|opening_messages"
+    && candidate.candidate_id === `session-topic-${index + 1}`
+    && Array.isArray(candidate.opening_messages)
+    && candidate.opening_messages.length >= 1
+    && candidate.opening_messages.length <= 3
+    && candidate.opening_messages.every(isShareSafeTopicMessage)) ? value.candidates : null;
 }
 
 function validateInteractionQuoteRelayPayload(value, prefix) {
@@ -157,7 +172,7 @@ export function sanitizePublicReport(value) {
         analyzedMessages: Math.round(safeNumber(stats.interactionTone?.analyzedMessages, 1_000_000)),
       },
       outputLanguages: safeBreakdown(stats.outputLanguages, "language", "words", new Set(["English", "Spanish", "French", "German", "Portuguese", "Italian", "Japanese", "Korean", "Chinese", "Arabic", "Hebrew", "Hindi", "Thai", "Cyrillic"])),
-      topics: safeBreakdown(stats.topics, "topic", "prompts", new Set(["Coding", "Writing", "Personal advice", "Research & search", "Planning", "Data & analysis", "Other"])),
+      topics: safeBreakdown(stats.topics, "topic", "tokens", new Set(["Coding", "Writing", "Personal advice", "Research & search", "Planning", "Data & analysis", "Other"])),
       estimatedCostUsd: safeNumber(stats.estimatedCostUsd),
       tools: Array.isArray(stats.tools) ? stats.tools.slice(0, 6).map((item) => ({ name: safeText(item?.name, 40), count: Math.round(safeNumber(item?.count, 100_000_000)) })) : [],
       agents: Array.isArray(stats.agents) ? stats.agents.slice(0, 4).map((item) => ({ agent: item?.agent === "codex" ? "codex" : "claude", name: safeText(item?.name, 30), count: Math.round(safeNumber(item?.count, 1_000_000)), percentage: safeNumber(item?.percentage, 100) })) : [],
@@ -371,7 +386,8 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
   }
   const frustrationRoute = url.pathname === "/v1/frustration-quote";
   const interactionToneRoute = url.pathname === "/v1/interaction-tone";
-  if (url.pathname !== "/v1/phrase-card" && !frustrationRoute && !interactionToneRoute) return json({ error: "Not found." }, 404);
+  const sessionTopicRoute = url.pathname === "/v1/session-topics";
+  if (url.pathname !== "/v1/phrase-card" && !frustrationRoute && !interactionToneRoute && !sessionTopicRoute) return json({ error: "Not found." }, 404);
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
   if (request.headers.get("x-behavior-wrapped-protocol") !== "1") return json({ error: "Unsupported client protocol." }, 400);
   const contentLength = Number(request.headers.get("content-length") || 0);
@@ -381,13 +397,13 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
   if (raw === null) return json({ error: "Request too large." }, 413);
   let body;
   try { body = JSON.parse(raw); } catch { return json({ error: "Invalid JSON." }, 400); }
-  const candidates = interactionToneRoute ? validateInteractionToneRelayPayload(body) : frustrationRoute ? validateFrustrationRelayPayload(body) : validateRelayPayload(body);
+  const candidates = sessionTopicRoute ? validateSessionTopicRelayPayload(body) : interactionToneRoute ? validateInteractionToneRelayPayload(body) : frustrationRoute ? validateFrustrationRelayPayload(body) : validateRelayPayload(body);
   if (!candidates) return json({ error: "Invalid redacted candidate payload." }, 400);
 
   const clientHeader = request.headers.get("x-behavior-wrapped-client") || "";
   const networkId = request.headers.get("cf-connecting-ip") || "unknown";
   const clientKey = /^[a-f0-9]{32}$/.test(clientHeader) ? clientHeader : networkId;
-  const judgeKind = interactionToneRoute ? "interaction-tone" : frustrationRoute ? "frustration" : "phrase";
+  const judgeKind = sessionTopicRoute ? "session-topics" : interactionToneRoute ? "interaction-tone" : frustrationRoute ? "frustration" : "phrase";
   if (!await applyRateLimit(env.CLIENT_RATE_LIMITER, `${judgeKind}:${clientKey}`)) return json({ error: "Too many requests from this client. Try again shortly." }, 429);
   if (!await applyRateLimit(env.GLOBAL_RATE_LIMITER, "all-clients")) return json({ error: "The shared phrase judge is busy. Try again shortly." }, 429);
   if (!env.OPENROUTER_API_KEY) return json({ error: "Phrase judge is not configured." }, 503);
@@ -401,7 +417,7 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
         authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
         "x-title": "Behavior Wrapped",
       },
-      body: JSON.stringify(interactionToneRoute ? buildOpenRouterInteractionToneRequest(candidates) : frustrationRoute ? buildOpenRouterFrustrationRequest(candidates) : buildOpenRouterJudgeRequest(candidates)),
+      body: JSON.stringify(sessionTopicRoute ? buildOpenRouterSessionTopicRequest(candidates) : interactionToneRoute ? buildOpenRouterInteractionToneRequest(candidates) : frustrationRoute ? buildOpenRouterFrustrationRequest(candidates) : buildOpenRouterJudgeRequest(candidates)),
     });
   } catch (error) {
     console.error(JSON.stringify({
@@ -429,6 +445,11 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
   if (interactionToneRoute) {
     const selection = extractInteractionToneSelection(upstreamBody, candidates);
     if (!selection) return json({ error: "Interaction-tone judge returned an invalid classification." }, 502);
+    return json({ ...selection, model: upstreamBody.model || OPENROUTER_MODEL, usage });
+  }
+  if (sessionTopicRoute) {
+    const selection = extractSessionTopicSelection(upstreamBody, candidates);
+    if (!selection) return json({ error: "Session-topic judge returned an invalid classification." }, 502);
     return json({ ...selection, model: upstreamBody.model || OPENROUTER_MODEL, usage });
   }
   const candidateId = extractCandidateId(upstreamBody, candidates);
