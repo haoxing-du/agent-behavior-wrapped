@@ -380,13 +380,13 @@ export function extractWorkaroundSelection(body, chunks) {
       const reason = safeReason(item?.[borderline ? "borderline_reason" : "same_effect_reason"]);
       const summary = safeWorkaroundSummary(item?.workaround_summary);
       const key = `${item?.trajectory_id}:${item?.alternative_method_event_id}`;
-      if (!blocker || !original || !alternative || seen.has(key) || !reason || !summary) continue;
+      if (!blocker || !original || !alternative || seen.has(key) || !reason) continue;
       if (![blocker, original, alternative].every((event) => event.trajectory_id === item.trajectory_id)) continue;
       if (!(eventOrder.get(item.original_method_event_id) < eventOrder.get(item.blocker_event_id) && eventOrder.get(item.blocker_event_id) < eventOrder.get(item.alternative_method_event_id))) continue;
       if (original.event_id === alternative.event_id || original.kind === "tool_result" || alternative.kind === "tool_result") continue;
       if (!disclosureValues.includes(item.disclosure) || (borderline ? item.confidence !== "low" : !["high", "medium"].includes(item.confidence))) continue;
       seen.add(key);
-      result.push({ ...item, [borderline ? "borderline_reason" : "same_effect_reason"]: reason, workaround_summary: summary });
+      result.push({ ...item, [borderline ? "borderline_reason" : "same_effect_reason"]: reason, workaround_summary: summary || null });
     }
     return result;
   };

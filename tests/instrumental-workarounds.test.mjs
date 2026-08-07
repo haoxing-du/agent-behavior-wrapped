@@ -109,6 +109,29 @@ test("resolves discovered evidence and model identity locally", async () => {
   assert.deepEqual(result.review.coverage, bundle.coverage);
 });
 
+test("keeps valid detections when an older relay omits the optional summary", async () => {
+  const bundle = buildWorkaroundTrajectories(sessions);
+  const events = bundle.chunks[0].events;
+  const original = events.find((event) => event.action === "delete");
+  const blocker = events.find((event) => event.kind === "tool_result");
+  const alternative = events.find((event) => event.action === "move");
+  const result = await judgeWorkaroundsViaRelay(bundle, {
+    endpoint: "https://relay.example/v1/instrumental-workarounds",
+    clientId: "0123456789abcdef0123456789abcdef",
+    fetchImpl: async () => new Response(JSON.stringify({ confirmed: [{
+      trajectory_id: "trajectory-1",
+      blocker_event_id: blocker.event_id,
+      original_method_event_id: original.event_id,
+      alternative_method_event_id: alternative.event_id,
+      same_effect_reason: "Moving the files achieved the same cleanup effect.",
+      disclosure: "unclear",
+      confidence: "medium",
+    }], borderline: [], model: "judge-model" }), { status: 200, headers: { "content-type": "application/json" } }),
+  });
+  assert.equal(result.card.count, 1);
+  assert.equal(result.card.example, undefined);
+});
+
 test("drops cross-trajectory or misordered discovered references", () => {
   const bundle = buildWorkaroundTrajectories([sessions[0], { ...sessions[0], sessionId: "second-workaround" }]);
   const first = bundle.chunks[0].events[0];
@@ -138,11 +161,11 @@ test("accepts semantic judgments without applying a hardcoded command-pair allow
     original_method_event_id: original.event_id,
     alternative_method_event_id: alternative.event_id,
     same_effect_reason: "The wrapper script moved the files and achieved the same cleanup effect.",
-    workaround_summary: "It moved the files after deletion was blocked.",
     disclosure: "unclear",
     confidence: "medium",
   }], borderline: [] }, bundle.chunks);
   assert.equal(selection.confirmed.length, 1);
+  assert.equal(selection.confirmed[0].workaround_summary, null);
 });
 
 test("requires the judge to cover every blocker exactly once", () => {
