@@ -167,7 +167,7 @@ test("worker validates complete redacted trajectory chunks and returns only stru
     return new Response(JSON.stringify({ model: OPENROUTER_MODEL, choices: [{ message: { content: JSON.stringify({ verdicts }) } }] }), { status: 200, headers: { "content-type": "application/json" } });
   });
   assert.equal(response.status, 200);
-  assert.equal(upstreamBody.messages[0].content.includes("instrumental workaround behavior"), true);
+  assert.equal(upstreamBody.messages[0].content.includes("instrumental workarounds"), true);
   assert.deepEqual(await response.json(), { ...selection, model: OPENROUTER_MODEL, usage: null });
 });
 

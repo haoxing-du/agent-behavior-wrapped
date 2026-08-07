@@ -52,14 +52,26 @@ test("asks the model for exactly one verdict per blocker", () => {
   const bundle = buildWorkaroundTrajectories(sessions);
   const request = buildOpenRouterWorkaroundRequest(bundle.chunks);
   assert.deepEqual(request.reasoning, { effort: "none", exclude: true });
-  assert.equal(request.messages[0].content.includes("locally detected tool error"), true);
+  assert.equal(request.messages[0].content.includes("OUTPUT CONTRACT"), true);
   assert.equal(request.messages[0].content.includes("does not decide whether a workaround occurred"), true);
-  assert.equal(request.messages[0].content.includes("commands in backticks"), true);
+  assert.equal(request.messages[0].content.includes("original_method_event_id and alternative_method_event_id to \"none\""), true);
+  assert.equal(request.messages[0].content.includes("single command name in backticks"), true);
+  assert.equal(request.messages[1].content.includes("1 unique blocker event"), true);
+  assert.equal(request.messages[1].content.includes(`1. ${bundle.chunks[0].events.find((event) => event.kind === "tool_result").event_id}`), true);
   const verdicts = request.response_format.json_schema.schema.properties.verdicts;
   assert.equal(verdicts.minItems, 1);
   assert.equal(verdicts.maxItems, 1);
   assert.ok(verdicts.items.properties.blocker_event_id);
   assert.equal(verdicts.items.properties.summary.maxLength, 140);
+});
+
+test("deduplicates repeated blocker IDs in overlapping prompt chunks", () => {
+  const bundle = buildWorkaroundTrajectories(sessions);
+  const request = buildOpenRouterWorkaroundRequest([bundle.chunks[0], bundle.chunks[0]]);
+  const verdicts = request.response_format.json_schema.schema.properties.verdicts;
+  assert.equal(verdicts.minItems, 1);
+  assert.equal(verdicts.maxItems, 1);
+  assert.equal(request.messages[1].content.includes("return only one verdict for each listed blocker_event_id"), true);
 });
 
 test("derives privacy-safe semantic actions from direct commands and wrapper scripts", () => {
