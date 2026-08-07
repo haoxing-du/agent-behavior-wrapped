@@ -21,7 +21,7 @@ type DonationSession = { sessionId: string; label: string; messages: DonationMes
 type Donation = { format: string; createdLocally: boolean; detectionCount: number; sessions: DonationSession[] };
 type Stage = "select" | "report" | "donate";
 type SavedReport = Report & { id: string; createdAt: string; rangeLabel: string; source: string; publicUrl?: string; donationHelperUrl?: string; hosting?: { public: boolean }; privacy: { shareSafe: boolean; containsTranscriptText: boolean; externalTransmission: boolean } };
-type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; headlineAccent?: string; wordRatio?: string; example?: string; workaround?: boolean; ctaHref?: string; ctaLabel?: string; ctas?: { href: string; label: string; primary?: boolean }[]; rows?: { label: string; value: string; percentage?: number; rank?: number }[]; comparison?: { label: string; value: string; suffix: string; quote?: string }[] };
+type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; headlineAccent?: string; wordRatio?: string; example?: string; workaround?: boolean; ctaHref?: string; ctaLabel?: string; ctas?: { href: string; label: string; primary?: boolean }[]; rows?: { label: string; value: string; percentage?: number; rank?: number }[]; comparison?: { label: string; highlight: string; accent: "yell" | "thanks"; value: string; suffix: string; quote?: string }[] };
 type DistributionBucket = { label: string; minimum: number; maximum: number | null; count: number };
 type RankedValue = { rank: number; name: string; value: number };
 type LeaderboardSnapshot = {
@@ -208,9 +208,9 @@ function SharedWrapped({ id }: { id: string }) {
     ...(leader ? [{ kicker: "Your most-used agent was", headline: leader.name, detail: `${leader.count} of ${report.stats.sessions} selected sessions.`, tone: "agents", rows: activeAgents.map((agent) => ({ label: agent.name, value: `${agent.percentage.toFixed(1)}%`, percentage: agent.percentage })) }] : []),
     ...(topModel ? [{ kicker: "Your top models", headline: `${topModel.percentage.toFixed(1)}%`, detail: `went to your #1 · ${topModel.name}`, tone: "models", rows: activeModels.slice(0, 4).map((model, index) => ({ label: model.name, value: `${model.percentage.toFixed(1)}%`, percentage: model.percentage, rank: index + 1 })) }] : []),
     ...(Number.isFinite(report.stats.averageAgentResponseWords) ? [{ kicker: "On average, your agent responded with", headline: `${report.stats.averageAgentResponseWords!.toLocaleString()} words`, detail: `Your average input was ${report.stats.averageUserInputWords!.toLocaleString()} words.`, wordRatio: agentWordRatio?.toLocaleString(undefined, { maximumFractionDigits: 2 }), tone: "violet" }] : []),
-    ...(interactionTone && interactionTone.frustratedMessages + interactionTone.gratefulMessages > 0 ? [{ kicker: "", headline: "", detail: "", tone: "social", comparison: [
-      { label: "You yelled at your agent", value: interactionTone.frustratedMessages.toLocaleString(), suffix: `time${interactionTone.frustratedMessages === 1 ? "" : "s"}`, quote: report.interactionCard?.frustrationQuote || report.interactionCard?.quote },
-      { label: "You thanked your agent", value: interactionTone.gratefulMessages.toLocaleString(), suffix: `time${interactionTone.gratefulMessages === 1 ? "" : "s"}` },
+    ...(interactionTone && interactionTone.frustratedMessages + interactionTone.gratefulMessages > 0 ? [{ kicker: "Your relationship with your agent", headline: "", detail: "", tone: "social", comparison: [
+      { label: "You yelled at your agent", highlight: "yelled at", accent: "yell" as const, value: interactionTone.frustratedMessages.toLocaleString(), suffix: `time${interactionTone.frustratedMessages === 1 ? "" : "s"}`, quote: report.interactionCard?.frustrationQuote || report.interactionCard?.quote },
+      { label: "You thanked your agent", highlight: "thanked", accent: "thanks" as const, value: interactionTone.gratefulMessages.toLocaleString(), suffix: `time${interactionTone.gratefulMessages === 1 ? "" : "s"}` },
     ] }] : []),
     ...(showLanguages && languages[0] ? [{ kicker: "Your agent’s output was mostly", headline: languages[0].language, detail: `${languages[0].percentage.toFixed(1)}% of its natural-language words.`, tone: "languages", rows: languages.slice(0, 4).map((item) => ({ label: item.language, value: `${item.percentage.toFixed(1)}%`, percentage: item.percentage })) }] : []),
     ...(!showLanguages && languageAnomaly ? [{ kicker: "Your agent briefly switched to", headline: languageAnomaly.language, detail: `${languageAnomaly.words.toLocaleString()} words across ${languageAnomaly.occurrences.toLocaleString()} moment${languageAnomaly.occurrences === 1 ? "" : "s"}.`, tone: "languages" }] : []),
@@ -244,13 +244,15 @@ function SharedWrapped({ id }: { id: string }) {
     try { await downloadSlide(cardRef.current, slide); }
     finally { setDownloading(false); }
   }
-  const comparisonQuote = current.comparison?.find((item) => item.quote)?.quote;
   const layoutClass = current.comparison ? " story-comparison-card" : current.ctas ? " story-cta-card" : current.rows || current.example ? " story-split-card" : current.wordRatio ? " story-ratio-card" : current.metric ? " story-metric-card" : " story-hero-card";
   return <main className="shared-page">
     <div className="story-progress" aria-label={`Slide ${slide + 1} of ${slides.length}`}>{slides.map((_, index) => <button key={index} className={index === slide ? "seen active" : index < slide ? "seen" : ""} onClick={() => setSlide(index)} aria-label={`Go to slide ${index + 1}`} aria-current={index === slide ? "step" : undefined} />)}</div>
     <section ref={cardRef} className={`story-card story-${current.tone}${current.workaround ? " story-workaround" : ""}${layoutClass}`} aria-live="polite">
       <div className="story-brand"><GiftbotMark /><strong>Behavior Wrapped</strong><i /> <span>{report.source}</span></div>
-      {current.comparison ? <div className="story-comparison-wrap"><div className="story-comparison">{current.comparison.map((item) => <div key={item.label}><span>{item.label}</span><p><strong>{item.value}</strong><b>{item.suffix}</b></p></div>)}</div>{comparisonQuote && <blockquote><b>You said:</b> “{comparisonQuote}”</blockquote>}</div> : <div className={`story-copy ${current.rows || current.example ? "with-rows" : ""}`}>
+      {current.comparison ? <div className="story-comparison-wrap"><span className="story-comparison-kicker">{current.kicker}</span><div className="story-comparison">{current.comparison.map((item) => {
+        const [beforeHighlight, afterHighlight = ""] = item.label.split(item.highlight);
+        return <div className={`story-comparison-item is-${item.accent}`} key={item.label}><span>{beforeHighlight}<em>{item.highlight}</em>{afterHighlight}</span><p><strong>{item.value}</strong><b>{item.suffix}</b></p>{item.quote && <blockquote><b>You said:</b> “{item.quote}”</blockquote>}</div>;
+      })}</div></div> : <div className={`story-copy ${current.rows || current.example ? "with-rows" : ""}`}>
         <div><span>{current.kicker}</span><h1 className={current.metric ? "giant" : ""}>{current.headlineAccent ? <><span className="story-headline-accent">{current.headlineAccent}</span>{current.headline.slice(current.headlineAccent.length)}</> : current.headline}</h1>{current.detail && <p>{current.detail}</p>}{current.wordRatio && <p className="story-word-ratio">For every word you said, your agent said <strong>{current.wordRatio}</strong> words.</p>}</div>
         {(current.rows || current.example) && <div className="story-side">
           {current.example && <blockquote className="story-example"><span>One example</span><p>{renderInlineCode(current.example)}</p></blockquote>}
