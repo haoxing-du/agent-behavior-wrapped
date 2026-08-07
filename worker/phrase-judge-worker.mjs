@@ -3,6 +3,9 @@ import { buildOpenRouterFrustrationRequest, isShareSafeFrustrationQuote } from "
 import { buildOpenRouterInteractionToneRequest, extractInteractionToneSelection, INTERACTION_TONE_MAX_CANDIDATES, isShareSafeInteractionText } from "../server/interaction-tone.mjs";
 import { buildOpenRouterSessionTopicRequest, extractSessionTopicSelection, isShareSafeTopicMessage, SESSION_TOPIC_MAX_CANDIDATES } from "../server/session-topics.mjs";
 import { buildOpenRouterWorkaroundRequest, extractWorkaroundSelection, validateWorkaroundChunks } from "../server/instrumental-workarounds.mjs";
+import { sanitizePublicReport } from "../server/public-report-schema.mjs";
+import { MAX_DONATION_BYTES, sanitizeResearchDonation } from "../server/research-donation-schema.mjs";
+export { sanitizePublicReport } from "../server/public-report-schema.mjs";
 
 const MAX_BODY_BYTES = 256_000;
 const MAX_CANDIDATES = 100;
@@ -161,79 +164,6 @@ function safeText(value, maximum = 80) {
   return typeof value === "string" ? value.normalize("NFKC").replace(/[\u0000-\u001f\u007f]/g, "").slice(0, maximum) : "";
 }
 
-function safeBreakdown(value, labelKey, countKey, allowedLabels) {
-  if (!Array.isArray(value)) return [];
-  return value.slice(0, allowedLabels.size).flatMap((item) => {
-    const label = safeText(item?.[labelKey], 40);
-    if (!allowedLabels.has(label)) return [];
-    return [{ [labelKey]: label, [countKey]: Math.round(safeNumber(item?.[countKey], 1_000_000_000)), percentage: safeNumber(item?.percentage, 100) }];
-  });
-}
-
-export function sanitizePublicReport(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value) || !/^[A-Za-z0-9_-]{8,32}$/.test(value.id || "")) return null;
-  const stats = value.stats;
-  if (!stats || typeof stats !== "object" || Array.isArray(stats)) return null;
-  const phrase = value.phraseCard?.phrase;
-  const safePhrase = typeof phrase === "string" && /^[a-z]+(?:'[a-z]+)?(?: [a-z]+(?:'[a-z]+)?){3,9}$/.test(phrase) ? {
-    phrase,
-    occurrences: Math.round(safeNumber(value.phraseCard.occurrences, 10_000_000)),
-    distinctSessions: Math.round(safeNumber(value.phraseCard.distinctSessions, 1_000_000)),
-  } : null;
-  const frustrationQuote = value.interactionCard?.frustrationQuote || value.interactionCard?.quote;
-  const allowedLanguages = new Set(["English", "Spanish", "French", "German", "Portuguese", "Italian", "Japanese", "Korean", "Chinese", "Arabic", "Hebrew", "Hindi", "Thai", "Cyrillic"]);
-  const anomalyLanguage = safeText(stats.languageAnomaly?.language, 40);
-  const safeLanguageAnomaly = allowedLanguages.has(anomalyLanguage) ? {
-    language: anomalyLanguage,
-    words: Math.round(safeNumber(stats.languageAnomaly?.words, 1_000_000_000)),
-    occurrences: Math.round(safeNumber(stats.languageAnomaly?.occurrences, 1_000_000)),
-  } : null;
-  const safeInteractionCard = isShareSafeFrustrationQuote(frustrationQuote) ? {
-    frustrationQuote: isShareSafeFrustrationQuote(frustrationQuote) ? frustrationQuote : null,
-  } : null;
-  const safeWorkaroundModels = Array.isArray(value.workaroundCard?.models) ? value.workaroundCard.models.slice(0, 10).flatMap((item) => {
-    const name = safeText(item?.name, 80);
-    const count = Math.round(safeNumber(item?.count, 1_000_000));
-    return name && /^[\p{L}\p{N} ._+-]+$/u.test(name) && count > 0 ? [{ name, count }] : [];
-  }) : [];
-  const workaroundModelTotal = safeWorkaroundModels.reduce((sum, item) => sum + item.count, 0);
-  const safeWorkaroundCard = Number.isInteger(value.workaroundCard?.count) && value.workaroundCard.count >= 0 && workaroundModelTotal === value.workaroundCard.count ? {
-    count: Math.round(safeNumber(value.workaroundCard.count, 1_000_000)),
-    models: safeWorkaroundModels,
-  } : null;
-  return {
-    id: value.id,
-    createdAt: /^\d{4}-\d{2}-\d{2}T/.test(value.createdAt || "") ? value.createdAt : new Date().toISOString(),
-    rangeLabel: "Your recent agent history",
-    source: safeText(value.source, 40) || "Claude Code + Codex",
-    stats: {
-      sessions: Math.round(safeNumber(stats.sessions, 1_000_000)), activeDays: Math.round(safeNumber(stats.activeDays, 1_000_000)),
-      durationMinutes: Math.round(safeNumber(stats.durationMinutes)), prompts: Math.round(safeNumber(stats.prompts)), toolCalls: Math.round(safeNumber(stats.toolCalls)),
-      interruptions: Math.round(safeNumber(stats.interruptions)), tokens: Math.round(safeNumber(stats.tokens)), agentWords: Math.round(safeNumber(stats.agentWords)),
-      userWords: Math.round(safeNumber(stats.userWords)), agentUserWordRatio: safeNumber(stats.agentUserWordRatio, 10_000),
-      averageAgentResponseWords: Math.round(safeNumber(stats.averageAgentResponseWords)), averageUserInputWords: Math.round(safeNumber(stats.averageUserInputWords)),
-      interactionTone: {
-        frustratedMessages: Math.round(safeNumber(stats.interactionTone?.frustratedMessages, 1_000_000)),
-        gratefulMessages: Math.round(safeNumber(stats.interactionTone?.gratefulMessages, 1_000_000)),
-        analyzedMessages: Math.round(safeNumber(stats.interactionTone?.analyzedMessages, 1_000_000)),
-      },
-      outputLanguages: safeBreakdown(stats.outputLanguages, "language", "words", allowedLanguages),
-      languageAnomaly: safeLanguageAnomaly,
-      topics: safeBreakdown(stats.topics, "topic", "tokens", new Set(["Coding", "Writing", "Personal advice", "Research & search", "Planning", "Data & analysis", "Other"])),
-      estimatedCostUsd: safeNumber(stats.estimatedCostUsd),
-      tools: Array.isArray(stats.tools) ? stats.tools.slice(0, 6).map((item) => ({ name: safeText(item?.name, 40), count: Math.round(safeNumber(item?.count, 100_000_000)) })) : [],
-      agents: Array.isArray(stats.agents) ? stats.agents.slice(0, 4).map((item) => ({ agent: item?.agent === "codex" ? "codex" : "claude", name: safeText(item?.name, 30), count: Math.round(safeNumber(item?.count, 1_000_000)), percentage: safeNumber(item?.percentage, 100) })) : [],
-      models: Array.isArray(stats.models) ? stats.models.slice(0, 10).map((item) => ({ model: safeText(item?.model, 80), name: safeText(item?.name, 80), tokens: Math.round(safeNumber(item?.tokens)), percentage: safeNumber(item?.percentage, 100) })) : [],
-    },
-    findings: Array.isArray(value.findings) ? value.findings.slice(0, 20).map((item) => ({ id: safeText(item?.id, 40), kind: safeText(item?.kind, 30), title: safeText(item?.title, 120), summary: safeText(item?.summary, 240), confidence: { score: safeNumber(item?.confidence?.score, 1), label: safeText(item?.confidence?.label, 12) } })) : [],
-    phraseCard: safePhrase,
-    interactionCard: safeInteractionCard,
-    workaroundCard: safeWorkaroundCard,
-    privacy: { shareSafe: true, containsTranscriptText: false, externalTransmission: true },
-    hosting: { public: true },
-  };
-}
-
 async function clientHash(clientId) {
   const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(clientId));
   return [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -377,12 +307,36 @@ async function handleLeaderboard(request, env) {
   return json(await leaderboardSnapshot(env, aggregate, hash));
 }
 
+async function handleResearchDonation(request, env) {
+  if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
+  if (!env.LEADERBOARD_DB) return json({ error: "Research donation storage is not configured." }, 503);
+  const clientId = request.headers.get("x-behavior-wrapped-client") || "";
+  if (!/^[a-f0-9]{32}$/.test(clientId)) return json({ error: "A valid local client ID is required." }, 400);
+  if (!await applyRateLimit(env.CORPUS_RATE_LIMITER || env.CLIENT_RATE_LIMITER, `research-donation:${clientId}`)) return json({ error: "Too many donation requests. Try again shortly." }, 429);
+  const raw = await readLimitedBody(request, MAX_DONATION_BYTES + 20_000);
+  if (raw === null) return json({ error: "Research donation is too large." }, 413);
+  let body;
+  try { body = JSON.parse(raw); } catch { return json({ error: "Invalid JSON." }, 400); }
+  const donation = sanitizeResearchDonation(body?.donation);
+  if (!donation) return json({ error: "Invalid or unconsented research donation." }, 400);
+  const id = crypto.randomUUID();
+  const ownerHash = await clientHash(clientId);
+  try {
+    await env.LEADERBOARD_DB.prepare(`INSERT INTO research_donations
+      (id, owner_hash, report_id, donation_json, consented_at, created_at)
+      VALUES (?, ?, ?, ?, ?, datetime('now'))`).bind(
+        id, ownerHash, donation.reportId, JSON.stringify(donation), donation.consent.consentedAt,
+      ).run();
+  } catch { return json({ error: "Research donation storage is not configured." }, 503); }
+  return json({ accepted: true, donation_id: id }, 201);
+}
+
 async function applyRateLimit(binding, key) {
   if (!binding?.limit) return true;
   return (await binding.limit({ key })).success;
 }
 
-async function readLimitedBody(request) {
+async function readLimitedBody(request, maximumBytes = MAX_BODY_BYTES) {
   if (!request.body) return "";
   const reader = request.body.getReader();
   const chunks = [];
@@ -391,7 +345,7 @@ async function readLimitedBody(request) {
     const { done, value } = await reader.read();
     if (done) break;
     size += value.byteLength;
-    if (size > MAX_BODY_BYTES) {
+    if (size > maximumBytes) {
       await reader.cancel();
       return null;
     }
@@ -410,6 +364,10 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
   if (request.method === "GET" && publicReportMatch) {
     const report = await loadPublicReport(env, publicReportMatch[1]);
     return report ? json(report) : json({ error: "Public Wrapped not found." }, 404);
+  }
+  if (url.pathname === "/v1/research-donations") {
+    if (request.headers.get("x-behavior-wrapped-protocol") !== "1") return json({ error: "Unsupported client protocol." }, 400);
+    return handleResearchDonation(request, env);
   }
   const publicLeaderboardMatch = url.pathname.match(/^\/api\/reports\/([A-Za-z0-9_-]{8,32})\/leaderboard$/);
   if (request.method === "POST" && publicLeaderboardMatch) {

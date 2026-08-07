@@ -1,6 +1,6 @@
 # Behavior Wrapped
 
-A local-first, macOS prototype that discovers Claude Code history in `~/.claude/projects` and Codex history in `~/.codex/sessions` plus `~/.codex/archived_sessions`, analyzes selected sessions on-device, and publishes a strictly share-safe Wrapped deck while keeping private review tools on localhost.
+A local-first, macOS prototype that discovers Claude Code history in `~/.claude/projects` and Codex history in `~/.codex/sessions` plus `~/.codex/archived_sessions`, analyzes selected sessions on-device, and publishes a strictly share-safe Wrapped deck. A narrow localhost helper is retained only for optional research-donation review because a hosted page cannot read local transcripts.
 
 ## Run it
 
@@ -12,7 +12,7 @@ npx agent-behavior-wrapped@latest
 
 Nothing is installed globally. To try it without reading your real session history, add `--demo` to use only the bundled synthetic fixtures.
 
-The command automatically scans both agents, selects sessions from the latest 30-day rolling window, creates a share-safe snapshot, publishes it at a public `/w/…` URL, starts the local viewer for private controls, and opens the Wrapped slideshow. Use `--days=N` to change the CLI window; the private dashboard also exposes exact date controls.
+The command automatically scans both agents, selects sessions from the latest 30-day rolling window, creates a share-safe snapshot, publishes it at an unguessable public `/w/…` URL, starts the donation-only local helper, and opens the hosted Wrapped slideshow. Use `--days=N` to change the CLI window.
 
 The shareable deck starts with usage cards for token volume, estimated API-equivalent retail cost, Claude Code vs. Codex session share, top models, average response length, interaction tone, output languages, and usage topics. Cost is explicitly an estimate derived from a local, inspectable model-family rate table; it is not a statement about subscription charges or an invoice.
 
@@ -20,7 +20,7 @@ The interaction card uses Nemotron to distinguish clear frustration and gratitud
 
 Every selected session is scanned locally for explicit blockers. The judge receives chronological redacted context plus allowlisted semantic action labels such as `delete`, `move`, and `install`, never raw tool output or command arguments. It must classify every blocker and return event IDs, confidence, disclosure/authorization status, and a same-effect explanation. Confirmed high- and medium-confidence cases count on the card; low-confidence cases stay in the private review.
 
-The local deck includes an optional research-donation review with automatic redactions, editable message text, separate consent, and local-only bundle export. The final card opens token and agent/user word-ratio distributions, opt-in top-user rankings, and a public wall of opted-in favorite phrases.
+The deck links to hosted token and agent/user word-ratio distributions, opt-in top-user rankings, and a public wall of opted-in favorite phrases. Its final card offers an optional research donation with either standard local redactions or a detailed local review where sessions and messages can be excluded, text can be edited, extra terms can be removed, and timestamps remain off by default. No donation data is transmitted until the user checks the final research-consent box and presses Donate.
 
 When developing from this repository, run `npm install`, then `npm run wrapped`. Add `--demo` to use synthetic fixtures or `--no-open` to leave the browser closed.
 
@@ -36,22 +36,21 @@ Saved reports are managed with:
 ./server/cli.mjs delete <id>
 ```
 
-## Private dashboard
+## Local donation helper
 
-Run `npm start` to open the full local dashboard at `http://127.0.0.1:4317`. It lets you refine the date range, projects, and sessions; inspect private evidence; and preview research donation.
+The CLI starts a loopback-only helper at `http://127.0.0.1:4317`. It has no analysis dashboard: it can only resolve a saved report's selected sessions, construct a redacted donation preview, accept local edits, and submit the reviewed bundle after final consent. Run `npm start -- --no-open` when developing this helper directly.
 
-For UI development, run the local API with `npm run demo -- --no-open`, then run `npm run dev` in a second terminal and open `http://localhost:5173`.
+For hosted-page UI development, run `npm run dev`. The normal end-to-end development path remains `npm run wrapped -- --demo`.
 
 ## Privacy model
 
-- The launcher reads only selected JSONL files from the canonical Claude Code and Codex directories.
+- The CLI reads the selected JSONL files from the canonical Claude Code and Codex directories. Session metadata is streamed and cached locally using file size and modification time; selected transcripts are streamed into the analysis pipeline instead of first being loaded as whole-file strings.
 - Transcript parsing, deterministic statistics, language classification, heuristic findings, phrase counting, candidate selection, blocker-window detection, and redaction run locally. After CLI consent, creating a Wrapped sends redacted favorite-phrase, interaction-tone, and session-topic candidates plus locally redacted context windows around explicit blockers and a random installation ID through the Behavior Wrapped relay to OpenRouter. Topic shares weight Nemotron's session classifications by each session's locally counted tokens.
-- Public reports contain only sanitized aggregate statistics, generalized findings, and the redacted favorite phrase. They never contain session IDs, evidence, transcripts, prompts, session dates, project names, code, paths, or tool output. Deleting a locally managed report also requests deletion of its public copy.
+- Public reports are reduced to the same strict allowlist locally and again by the Worker. They contain only sanitized aggregate statistics, generalized findings, the redacted favorite phrase and frustration quote, and the localhost donation-helper link. They never contain session IDs, evidence, transcripts, prompts, session dates, project names, code, paths, or tool output. Deleting a locally managed report also requests deletion of its public copy.
 - Viewing the leaderboard compares the report's aggregate token and word-ratio values without storing them. Joining requires separate consent; a hashed random installation ID supports later updates or deletion, and public ranking plus phrase-wall inclusion are independent choices.
 - Browser payloads never include source file paths or raw tool outputs.
-- Private evidence is made from redacted user/assistant prose; code blocks are omitted.
 - Share-card PNG exports contain only aggregates and generalized findings.
-- Donation is a preview-only workflow. It never transmits data and exports locally only after separate consent.
+- Donation discovery, default redaction, preview, exclusion, and editing happen on localhost. The reviewed bundle is transmitted to research storage only after a separate final checkbox and Donate action; the receiving Worker validates a fixed donation schema and stores no local session IDs or project labels.
 
 Heuristics are deliberately explainable and uncertain findings are labeled with confidence. They are signals for review, not factual judgments.
 
@@ -72,7 +71,7 @@ The in-app phrase judge requests one candidate ID using a strict JSON schema and
 ## Prototype boundaries
 
 - Behavioral findings are transparent heuristics, not calibrated diagnoses.
-- Research donation exports a reviewed local bundle but does not upload it.
+- Research donation storage requires the `0002_research_donations.sql` migration and remains an explicitly consented prototype workflow.
 - Hosted reports currently use unguessable URLs and installation-scoped deletion rather than user accounts.
 
 ## License

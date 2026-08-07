@@ -426,6 +426,14 @@ export function analyzeSessions(sessionRecords) {
   return { stats, findings: analyzeBehavior(sessionRecords) };
 }
 
+function donationText(value) {
+  return String(value || "")
+    .replace(/```[\s\S]*?```/g, "[CODE REMOVED]")
+    .replace(/`[^`\n]+`/g, "[INLINE CODE REMOVED]")
+    .replace(/https?:\/\/\S+/g, "[URL REMOVED]")
+    .replace(/(?:[A-Za-z]:\\|\/(?:Users|home|private|tmp|var|opt)\/)[^\s,;:)]+/g, "[PATH REMOVED]");
+}
+
 export function makeDonationPreview(sessionRecords, metadataById) {
   let detectionCount = 0;
   const sessions = sessionRecords.map(({ sessionId, records }) => {
@@ -433,11 +441,11 @@ export function makeDonationPreview(sessionRecords, metadataById) {
       if (record.type !== "user" && record.type !== "assistant") return [];
       const value = visibleText(record);
       if (!value) return [];
-      const redacted = redactText(value.replace(/```[\s\S]*?```/g, "[CODE REMOVED FROM DONATION PREVIEW]"));
+      const redacted = redactText(donationText(value));
       detectionCount += redacted.detections.length;
       return [{ role: record.type, timestamp: record.timestamp || null, text: redacted.text }];
     });
     return { sessionId, label: metadataById.get(sessionId)?.label || `Session ${sessionId.slice(0, 6)}`, messages };
   });
-  return { format: "behavior-wrapped-donation-v0", createdLocally: true, detectionCount, sessions };
+  return { format: "behavior-wrapped-donation-preview-v1", createdLocally: true, detectionCount, sessions };
 }

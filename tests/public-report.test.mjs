@@ -53,7 +53,7 @@ test("preserves a completed zero-occurrence workaround review", () => {
 
 test("the local publisher strips private session IDs before upload", async () => {
   let uploaded;
-  const result = await publishPublicReport(reportFixture(), {
+  const result = await publishPublicReport({ ...reportFixture(), privateNotes: "must never cross the network", interactionReview: { excerpts: ["private future field"] } }, {
     clientId: "b".repeat(32),
     origin: "https://example.test",
     fetchImpl: async (_url, request) => {
@@ -63,6 +63,9 @@ test("the local publisher strips private session IDs before upload", async () =>
   });
   assert.equal("sessionIds" in uploaded.report, false);
   assert.equal("workaroundReview" in uploaded.report, false);
+  assert.equal("privateNotes" in uploaded.report, false);
+  assert.equal("interactionReview" in uploaded.report, false);
+  assert.equal(JSON.stringify(uploaded).includes("private future field"), false);
   assert.equal(uploaded.report.rangeLabel, "Your recent agent history");
   assert.equal(result.public_url, "https://example.test/w/shareSafe1234");
 });

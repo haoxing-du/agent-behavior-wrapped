@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { discoverSessions, discoverAllSessions, defaultDateRange, sessionsInDefaultWindow, readRecords } from "../server/discovery.mjs";
+import { discoverSessions, discoverAllSessions, discoverAllSessionsAsync, defaultDateRange, sessionsInDefaultWindow, readRecords, readRecordsAsync } from "../server/discovery.mjs";
 import { analyzeSessions, makeDonationPreview } from "../server/analysis.mjs";
 import { redactText, safeEvidenceText } from "../server/privacy.mjs";
 
@@ -18,6 +18,24 @@ test("discovers synthetic projects without exposing source file paths", () => {
   assert.equal(catalog.sessions.length, 3);
   assert.equal("file" in catalog.sessions[0], false);
   assert.ok(catalog.index.get(catalog.sessions[0].id).file.endsWith(".jsonl"));
+});
+
+test("async discovery indexes complete sessions beyond the former one-megabyte sample", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "behavior-wrapped-large-"));
+  const project = path.join(directory, "large-project");
+  fs.mkdirSync(project);
+  const file = path.join(project, "large.jsonl");
+  const records = [
+    { type: "user", timestamp: "2026-08-01T00:00:00.000Z", message: { content: "Start" } },
+    { type: "assistant", timestamp: "2026-08-01T00:00:01.000Z", message: { content: "x".repeat(1_100_000) } },
+    { type: "user", timestamp: "2026-08-02T00:00:00.000Z", message: { content: "Finish" } },
+  ];
+  fs.writeFileSync(file, `${records.map((record) => JSON.stringify(record)).join("\n")}\n`);
+  const catalog = await discoverAllSessionsAsync({ claudeRoot: directory, codexRoots: [], cache: false });
+  assert.equal(catalog.sessions[0].recordCount, 3);
+  assert.equal(catalog.sessions[0].promptCount, 2);
+  assert.equal(catalog.sessions[0].endedAt, "2026-08-02T00:00:00.000Z");
+  assert.equal((await readRecordsAsync(file)).length, 3);
 });
 
 test("computes deterministic stats and transparent behavior findings", () => {
@@ -202,4 +220,14 @@ test("donation preview contains only message text, with code and secrets removed
   assert.ok(!serialized.includes("demo.person@example.com"));
   assert.ok(!serialized.includes("sk-test_demo"));
   assert.ok(!serialized.includes("tool_result"));
+});
+
+test("donation preview removes code, URLs, and full paths before review", () => {
+  const bundle = makeDonationPreview([{ sessionId: "private-session", records: [
+    { type: "user", message: { content: "See https://example.com/private and /Users/ada/project/file.ts with `secretCall()`" } },
+  ] }], new Map([["private-session", { label: "Session 1" }]]));
+  const serialized = JSON.stringify(bundle);
+  assert.equal(serialized.includes("example.com"), false);
+  assert.equal(serialized.includes("/Users/ada"), false);
+  assert.equal(serialized.includes("secretCall"), false);
 });

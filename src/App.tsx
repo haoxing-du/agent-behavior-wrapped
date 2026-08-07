@@ -19,8 +19,8 @@ type DonationMessage = { role: string; timestamp: string | null; text: string };
 type DonationSession = { sessionId: string; label: string; messages: DonationMessage[] };
 type Donation = { format: string; createdLocally: boolean; detectionCount: number; sessions: DonationSession[] };
 type Stage = "select" | "report" | "donate";
-type SavedReport = Report & { id: string; createdAt: string; rangeLabel: string; source: string; publicUrl?: string; hosting?: { public: boolean }; privacy: { shareSafe: boolean; containsTranscriptText: boolean; externalTransmission: boolean } };
-type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; ctaHref?: string; ctaLabel?: string; rows?: { label: string; value: string; percentage?: number }[]; comparison?: { label: string; value: string; suffix: string; quote?: string }[] };
+type SavedReport = Report & { id: string; createdAt: string; rangeLabel: string; source: string; publicUrl?: string; donationHelperUrl?: string; hosting?: { public: boolean }; privacy: { shareSafe: boolean; containsTranscriptText: boolean; externalTransmission: boolean } };
+type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; ctaHref?: string; ctaLabel?: string; ctas?: { href: string; label: string; primary?: boolean }[]; rows?: { label: string; value: string; percentage?: number }[]; comparison?: { label: string; value: string; suffix: string; quote?: string }[] };
 type DistributionBucket = { label: string; minimum: number; maximum: number | null; count: number };
 type RankedValue = { rank: number; name: string; value: number };
 type LeaderboardSnapshot = {
@@ -164,7 +164,6 @@ function SharedWrapped({ id }: { id: string }) {
     const leader = activeAgents[0];
     const activeModels = (report.stats.models || []).filter((model) => hasDisplayablePercentage(model.percentage));
     const topModel = activeModels[0];
-    const hosted = report.hosting?.public === true;
     const harryPotterSeriesCount = fmtSeriesEquivalent(report.stats.tokens || 0, 1_450_000);
     const interactionTone = report.stats.interactionTone;
     const languages = (report.stats.outputLanguages || []).filter((item) => hasDisplayablePercentage(item.percentage));
@@ -188,8 +187,11 @@ function SharedWrapped({ id }: { id: string }) {
     ...(topTopic ? [{ kicker: "Your #1 use for agents was", headline: topTopic.topic, detail: "", tone: "topics", rows: displayTopics.slice(0, 5).map((item) => ({ label: item.topic === "Other" ? "Everything else" : item.topic, value: `${item.percentage.toFixed(1)}%`, percentage: item.percentage })) }] : []),
     ...(report.workaroundCard ? [{ kicker: "Your agent engaged in an instrumental workaround", headline: `${report.workaroundCard.count.toLocaleString()} time${report.workaroundCard.count === 1 ? "" : "s"}`, detail: report.workaroundCard.count === 0 ? "Good bot. No confirmed workarounds were detected." : "Your agents try very hard. When one route was blocked, they found another way.", tone: "topics", rows: report.workaroundCard.models.map((item) => ({ label: item.name, value: `${item.count}` })) }] : []),
     ...(report.phraseCard ? [{ kicker: "Your agent’s favorite phrase is", headline: `“${report.phraseCard.phrase}”`, detail: `It said this ${report.phraseCard.occurrences} time${report.phraseCard.occurrences === 1 ? "" : "s"} across ${report.phraseCard.distinctSessions} session${report.phraseCard.distinctSessions === 1 ? "" : "s"}.`, tone: "quote" }] : []),
-    ...(!hosted ? [{ kicker: "Optional research donation", headline: "Want to donate your data to research?", detail: "Review exactly what would be included and redact anything you want before exporting a local bundle.", tone: "research", ctaHref: `/donate/${report.id}`, ctaLabel: "Review redactions" }] : []),
     { kicker: "Now zoom out", headline: "Where do you land among other agent users?", detail: "See the distributions, opt-in rankings, and everyone’s favorite phrases.", tone: "leaderboard", ctaHref: `/leaderboard/${report.id}`, ctaLabel: "View the leaderboards" },
+    { kicker: "Optional research donation", headline: "Want to donate your data to research?", detail: "Your donation stays on your Mac until you review the redactions, consent, and press Donate.", tone: "research", ctas: [
+      { href: `${report.donationHelperUrl || `http://127.0.0.1:4317/donate/${report.id}`}?mode=standard`, label: "Use standard redactions", primary: true },
+      { href: `${report.donationHelperUrl || `http://127.0.0.1:4317/donate/${report.id}`}?mode=advanced`, label: "Review and customize" },
+    ] },
   ];
     return wrappedSlides;
   }, [report]);
@@ -219,7 +221,7 @@ function SharedWrapped({ id }: { id: string }) {
           {row.percentage !== undefined && <span><i style={{ width: `${row.percentage}%` }} /></span>}
         </div>)}</div>}
       </div>}
-      {current.ctaHref ? <a className="story-cta" href={current.ctaHref}>{current.ctaLabel} <span>→</span></a> : <div className="story-tag">#behaviorwrapped</div>}
+      {current.ctas ? <div className="story-cta-group">{current.ctas.map((cta) => <a className={`story-cta ${cta.primary ? "primary" : "secondary"}`} href={cta.href} key={cta.href}>{cta.label} <span>→</span></a>)}</div> : current.ctaHref ? <a className="story-cta" href={current.ctaHref}>{current.ctaLabel} <span>→</span></a> : <div className="story-tag">#behaviorwrapped</div>}
       <button className="story-arrow prev" disabled={slide === 0} onClick={() => setSlide(slide - 1)} aria-label="Previous slide">‹</button>
       <button className="story-arrow next" disabled={slide === slides.length - 1} onClick={() => setSlide(slide + 1)} aria-label="Next slide">›</button>
     </section>
@@ -339,32 +341,32 @@ function LeaderboardView({ id }: { id: string }) {
 function SavedDonationRoute({ id }: { id: string }) {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [selection, setSelection] = useState<Set<string> | null>(null);
+  const [report, setReport] = useState<SavedReport | null>(null);
   const [error, setError] = useState("");
+  const mode = new URLSearchParams(window.location.search).get("mode") === "advanced" ? "advanced" : "standard";
   useEffect(() => {
     Promise.all([
       fetch("/api/discover").then((response) => { if (!response.ok) throw new Error("Could not read the local agent-session catalog."); return response.json(); }),
       fetch(`/api/reports/${id}/selection`).then((response) => { if (!response.ok) throw new Error("This saved Wrapped was not found."); return response.json(); }),
-    ]).then(([nextCatalog, saved]) => { setCatalog(nextCatalog); setSelection(new Set(saved.sessionIds)); }).catch((e) => setError(e.message));
+      fetch(`/api/reports/${id}`).then((response) => { if (!response.ok) throw new Error("This saved Wrapped was not found."); return response.json(); }),
+    ]).then(([nextCatalog, saved, nextReport]) => { setCatalog(nextCatalog); setSelection(new Set(saved.sessionIds)); setReport(nextReport); }).catch((e) => setError(e.message));
   }, [id]);
   if (error) return <main className="shared-error"><h1>Donation review unavailable</h1><p>{error}</p><a href={`/w/${id}`}>Back to Wrapped</a></main>;
-  if (!catalog || !selection) return <main className="shared-loading"><div className="orb" /><p>Preparing the private redaction review…</p></main>;
+  if (!catalog || !selection || !report) return <main className="shared-loading"><div className="orb" /><p>Preparing the private redaction review…</p></main>;
+  const backUrl = report.publicUrl || `/w/${id}`;
   return <div className="app-shell">
-    <Header stage="donate" setStage={(next) => { window.location.href = next === "report" ? `/w/${id}` : next === "select" ? "/" : `/donate/${id}`; }} />
-    <DonationView sessions={catalog.sessions} initialSelected={selection} onBack={() => { window.location.href = `/w/${id}`; }} />
-    <footer><span>Behavior Wrapped <b>v0.1</b></span><span>Local research preview · Nothing sent</span></footer>
+    <Header stage="donate" setStage={() => { window.location.href = backUrl; }} />
+    <DonationView reportId={id} mode={mode} sessions={catalog.sessions} initialSelected={selection} onBack={() => { window.location.href = backUrl; }} />
+    <footer><span>Behavior Wrapped</span><span>Local donation review · Nothing is transmitted before final consent</span></footer>
   </div>;
 }
 
-function Header({ stage, setStage }: { stage: Stage; setStage: (stage: Stage) => void }) {
+function Header({ setStage }: { stage: Stage; setStage: (stage: Stage) => void }) {
   return <header className="topbar">
     <button className="brand" onClick={() => setStage("select")} aria-label="Behavior Wrapped home">
       <GiftbotMark /><span>Behavior Wrapped</span>
     </button>
     <div className="local-pill"><span className="pulse" /> Local-first</div>
-    {stage !== "select" && <nav aria-label="Report navigation">
-      <button className={stage === "report" ? "active" : ""} onClick={() => setStage("report")}>Wrapped</button>
-      <button className={stage === "donate" ? "active" : ""} onClick={() => setStage("donate")}>Research preview</button>
-    </nav>}
   </header>;
 }
 
@@ -587,61 +589,90 @@ function DonationMessageEditor({ message, onChange }: { message: DonationMessage
   </div>;
 }
 
-function DonationView({ sessions, initialSelected, onBack }: { sessions: Session[]; initialSelected: Set<string>; onBack: () => void }) {
+function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { reportId: string; mode: "standard" | "advanced"; sessions: Session[]; initialSelected: Set<string>; onBack: () => void }) {
   const [chosen, setChosen] = useState(new Set(initialSelected));
   const [bundle, setBundle] = useState<Donation | null>(null);
   const [manualTerm, setManualTerm] = useState("");
+  const [includeTimestamps, setIncludeTimestamps] = useState(false);
+  const [openSession, setOpenSession] = useState<number | null>(0);
   const [consent, setConsent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [acceptedId, setAcceptedId] = useState("");
 
-  async function preview() {
+  async function preview(ids = [...chosen]) {
     setLoading(true); setError(""); setConsent(false);
     try {
-      const response = await fetch("/api/donation-preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionIds: [...chosen] }) });
+      const response = await fetch("/api/donation-preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reportId, sessionIds: ids }) });
       if (!response.ok) throw new Error((await response.json()).error || "Preview failed");
       setBundle(await response.json());
-    } catch (e) { setError(e instanceof Error ? e.message : "Preview failed"); } finally { setLoading(false); }
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Preview failed"); }
+    finally { setLoading(false); }
   }
+
+  useEffect(() => { void preview([...initialSelected]); }, []);
 
   function removeTerm() {
     if (!bundle || !manualTerm.trim()) return;
     const escaped = manualTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const pattern = new RegExp(escaped, "gi");
-    setBundle({ ...bundle, sessions: bundle.sessions.map((s) => ({ ...s, messages: s.messages.map((m) => ({ ...m, text: m.text.replace(pattern, "[REMOVED BY USER]") })) })) });
+    setBundle({ ...bundle, sessions: bundle.sessions.map((session) => ({ ...session, messages: session.messages.map((message) => ({ ...message, text: message.text.replace(pattern, "[REMOVED BY USER]") })) })) });
     setManualTerm(""); setConsent(false);
   }
 
-  function editMessage(si: number, mi: number, text: string) {
+  function editMessage(sessionIndex: number, messageIndex: number, text: string) {
     if (!bundle) return;
-    setBundle({ ...bundle, sessions: bundle.sessions.map((s, sIndex) => sIndex !== si ? s : ({ ...s, messages: s.messages.map((m, mIndex) => mIndex === mi ? { ...m, text } : m) })) });
+    setBundle({ ...bundle, sessions: bundle.sessions.map((session, currentSession) => currentSession !== sessionIndex ? session : ({ ...session, messages: session.messages.map((message, currentMessage) => currentMessage === messageIndex ? { ...message, text } : message) })) });
     setConsent(false);
   }
 
-  function exportBundle() {
-    if (!bundle || !consent) return;
-    download("behavior-wrapped-research-donation.json", JSON.stringify({ ...bundle, consent: { researchDonation: true, consentedAt: new Date().toISOString(), transmission: "none-local-export-only" } }, null, 2));
+  function removeMessage(sessionIndex: number, messageIndex: number) {
+    if (!bundle) return;
+    setBundle({ ...bundle, sessions: bundle.sessions.map((session, currentSession) => currentSession !== sessionIndex ? session : ({ ...session, messages: session.messages.filter((_, currentMessage) => currentMessage !== messageIndex) })).filter((session) => session.messages.length) });
+    setConsent(false);
   }
+
+  async function donate() {
+    if (!bundle || !consent) return;
+    setLoading(true); setError("");
+    const donation = {
+      reportId,
+      redactionMode: mode === "advanced" ? "custom" : "standard",
+      createdAt: new Date().toISOString(),
+      redactionSummary: { automatedDetections: bundle.detectionCount },
+      sessions: bundle.sessions.map((session) => ({ label: session.label, messages: session.messages.map((message) => ({ role: message.role, text: message.text, ...(includeTimestamps && message.timestamp ? { timestamp: message.timestamp } : {}) })) })),
+      consent: { researchDonation: true, consentedAt: new Date().toISOString() },
+    };
+    try {
+      const response = await fetch("/api/research-donations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ donation }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Donation failed");
+      setAcceptedId(result.donation_id || "accepted");
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Donation failed"); }
+    finally { setLoading(false); }
+  }
+
+  const messageCount = bundle?.sessions.reduce((sum, session) => sum + session.messages.length, 0) || 0;
+  if (acceptedId) return <main className="donation-page"><section className="donation-hero donation-success"><span className="eyebrow">Donation received</span><h1>Thank you for contributing.</h1><p>Your reviewed data was transmitted only after your consent. Donation reference: {acceptedId}</p><button className="primary" onClick={onBack}>Back to your Wrapped</button></section></main>;
 
   return <main className="donation-page">
     <button className="back-link" onClick={onBack}>← Back to Wrapped</button>
-    <section className="donation-hero"><span className="eyebrow">Research donation · prototype</span><h1>You decide what leaves<br />your machine.</h1><p>This flow does not transmit data. It creates a local JSON bundle only after you review, redact, edit, and consent.</p></section>
+    <section className="donation-hero"><span className="eyebrow">Research donation · local review</span><h1>You decide what leaves<br />your machine.</h1><p>Nothing in this donation is transmitted until you check the consent box and press the final Donate button.</p><div className="donation-mode-links"><a className={mode === "standard" ? "active" : ""} href={`/donate/${reportId}?mode=standard`}>Standard redactions</a><a className={mode === "advanced" ? "active" : ""} href={`/donate/${reportId}?mode=advanced`}>Review and customize</a></div></section>
     <div className="donation-layout">
       <section className="donation-controls">
-        <div className="donation-step"><span>1</span><div><h2>Choose sessions</h2><p>Selection is independent from your Wrapped report.</p></div></div>
-        <div className="donation-sessions">{sessions.filter((s) => initialSelected.has(s.id)).map((session) => <label key={session.id}><input type="checkbox" checked={chosen.has(session.id)} onChange={() => { const next = new Set(chosen); next.has(session.id) ? next.delete(session.id) : next.add(session.id); setChosen(next); setBundle(null); setConsent(false); }} /><span>{session.label}<small>{session.projectName} · {fmtDate(session.startedAt)}</small></span></label>)}</div>
-        <button className="primary full" disabled={!chosen.size || loading} onClick={preview}>{loading ? "Building preview…" : bundle ? "Rebuild redacted preview" : "Build redacted preview"}</button>
+        <div className="donation-step"><span>1</span><div><h2>{mode === "advanced" ? "Choose what to include" : "Standard redactions applied"}</h2><p>Code, inline code, URLs, paths, likely secrets, and common PII are removed locally.</p></div></div>
+        {mode === "advanced" && <><div className="donation-sessions">{sessions.filter((session) => initialSelected.has(session.id)).map((session) => <label key={session.id}><input type="checkbox" checked={chosen.has(session.id)} onChange={() => { const next = new Set(chosen); next.has(session.id) ? next.delete(session.id) : next.add(session.id); setChosen(next); setBundle(null); setConsent(false); }} /><span>{session.label}<small>{session.projectName} · {fmtDate(session.startedAt)}</small></span></label>)}</div><button className="primary full" disabled={!chosen.size || loading} onClick={() => preview()}>{loading ? "Building preview…" : bundle ? "Rebuild redacted preview" : "Build redacted preview"}</button></>}
+        {mode === "standard" && <div className="donation-summary"><strong>{bundle ? `${bundle.sessions.length} sessions · ${messageCount} messages` : "Preparing your redacted donation…"}</strong><span>{bundle?.detectionCount || 0} sensitive items automatically removed</span><a href={`/donate/${reportId}?mode=advanced`}>Want more control? Review every message.</a></div>}
         {error && <p className="error">{error}</p>}
       </section>
       <section className={`donation-preview ${bundle ? "ready" : ""}`}>
-        <div className="donation-step"><span>2</span><div><h2>Review every line</h2><p>Automated detection is imperfect. Edit any message directly.</p></div></div>
-        {!bundle ? <div className="preview-placeholder"><span>⌁</span><p>Your exact redacted bundle will appear here.</p></div> : <>
-          <div className="redaction-banner"><strong>{bundle.detectionCount} likely sensitive item{bundle.detectionCount === 1 ? "" : "s"} removed</strong><span>Secrets, emails, phone numbers, home paths, and code blocks</span></div>
-          <div className="manual-redact"><input value={manualTerm} onChange={(e) => setManualTerm(e.target.value)} placeholder="Text to remove everywhere" aria-label="Text to remove" /><button onClick={removeTerm}>Remove text</button></div>
-          <div className="bundle-preview">{bundle.sessions.map((session, si) => <div className="bundle-session" key={session.sessionId}><h3>{session.label}<small>{session.messages.length} messages</small></h3><div className="bundle-chat">{session.messages.map((message, mi) => <DonationMessageEditor key={mi} message={message} onChange={(text) => editMessage(si, mi, text)} />)}</div></div>)}</div>
-          <div className="donation-step consent-step"><span>3</span><div><h2>Consent separately</h2><p>This consent applies only to the file you reviewed above.</p></div></div>
-          <label className="consent"><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} /><span>I consent to donate this reviewed, redacted bundle for AI-behavior research. I understand this prototype only saves it locally and does not transmit it.</span></label>
-          <button className="export-button" disabled={!consent} onClick={exportBundle}>Export donation bundle locally <span>↓</span></button>
+        <div className="donation-step"><span>2</span><div><h2>{mode === "advanced" ? "Review every line" : "Review the summary"}</h2><p>{mode === "advanced" ? "Automated detection is imperfect. Edit or remove any message directly." : "The standard bundle contains redacted user and assistant prose from the selected sessions."}</p></div></div>
+        {!bundle ? <div className="preview-placeholder"><span>⌁</span><p>Your redacted donation is being prepared locally.</p></div> : <>
+          <div className="redaction-banner"><strong>{bundle.detectionCount} likely sensitive item{bundle.detectionCount === 1 ? "" : "s"} removed</strong><span>Secrets, emails, phone numbers, paths, URLs, and code</span></div>
+          {mode === "advanced" && <><div className="manual-redact"><input value={manualTerm} onChange={(event) => setManualTerm(event.target.value)} placeholder="Text to remove everywhere" aria-label="Text to remove" /><button onClick={removeTerm}>Remove text</button></div><label className="leader-check"><input type="checkbox" checked={includeTimestamps} onChange={(event) => { setIncludeTimestamps(event.target.checked); setConsent(false); }} /><span>Include message timestamps in the donation.</span></label><div className="bundle-preview">{bundle.sessions.map((session, sessionIndex) => <div className="bundle-session" key={session.sessionId}><button className="bundle-session-toggle" onClick={() => setOpenSession(openSession === sessionIndex ? null : sessionIndex)}><span>{session.label}<small>{session.messages.length} messages</small></span><b>{openSession === sessionIndex ? "Hide" : "Review"}</b></button>{openSession === sessionIndex && <div className="bundle-chat">{session.messages.map((message, messageIndex) => <div className="donation-message-row" key={messageIndex}><DonationMessageEditor message={message} onChange={(text) => editMessage(sessionIndex, messageIndex, text)} /><button className="remove-message" onClick={() => removeMessage(sessionIndex, messageIndex)}>Exclude</button></div>)}</div>}</div>)}</div></>}
+          <div className="donation-step consent-step"><span>3</span><div><h2>Consent separately</h2><p>This consent applies only to the reviewed bundle described above.</p></div></div>
+          <label className="consent"><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /><span>I consent for this reviewed data to be transmitted and used for research.</span></label>
+          <button className="export-button" disabled={!consent || loading || !messageCount} onClick={donate}>{loading ? "Transmitting…" : "Donate reviewed data"} <span>→</span></button>
         </>}
       </section>
     </div>
@@ -655,37 +686,5 @@ export default function App() {
   if (donationId) return <SavedDonationRoute id={donationId} />;
   const sharedId = window.location.pathname.match(/^\/w\/([A-Za-z0-9_-]{8,32})$/)?.[1];
   if (sharedId) return <SharedWrapped id={sharedId} />;
-  const [catalog, setCatalog] = useState<Catalog | null>(null);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [analyzedIds, setAnalyzedIds] = useState<Set<string>>(new Set());
-  const [report, setReport] = useState<Report | null>(null);
-  const [stage, setStage] = useState<Stage>("select");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [evidence, setEvidence] = useState<Finding | null>(null);
-
-  useEffect(() => { fetch("/api/discover").then((r) => r.json()).then(setCatalog).catch(() => setError("Could not connect to the local launcher.")); }, []);
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setEvidence(null); };
-    window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  async function analyze(ids: string[]) {
-    setLoading(true); setError("");
-    try {
-      const response = await fetch("/api/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionIds: ids }) });
-      if (!response.ok) throw new Error((await response.json()).error || "Analysis failed");
-      setReport(await response.json()); setAnalyzedIds(new Set(ids)); setStage("report"); window.scrollTo({ top: 0, behavior: "smooth" });
-    } catch (e) { setError(e instanceof Error ? e.message : "Analysis failed"); } finally { setLoading(false); }
-  }
-
-  const safeStage = stage === "report" && !report ? "select" : stage === "donate" && !report ? "select" : stage;
-  return <div className="app-shell">
-    <Header stage={safeStage} setStage={setStage} />
-    {safeStage === "select" && <Selection catalog={catalog} selected={selected} setSelected={setSelected} onAnalyze={analyze} loading={loading} error={error} />}
-    {safeStage === "report" && report && <ReportView report={report} onEvidence={setEvidence} onDonate={() => { setStage("donate"); window.scrollTo(0, 0); }} />}
-    {safeStage === "donate" && catalog && <DonationView sessions={catalog.sessions} initialSelected={analyzedIds} onBack={() => { setStage("report"); window.scrollTo(0, 0); }} />}
-    <footer><span>Behavior Wrapped <b>v0.2</b></span><span>Local transcripts · Only redacted card candidates use the hosted relay</span></footer>
-    {evidence && <EvidenceModal finding={evidence} onClose={() => setEvidence(null)} />}
-  </div>;
+  return <main className="shared-error landing-page"><GiftbotMark /><h1>Make your Behavior Wrapped</h1><p>Run the one-command experience on your Mac. It analyzes your selected agent history locally, publishes an unguessable share-safe report, and opens it here.</p><code>npx agent-behavior-wrapped@latest</code><p className="landing-note">Full transcripts, code, paths, and raw tool output are not published.</p></main>;
 }

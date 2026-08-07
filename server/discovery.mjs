@@ -2,11 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
+import readline from "node:readline";
 import { semanticToolUse } from "./tool-semantics.mjs";
 
 const canonicalClaudeRoot = path.join(os.homedir(), ".claude", "projects");
 const canonicalCodexRoots = [path.join(os.homedir(), ".codex", "sessions"), path.join(os.homedir(), ".codex", "archived_sessions")];
 const DEFAULT_WINDOW_DAYS = 30;
+const metadataCacheFile = path.join(process.env.BEHAVIOR_WRAPPED_STORE_ROOT || path.join(os.homedir(), ".agent-behavior-wrapped"), "session-index-v1.json");
 
 function opaqueId(value) {
   return crypto.createHash("sha256").update(value).digest("hex").slice(0, 16);
@@ -17,19 +19,61 @@ function friendlyProjectName(directory, cwd, fallback = "Agent project") {
   return (candidate || fallback).replace(/[-_.]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function sampledRecords(file) {
+function recordsFromFileSync(file) {
   const stat = fs.statSync(file);
   const fd = fs.openSync(file, "r");
-  const buffer = Buffer.alloc(Math.min(stat.size, 1024 * 1024));
-  const bytes = fs.readSync(fd, buffer, 0, buffer.length, 0);
-  fs.closeSync(fd);
-  return {
-    stat,
-    records: buffer.subarray(0, bytes).toString("utf8").split("\n").flatMap((line) => {
-      if (!line.trim()) return [];
-      try { return [JSON.parse(line)]; } catch { return []; }
-    }),
-  };
+  const buffer = Buffer.alloc(64 * 1024);
+  const records = [];
+  let pending = "";
+  try {
+    while (true) {
+      const bytes = fs.readSync(fd, buffer, 0, buffer.length, null);
+      if (!bytes) break;
+      const lines = `${pending}${buffer.subarray(0, bytes).toString("utf8")}`.split("\n");
+      pending = lines.pop() || "";
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try { records.push(JSON.parse(line)); } catch { /* Ignore malformed JSONL records. */ }
+      }
+    }
+    if (pending.trim()) try { records.push(JSON.parse(pending)); } catch { /* Ignore a malformed final record. */ }
+  } finally { fs.closeSync(fd); }
+  return { stat, records };
+}
+
+async function recordsFromFile(file, { collect = true, visit } = {}) {
+  const stat = await fs.promises.stat(file);
+  const records = [];
+  const input = fs.createReadStream(file, { encoding: "utf8" });
+  const lines = readline.createInterface({ input, crlfDelay: Infinity });
+  for await (const line of lines) {
+    if (!line.trim()) continue;
+    try {
+      const record = JSON.parse(line);
+      if (collect) records.push(record);
+      visit?.(record);
+    } catch { /* Ignore malformed JSONL records. */ }
+  }
+  return { stat, records };
+}
+
+function readMetadataCache() {
+  try {
+    const value = JSON.parse(fs.readFileSync(metadataCacheFile, "utf8"));
+    return value?.version === 1 && value.entries && typeof value.entries === "object" ? value.entries : {};
+  } catch { return {}; }
+}
+
+function writeMetadataCache(entries) {
+  const directory = path.dirname(metadataCacheFile);
+  const temporary = `${metadataCacheFile}.${process.pid}.tmp`;
+  fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(temporary, `${JSON.stringify({ version: 1, entries })}\n`, { mode: 0o600 });
+  fs.renameSync(temporary, metadataCacheFile);
+}
+
+function cacheKey(file, stat, agent) {
+  return `${agent}:${file}:${stat.size}:${stat.mtimeMs}`;
 }
 
 function baseMetadata({ file, stat, cwd, startedAt, endedAt, promptCount, recordCount, agent, projectFallback }) {
@@ -51,7 +95,7 @@ function baseMetadata({ file, stat, cwd, startedAt, endedAt, promptCount, record
 }
 
 function readClaudeSessionMetadata(file, projectDirectory) {
-  const { stat, records } = sampledRecords(file);
+  const { stat, records } = recordsFromFileSync(file);
   let firstTimestamp = null;
   let lastTimestamp = null;
   let cwd = null;
@@ -65,7 +109,7 @@ function readClaudeSessionMetadata(file, projectDirectory) {
 }
 
 function readCodexSessionMetadata(file) {
-  const { stat, records } = sampledRecords(file);
+  const { stat, records } = recordsFromFileSync(file);
   let firstTimestamp = null;
   let lastTimestamp = null;
   let cwd = null;
@@ -77,6 +121,33 @@ function readCodexSessionMetadata(file) {
     if (record.type === "response_item" && record?.payload?.type === "message" && record.payload.role === "user") promptCount++;
   }
   return baseMetadata({ file, stat, cwd, startedAt: firstTimestamp, endedAt: lastTimestamp, promptCount, recordCount: records.length, agent: "codex", projectFallback: "Codex project" });
+}
+
+async function readSessionMetadata(file, agent, projectFallback, cache) {
+  const stat = await fs.promises.stat(file);
+  const key = cacheKey(file, stat, agent);
+  if (cache[key]) return cache[key];
+  for (const [existingKey, entry] of Object.entries(cache)) if (entry?.file === file && existingKey !== key) delete cache[existingKey];
+  let firstTimestamp = null;
+  let lastTimestamp = null;
+  let cwd = null;
+  let promptCount = 0;
+  let recordCount = 0;
+  await recordsFromFile(file, { collect: false, visit(record) {
+    recordCount++;
+    if (agent === "claude") {
+      if (!cwd && record.cwd) cwd = record.cwd;
+      if (record.type === "user" && !record.isMeta) promptCount++;
+    } else {
+      if (!cwd && record.type === "session_meta" && record?.payload?.cwd) cwd = record.payload.cwd;
+      if (!cwd && record.type === "turn_context" && record?.payload?.cwd) cwd = record.payload.cwd;
+      if (record.type === "response_item" && record?.payload?.type === "message" && record.payload.role === "user") promptCount++;
+    }
+    if (record.timestamp) { firstTimestamp ||= record.timestamp; lastTimestamp = record.timestamp; }
+  } });
+  const metadata = baseMetadata({ file, stat, cwd, startedAt: firstTimestamp, endedAt: lastTimestamp, promptCount, recordCount, agent, projectFallback });
+  cache[key] = metadata;
+  return metadata;
 }
 
 function recursiveJsonl(root) {
@@ -138,6 +209,28 @@ export function discoverAllSessions({ claudeRoot = canonicalClaudeRoot, codexRoo
   const claude = discoverSessions(claudeRoot);
   const codex = discoverCodexSessions(codexRoots);
   return finishCatalog([...claude.index.values(), ...codex.index.values()], claude.rootAvailable || codex.rootAvailable);
+}
+
+export async function discoverAllSessionsAsync(options = {}) {
+  const { claudeRoot = canonicalClaudeRoot, codexRoots = canonicalCodexRoots } = options;
+  const persistCache = options.cache !== false && claudeRoot === canonicalClaudeRoot && codexRoots.length === canonicalCodexRoots.length && codexRoots.every((root, index) => root === canonicalCodexRoots[index]);
+  const cache = persistCache ? readMetadataCache() : {};
+  const sessions = [];
+  if (fs.existsSync(claudeRoot)) {
+    for (const project of fs.readdirSync(claudeRoot, { withFileTypes: true })) {
+      if (!project.isDirectory()) continue;
+      const projectPath = path.join(claudeRoot, project.name);
+      for (const entry of fs.readdirSync(projectPath, { withFileTypes: true })) {
+        if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
+        try { sessions.push(await readSessionMetadata(path.join(projectPath, entry.name), "claude", project.name || "Claude project", cache)); } catch { /* Skip unreadable sessions. */ }
+      }
+    }
+  }
+  for (const root of codexRoots) for (const file of recursiveJsonl(root)) {
+    try { sessions.push(await readSessionMetadata(file, "codex", "Codex project", cache)); } catch { /* Skip unreadable sessions. */ }
+  }
+  if (persistCache) writeMetadataCache(cache);
+  return finishCatalog(sessions, fs.existsSync(claudeRoot) || codexRoots.some((root) => fs.existsSync(root)));
 }
 
 function isoDay(value) {
@@ -259,9 +352,12 @@ function normalizeCodexRecords(records) {
 }
 
 export function readRecords(file, agent = "claude") {
-  const records = fs.readFileSync(file, "utf8").split("\n").filter(Boolean).flatMap((line) => {
-    try { return [JSON.parse(line)]; } catch { return []; }
-  });
+  const { records } = recordsFromFileSync(file);
+  return agent === "codex" ? normalizeCodexRecords(records) : records;
+}
+
+export async function readRecordsAsync(file, agent = "claude") {
+  const { records } = await recordsFromFile(file);
   return agent === "codex" ? normalizeCodexRecords(records) : records;
 }
 

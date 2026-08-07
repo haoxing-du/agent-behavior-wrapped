@@ -1,10 +1,10 @@
 export const PUBLIC_REPORT_ORIGIN = "https://agent-behavior-wrapped-judge.haoxingdu.workers.dev";
+import { sanitizePublicReport } from "./public-report-schema.mjs";
 const REQUEST_TIMEOUT_MS = 15_000;
 
 export async function publishPublicReport(report, { clientId, fetchImpl = fetch, origin = PUBLIC_REPORT_ORIGIN } = {}) {
-  const { sessionIds, workaroundReview, ...shareSafeReport } = report;
-  shareSafeReport.rangeLabel = "Your recent agent history";
-  shareSafeReport.privacy = { shareSafe: true, containsTranscriptText: false, externalTransmission: true };
+  const shareSafeReport = sanitizePublicReport(report);
+  if (!shareSafeReport) throw new Error("The report could not be reduced to the public schema.");
   const serialized = JSON.stringify(shareSafeReport);
   if (/"(?:sessionIds|evidence|transcript|tool_result|tool_use)"\s*:/.test(serialized)) throw new Error("The report contains private fields and was not published.");
   let response;

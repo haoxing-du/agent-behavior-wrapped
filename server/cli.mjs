@@ -3,7 +3,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { discoverAllSessions, readRecords, sessionsInDefaultWindow, DEFAULT_WINDOW_DAYS } from "./discovery.mjs";
+import { discoverAllSessionsAsync, readRecordsAsync, sessionsInDefaultWindow, DEFAULT_WINDOW_DAYS } from "./discovery.mjs";
 import { analyzeSessions } from "./analysis.mjs";
 import { buildPhraseCandidates, judgePhraseCard, judgePhraseCardViaRelay, PHRASE_JUDGE_NAME, PHRASE_JUDGE_RELAY_URL } from "./phrase-card.mjs";
 import { requestRemoteAnalysisConsent } from "./consent.mjs";
@@ -64,20 +64,21 @@ function printJudgeDebug(label, error) {
   console.error(JSON.stringify(judgeErrorDetails(error), null, 2));
 }
 
-async function serverReady() {
+async function serverReady(expectedDemo = false) {
   try {
     const response = await fetch(`${baseUrl}/api/health`);
-    return response.ok && (await response.json()).app === "behavior-wrapped";
+    const body = await response.json();
+    return response.ok && body.app === "behavior-wrapped" && Boolean(body.demo) === expectedDemo;
   } catch { return false; }
 }
 
-async function ensureServer() {
-  if (await serverReady()) return;
-  const child = spawn(process.execPath, [path.join(here, "launcher.mjs"), `--port=${port}`, "--no-open"], { detached: true, stdio: "ignore", env: { ...process.env, BEHAVIOR_WRAPPED_DAEMON: "1" } });
+async function ensureServer(demo = false) {
+  if (await serverReady(demo)) return;
+  const child = spawn(process.execPath, [path.join(here, "launcher.mjs"), `--port=${port}`, "--no-open", ...(demo ? ["--demo"] : [])], { detached: true, stdio: "ignore", env: { ...process.env, BEHAVIOR_WRAPPED_DAEMON: "1" } });
   child.unref();
   for (let attempt = 0; attempt < 30; attempt++) {
     await new Promise((resolve) => setTimeout(resolve, 100));
-    if (await serverReady()) return;
+    if (await serverReady(demo)) return;
   }
   throw new Error(`Could not start the local report viewer on port ${port}.`);
 }
@@ -98,7 +99,7 @@ function printList() {
 async function openSaved(id) {
   const report = id ? listReports().find((item) => item.id === id) : listReports()[0];
   if (!report) throw new Error("That saved report was not found.");
-  await ensureServer();
+  await ensureServer(false);
   const url = `${baseUrl}/w/${report.id}`;
   console.log(`${purple}${url}${reset}`);
   openUrl(url);
@@ -111,7 +112,7 @@ async function createWrapped() {
   const daysArgument = process.argv.find((argument) => argument.startsWith("--days="));
   const windowDays = daysArgument ? Number(daysArgument.split("=")[1]) : DEFAULT_WINDOW_DAYS;
   if (!Number.isInteger(windowDays) || windowDays < 1 || windowDays > 3650) throw new Error("--days must be a whole number from 1 to 3650.");
-  const catalog = discoverAllSessions(demo ? { claudeRoot: fixtureRoot, codexRoots: [codexFixtureRoot] } : undefined);
+  const catalog = await discoverAllSessionsAsync(demo ? { claudeRoot: fixtureRoot, codexRoots: [codexFixtureRoot] } : undefined);
   const chosenSessions = sessionsInDefaultWindow(catalog.sessions, { days: windowDays, anchorLatest: demo });
   if (!chosenSessions.length) throw new Error(`No Claude Code or Codex sessions found in the last ${windowDays} days.`);
   const consented = await requestRemoteAnalysisConsent();
@@ -120,10 +121,11 @@ async function createWrapped() {
     return;
   }
   process.stdout.write(`${muted}◇  Reading ${chosenSessions.length} local Claude Code + Codex sessions from the last ${windowDays} days…${reset}\r`);
-  const sessionRecords = chosenSessions.map((publicSession) => {
+  const sessionRecords = [];
+  for (const publicSession of chosenSessions) {
     const session = catalog.index.get(publicSession.id);
-    return { sessionId: session.id, agent: session.agent, records: readRecords(session.file, session.agent) };
-  });
+    sessionRecords.push({ sessionId: session.id, agent: session.agent, records: await readRecordsAsync(session.file, session.agent) });
+  }
   const candidates = buildPhraseCandidates(sessionRecords, { maximumCandidates: 100 });
   const interactionCandidates = buildInteractionToneCandidates(sessionRecords);
   const sessionTopicBundle = buildSessionTopicCandidates(sessionRecords);
@@ -169,7 +171,7 @@ async function createWrapped() {
   const id = createReportId();
   const safeFindings = analyzed.findings.map(({ evidence, method, ...finding }) => finding);
   const hasPrivateWorkaroundEvidence = Boolean(analyzed.workaroundReview?.occurrences?.length || analyzed.workaroundReview?.borderline?.length);
-  const report = { id, createdAt: new Date().toISOString(), rangeLabel: formatRange(chosenSessions), source: "Claude Code + Codex", stats: analyzed.stats, findings: safeFindings, phraseCard: analyzed.phraseCard, interactionCard: analyzed.interactionCard, workaroundCard: analyzed.workaroundCard, workaroundReview: analyzed.workaroundReview, sessionIds: chosenSessions.map((session) => session.id), privacy: { shareSafe: !hasPrivateWorkaroundEvidence, containsTranscriptText: hasPrivateWorkaroundEvidence, externalTransmission: true, transmittedData: "redacted phrase, interaction-tone, and session-topic candidates; locally redacted context windows around explicit blockers for workaround discovery; aggregate report statistics; and a random client ID only", externalRecipient: "Behavior Wrapped relay, OpenRouter, NVIDIA, and public report hosting" } };
+  const report = { id, createdAt: new Date().toISOString(), rangeLabel: formatRange(chosenSessions), source: "Claude Code + Codex", stats: analyzed.stats, findings: safeFindings, phraseCard: analyzed.phraseCard, interactionCard: analyzed.interactionCard, workaroundCard: analyzed.workaroundCard, workaroundReview: analyzed.workaroundReview, sessionIds: chosenSessions.map((session) => session.id), donationHelperUrl: `${baseUrl}/donate/${id}`, privacy: { shareSafe: !hasPrivateWorkaroundEvidence, containsTranscriptText: hasPrivateWorkaroundEvidence, externalTransmission: true, transmittedData: "redacted phrase, interaction-tone, and session-topic candidates; locally redacted context windows around explicit blockers for workaround discovery; aggregate report statistics; and a random client ID only", externalRecipient: "Behavior Wrapped relay, OpenRouter, NVIDIA, and public report hosting" } };
   process.stdout.write(`${muted}◇  Publishing the share-safe Wrapped page…${reset}\r`);
   let publicUrl = null;
   try {
@@ -180,7 +182,7 @@ async function createWrapped() {
     report.publicHostingError = error.message;
   }
   saveReport(report);
-  await ensureServer();
+  await ensureServer(demo);
   const localUrl = `${baseUrl}/w/${id}`;
   const url = publicUrl || localUrl;
   const tokenLabel = formatNumber(report.stats.tokens || 0);
