@@ -6,6 +6,12 @@ import { displayModelName } from "./model-names.mjs";
 export { displayModelName } from "./model-names.mjs";
 
 const wordSegmenter = new Intl.Segmenter("en", { granularity: "word" });
+const stockPhraseDefinitions = [
+  { phrase: "You're right", expression: /\byou['’]re right\b/giu },
+  { phrase: "Say the word", expression: /\bsay the word\b/giu },
+  { phrase: "genuinely", expression: /\bgenuinely\b/giu },
+  { phrase: "one wrinkle", expression: /\bone wrinkle\b/giu },
+];
 
 const languageLexicons = [
   ["Spanish", new Set("el la los las una unas para pero porque como esto esta este muy más con del quiero puede puedes hacer gracias ahora".split(" "))],
@@ -51,6 +57,16 @@ function proseText(value) {
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function stockPhraseCounts(texts) {
+  return stockPhraseDefinitions.map(({ phrase, expression }) => ({
+    phrase,
+    count: texts.reduce((sum, value) => {
+      expression.lastIndex = 0;
+      return sum + [...proseText(value).matchAll(expression)].length;
+    }, 0),
+  }));
 }
 
 const anomalyScripts = [
@@ -412,6 +428,7 @@ export function analyzeSessions(sessionRecords) {
       analyzedMessages: userInputCount,
       method: "Counts user messages matching conservative frustration or gratitude phrase patterns; this is an approximate tone signal, not a judgment of emotion.",
     },
+    stockPhrases: stockPhraseCounts(assistantProse),
     outputLanguages: languageBreakdown(assistantProse),
     languageAnomaly: languageAnomalyBreakdown(sessionRecords),
     languageMethod: "Estimates natural-language word share in assistant text after removing fenced code, inline code, URLs, paths, and markup. Script detection and small Latin-language lexicons are approximate.",

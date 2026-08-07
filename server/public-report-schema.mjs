@@ -19,10 +19,19 @@ function safeBreakdown(value, labelKey, countKey, allowedLabels) {
   });
 }
 
+const stockPhraseLabels = ["You're right", "Say the word", "genuinely", "one wrinkle"];
+
+function safeStockPhrases(value) {
+  if (!Array.isArray(value)) return null;
+  const counts = new Map(value.flatMap((item) => stockPhraseLabels.includes(item?.phrase) ? [[item.phrase, Math.round(safeNumber(item?.count, 10_000_000))]] : []));
+  return stockPhraseLabels.map((phrase) => ({ phrase, count: counts.get(phrase) || 0 }));
+}
+
 export function sanitizePublicReport(value) {
   if (!value || typeof value !== "object" || Array.isArray(value) || !/^[A-Za-z0-9_-]{8,32}$/.test(value.id || "")) return null;
   const stats = value.stats;
   if (!stats || typeof stats !== "object" || Array.isArray(stats)) return null;
+  const safeStockPhraseCounts = safeStockPhrases(stats.stockPhrases);
   const phrase = value.phraseCard?.phrase;
   const safePhrase = typeof phrase === "string" && /^[a-z]+(?:'[a-z]+)?(?: [a-z]+(?:'[a-z]+)?){3,9}$/.test(phrase) ? {
     phrase,
@@ -68,6 +77,7 @@ export function sanitizePublicReport(value) {
         gratefulMessages: Math.round(safeNumber(stats.interactionTone?.gratefulMessages, 1_000_000)),
         analyzedMessages: Math.round(safeNumber(stats.interactionTone?.analyzedMessages, 1_000_000)),
       },
+      ...(safeStockPhraseCounts ? { stockPhrases: safeStockPhraseCounts } : {}),
       outputLanguages: safeBreakdown(stats.outputLanguages, "language", "words", allowedLanguages),
       languageAnomaly: safeLanguageAnomaly,
       topics: safeBreakdown(stats.topics, "topic", "tokens", new Set(["Coding", "Writing", "Personal advice", "Research & search", "Planning", "Data & analysis", "Other"])),
