@@ -8,6 +8,9 @@ const aggregate = {
   agent_words: 8_000,
   user_words: 2_000,
   word_ratio: 4,
+  grateful_messages: 7,
+  frustrated_messages: 3,
+  instrumental_workarounds: 4,
   favorite_phrase: "you are right to push back",
   phrase_occurrences: 12,
   phrase_sessions: 5,
@@ -15,8 +18,9 @@ const aggregate = {
 
 const publicReport = {
   id: "leaderReport123",
-  stats: { tokens: aggregate.tokens, agentWords: aggregate.agent_words, userWords: aggregate.user_words, agentUserWordRatio: aggregate.word_ratio },
+  stats: { tokens: aggregate.tokens, agentWords: aggregate.agent_words, userWords: aggregate.user_words, agentUserWordRatio: aggregate.word_ratio, interactionTone: { gratefulMessages: aggregate.grateful_messages, frustratedMessages: aggregate.frustrated_messages } },
   phraseCard: { phrase: aggregate.favorite_phrase, occurrences: aggregate.phrase_occurrences, distinctSessions: aggregate.phrase_sessions },
+  workaroundCard: { count: aggregate.instrumental_workarounds, models: [] },
 };
 
 async function sha256(value) {
@@ -39,11 +43,11 @@ function leaderboardDatabase(managementTokenHash) {
           return null;
         },
         async all() {
-          if (sql === "SELECT tokens, word_ratio FROM leaderboard_entries") return { results: entry ? [{ tokens: entry.tokens, word_ratio: entry.wordRatio }] : [] };
+          if (sql.startsWith("SELECT tokens, word_ratio, grateful_messages")) return { results: entry ? [{ tokens: entry.tokens, word_ratio: entry.wordRatio, grateful_messages: entry.gratefulMessages, frustrated_messages: entry.frustratedMessages, instrumental_workarounds: entry.workarounds }] : [] };
           return { results: [] };
         },
         async run() {
-          if (sql.startsWith("INSERT INTO leaderboard_entries")) entry = { ownerHash: values[0], displayName: values[1], publicRanked: values[2], tokens: values[3], wordRatio: values[6], sharesPhrase: Boolean(values[7]) };
+          if (sql.startsWith("INSERT INTO leaderboard_entries")) entry = { ownerHash: values[0], displayName: values[1], publicRanked: values[2], tokens: values[3], wordRatio: values[6], gratefulMessages: values[7], frustratedMessages: values[8], workarounds: values[9], sharesPhrase: Boolean(values[10]) };
           if (sql.startsWith("DELETE FROM leaderboard_entries")) entry = null;
           return { meta: { changes: 1 } };
         },
@@ -54,8 +58,9 @@ function leaderboardDatabase(managementTokenHash) {
 
 test("builds a narrow leaderboard aggregate from a saved report", () => {
   const value = leaderboardAggregateFromReport({
-    stats: { tokens: 12_500_000, agentWords: 8_000, userWords: 2_000 },
+    stats: { tokens: 12_500_000, agentWords: 8_000, userWords: 2_000, interactionTone: { gratefulMessages: 7, frustratedMessages: 3 } },
     phraseCard: { phrase: "you are right to push back", occurrences: 12, distinctSessions: 5 },
+    workaroundCard: { count: 4 },
   });
   assert.deepEqual(value, aggregate);
   assert.equal(JSON.stringify(value).includes("transcript"), false);
@@ -66,6 +71,7 @@ test("rejects unsafe or malformed leaderboard aggregates", () => {
   assert.equal(validateLeaderboardAggregate({ ...aggregate, favorite_phrase: "email me at private@example.com" }), null);
   assert.equal(validateLeaderboardAggregate({ ...aggregate, tokens: -1 }), null);
   assert.equal(validateLeaderboardAggregate({ ...aggregate, word_ratio: Infinity }), null);
+  assert.equal(validateLeaderboardAggregate({ ...aggregate, grateful_messages: -1 }), null);
 });
 
 test("builds a complete synthetic leaderboard without a network request", () => {
@@ -73,6 +79,8 @@ test("builds a complete synthetic leaderboard without a network request", () => 
   assert.equal(snapshot.cohort_size, 12);
   assert.equal(snapshot.tokens.distribution.reduce((sum, bucket) => sum + bucket.count, 0), 12);
   assert.equal(snapshot.word_ratio.distribution.reduce((sum, bucket) => sum + bucket.count, 0), 12);
+  assert.equal(snapshot.good_human_score.value, 70);
+  assert.equal(snapshot.instrumental_workarounds.value, 4);
   assert.ok(snapshot.phrases.wall.length > 3);
 });
 
@@ -115,6 +123,8 @@ test("the creator can explicitly store and later remove a permanent aggregate en
   const snapshot = await joined.json();
   assert.equal(snapshot.can_manage, true);
   assert.equal(snapshot.participation.joined, true);
+  assert.equal(snapshot.good_human_score.value, 70);
+  assert.equal(snapshot.instrumental_workarounds.value, 4);
   assert.equal(database.entry.ownerHash, "owner-hash");
   assert.equal(database.entry.sharesPhrase, false);
 

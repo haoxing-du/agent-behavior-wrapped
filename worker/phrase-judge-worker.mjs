@@ -10,7 +10,7 @@ export { sanitizePublicReport } from "../server/public-report-schema.mjs";
 const MAX_BODY_BYTES = 256_000;
 const MAX_CANDIDATES = 100;
 const candidateKeys = ["candidate_id", "distinct_sessions", "end_boundary_rate", "occurrences", "opening_rate", "phrase", "start_boundary_rate"];
-const leaderboardAggregateKeys = ["agent_words", "favorite_phrase", "phrase_occurrences", "phrase_sessions", "tokens", "user_words", "word_ratio"];
+const leaderboardAggregateKeys = ["agent_words", "favorite_phrase", "frustrated_messages", "grateful_messages", "instrumental_workarounds", "phrase_occurrences", "phrase_sessions", "tokens", "user_words", "word_ratio"];
 const tokenBuckets = [
   { label: "Under 1M", minimum: 0, maximum: 1_000_000 },
   { label: "1M–10M", minimum: 1_000_000, maximum: 10_000_000 },
@@ -25,6 +25,20 @@ const ratioBuckets = [
   { label: "2×–4×", minimum: 2, maximum: 4 },
   { label: "4×–8×", minimum: 4, maximum: 8 },
   { label: "8×+", minimum: 8, maximum: null },
+];
+const goodHumanBuckets = [
+  { label: "0–20%", minimum: 0, maximum: 20 },
+  { label: "20–40%", minimum: 20, maximum: 40 },
+  { label: "40–60%", minimum: 40, maximum: 60 },
+  { label: "60–80%", minimum: 60, maximum: 80 },
+  { label: "80–100%", minimum: 80, maximum: null },
+];
+const workaroundBuckets = [
+  { label: "0", minimum: 0, maximum: 1 },
+  { label: "1", minimum: 1, maximum: 2 },
+  { label: "2–3", minimum: 2, maximum: 4 },
+  { label: "4–7", minimum: 4, maximum: 8 },
+  { label: "8+", minimum: 8, maximum: null },
 ];
 
 function json(body, status = 200) {
@@ -142,6 +156,9 @@ export function validateLeaderboardAggregate(value) {
   if (!Number.isInteger(aggregate.agent_words) || !finiteBetween(aggregate.agent_words, 0, 10_000_000_000)) return null;
   if (!Number.isInteger(aggregate.user_words) || !finiteBetween(aggregate.user_words, 0, 10_000_000_000)) return null;
   if (!finiteBetween(aggregate.word_ratio, 0, 10_000)) return null;
+  if (!Number.isInteger(aggregate.grateful_messages) || !finiteBetween(aggregate.grateful_messages, 0, 1_000_000)) return null;
+  if (!Number.isInteger(aggregate.frustrated_messages) || !finiteBetween(aggregate.frustrated_messages, 0, 1_000_000)) return null;
+  if (!Number.isInteger(aggregate.instrumental_workarounds) || !finiteBetween(aggregate.instrumental_workarounds, 0, 1_000_000)) return null;
   if (aggregate.favorite_phrase !== null && (typeof aggregate.favorite_phrase !== "string" || !/^[a-z]+(?:'[a-z]+)?(?: [a-z]+(?:'[a-z]+)?){3,9}$/.test(aggregate.favorite_phrase))) return null;
   if (!Number.isInteger(aggregate.phrase_occurrences) || !finiteBetween(aggregate.phrase_occurrences, 0, 10_000_000)) return null;
   if (!Number.isInteger(aggregate.phrase_sessions) || !finiteBetween(aggregate.phrase_sessions, 0, aggregate.phrase_occurrences)) return null;
@@ -196,12 +213,24 @@ function histogram(rows, field, buckets) {
   return buckets.map((bucket, index) => ({ ...bucket, count: counts[index] }));
 }
 
+function goodHumanScore(value) {
+  const grateful = Number(value.grateful_messages) || 0;
+  const frustrated = Number(value.frustrated_messages) || 0;
+  return grateful + frustrated ? Number((grateful / (grateful + frustrated) * 100).toFixed(1)) : null;
+}
+
+function histogramValues(values, buckets) {
+  return histogram(values.map((value) => ({ value })), "value", buckets);
+}
+
 async function leaderboardSnapshot(env, aggregate, hash) {
   if (!env.LEADERBOARD_DB) throw new Error("Leaderboard storage is not configured.");
-  const [values, publicTokens, publicRatios, phraseRows, globalPhrase, participation] = await Promise.all([
-    env.LEADERBOARD_DB.prepare("SELECT tokens, word_ratio FROM leaderboard_entries").all(),
+  const [values, publicTokens, publicRatios, publicGoodHumans, publicWorkarounds, phraseRows, globalPhrase, participation] = await Promise.all([
+    env.LEADERBOARD_DB.prepare("SELECT tokens, word_ratio, grateful_messages, frustrated_messages, instrumental_workarounds FROM leaderboard_entries").all(),
     env.LEADERBOARD_DB.prepare("SELECT display_name, tokens FROM leaderboard_entries WHERE public_ranked = 1 ORDER BY tokens DESC, updated_at ASC LIMIT 10").all(),
     env.LEADERBOARD_DB.prepare("SELECT display_name, word_ratio FROM leaderboard_entries WHERE public_ranked = 1 ORDER BY word_ratio DESC, updated_at ASC LIMIT 10").all(),
+    env.LEADERBOARD_DB.prepare("SELECT display_name, grateful_messages, frustrated_messages FROM leaderboard_entries WHERE public_ranked = 1 AND grateful_messages + frustrated_messages > 0 ORDER BY (100.0 * grateful_messages) / (grateful_messages + frustrated_messages) DESC, grateful_messages + frustrated_messages DESC, updated_at ASC LIMIT 10").all(),
+    env.LEADERBOARD_DB.prepare("SELECT display_name, instrumental_workarounds FROM leaderboard_entries WHERE public_ranked = 1 ORDER BY instrumental_workarounds DESC, updated_at ASC LIMIT 10").all(),
     env.LEADERBOARD_DB.prepare("SELECT favorite_phrase, phrase_occurrences, phrase_sessions FROM leaderboard_entries WHERE favorite_phrase IS NOT NULL ORDER BY updated_at DESC LIMIT 48").all(),
     env.LEADERBOARD_DB.prepare("SELECT favorite_phrase, SUM(phrase_occurrences) AS total_occurrences, COUNT(*) AS contributors FROM leaderboard_entries WHERE favorite_phrase IS NOT NULL GROUP BY favorite_phrase ORDER BY total_occurrences DESC, contributors DESC LIMIT 1").first(),
     env.LEADERBOARD_DB.prepare("SELECT display_name, public_ranked, favorite_phrase IS NOT NULL AS shares_phrase FROM leaderboard_entries WHERE client_hash = ?").bind(hash).first(),
@@ -209,6 +238,10 @@ async function leaderboardSnapshot(env, aggregate, hash) {
   const rows = values.results || [];
   const tokenAtOrBelow = rows.filter((row) => Number(row.tokens) <= aggregate.tokens).length;
   const ratioAtOrBelow = rows.filter((row) => Number(row.word_ratio) <= aggregate.word_ratio).length;
+  const score = goodHumanScore(aggregate);
+  const cohortScores = rows.map(goodHumanScore).filter((value) => value !== null);
+  const scoreAtOrBelow = score === null ? 0 : cohortScores.filter((value) => value <= score).length;
+  const workaroundAtOrBelow = rows.filter((row) => Number(row.instrumental_workarounds) <= aggregate.instrumental_workarounds).length;
   return {
     cohort_size: rows.length,
     tokens: {
@@ -223,6 +256,18 @@ async function leaderboardSnapshot(env, aggregate, hash) {
       distribution: histogram(rows, "word_ratio", ratioBuckets),
       top: (publicRatios.results || []).map((row, index) => ({ rank: index + 1, name: row.display_name, value: Number(row.word_ratio) })),
     },
+    good_human_score: {
+      value: score,
+      percentile: score === null ? null : percentile(scoreAtOrBelow, cohortScores.length),
+      distribution: histogramValues(cohortScores, goodHumanBuckets),
+      top: (publicGoodHumans.results || []).map((row, index) => ({ rank: index + 1, name: row.display_name, value: goodHumanScore(row) })),
+    },
+    instrumental_workarounds: {
+      value: aggregate.instrumental_workarounds,
+      percentile: percentile(workaroundAtOrBelow, rows.length),
+      distribution: histogram(rows, "instrumental_workarounds", workaroundBuckets),
+      top: (publicWorkarounds.results || []).map((row, index) => ({ rank: index + 1, name: row.display_name, value: Number(row.instrumental_workarounds) })),
+    },
     phrases: {
       global: globalPhrase ? { phrase: globalPhrase.favorite_phrase, occurrences: Number(globalPhrase.total_occurrences), contributors: Number(globalPhrase.contributors) } : null,
       wall: (phraseRows.results || []).map((row) => ({ phrase: row.favorite_phrase, occurrences: Number(row.phrase_occurrences), sessions: Number(row.phrase_sessions) })),
@@ -236,6 +281,9 @@ function aggregateFromPublicReport(report) {
   return validateLeaderboardAggregate({
     tokens: Math.round(safeNumber(stats.tokens)), agent_words: Math.round(safeNumber(stats.agentWords)), user_words: Math.round(safeNumber(stats.userWords)),
     word_ratio: safeNumber(stats.agentUserWordRatio, 10_000), favorite_phrase: report.phraseCard?.phrase || null,
+    grateful_messages: Math.round(safeNumber(stats.interactionTone?.gratefulMessages, 1_000_000)),
+    frustrated_messages: Math.round(safeNumber(stats.interactionTone?.frustratedMessages, 1_000_000)),
+    instrumental_workarounds: Math.round(safeNumber(report.workaroundCard?.count, 1_000_000)),
     phrase_occurrences: Math.round(safeNumber(report.phraseCard?.occurrences, 10_000_000)), phrase_sessions: Math.round(safeNumber(report.phraseCard?.distinctSessions, 1_000_000)),
   });
 }
@@ -314,13 +362,15 @@ async function handleLeaderboard(request, env) {
   if (!env.LEADERBOARD_DB) return json({ error: "Leaderboard storage is not configured." }, 503);
   const phrase = body.include_phrase ? aggregate.favorite_phrase : null;
   await env.LEADERBOARD_DB.prepare(`INSERT INTO leaderboard_entries
-    (client_hash, display_name, public_ranked, tokens, agent_words, user_words, word_ratio, favorite_phrase, phrase_occurrences, phrase_sessions, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    (client_hash, display_name, public_ranked, tokens, agent_words, user_words, word_ratio, grateful_messages, frustrated_messages, instrumental_workarounds, favorite_phrase, phrase_occurrences, phrase_sessions, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(client_hash) DO UPDATE SET display_name=excluded.display_name, public_ranked=excluded.public_ranked,
     tokens=excluded.tokens, agent_words=excluded.agent_words, user_words=excluded.user_words, word_ratio=excluded.word_ratio,
+    grateful_messages=excluded.grateful_messages, frustrated_messages=excluded.frustrated_messages, instrumental_workarounds=excluded.instrumental_workarounds,
     favorite_phrase=excluded.favorite_phrase, phrase_occurrences=excluded.phrase_occurrences,
     phrase_sessions=excluded.phrase_sessions, updated_at=datetime('now')`).bind(
       hash, name, body.public_ranked ? 1 : 0, aggregate.tokens, aggregate.agent_words, aggregate.user_words, aggregate.word_ratio,
+      aggregate.grateful_messages, aggregate.frustrated_messages, aggregate.instrumental_workarounds,
       phrase, phrase ? aggregate.phrase_occurrences : 0, phrase ? aggregate.phrase_sessions : 0,
     ).run();
   return json(await leaderboardSnapshot(env, aggregate, hash));
@@ -332,13 +382,15 @@ async function saveLeaderboardEntry(env, hash, aggregate, body) {
   if (!name) return { error: "Display name must be 32 characters or fewer and contain only letters, numbers, spaces, dots, underscores, or hyphens.", status: 400 };
   const phrase = body.includePhrase ? aggregate.favorite_phrase : null;
   await env.LEADERBOARD_DB.prepare(`INSERT INTO leaderboard_entries
-    (client_hash, display_name, public_ranked, tokens, agent_words, user_words, word_ratio, favorite_phrase, phrase_occurrences, phrase_sessions, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    (client_hash, display_name, public_ranked, tokens, agent_words, user_words, word_ratio, grateful_messages, frustrated_messages, instrumental_workarounds, favorite_phrase, phrase_occurrences, phrase_sessions, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(client_hash) DO UPDATE SET display_name=excluded.display_name, public_ranked=excluded.public_ranked,
     tokens=excluded.tokens, agent_words=excluded.agent_words, user_words=excluded.user_words, word_ratio=excluded.word_ratio,
+    grateful_messages=excluded.grateful_messages, frustrated_messages=excluded.frustrated_messages, instrumental_workarounds=excluded.instrumental_workarounds,
     favorite_phrase=excluded.favorite_phrase, phrase_occurrences=excluded.phrase_occurrences,
     phrase_sessions=excluded.phrase_sessions, updated_at=datetime('now')`).bind(
       hash, name, body.publicRanked ? 1 : 0, aggregate.tokens, aggregate.agent_words, aggregate.user_words, aggregate.word_ratio,
+      aggregate.grateful_messages, aggregate.frustrated_messages, aggregate.instrumental_workarounds,
       phrase, phrase ? aggregate.phrase_occurrences : 0, phrase ? aggregate.phrase_sessions : 0,
     ).run();
   return null;

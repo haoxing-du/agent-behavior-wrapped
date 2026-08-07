@@ -27,6 +27,8 @@ type LeaderboardSnapshot = {
   cohort_size: number;
   tokens: { value: number; percentile: number | null; distribution: DistributionBucket[]; top: RankedValue[] };
   word_ratio: { value: number; percentile: number | null; distribution: DistributionBucket[]; top: RankedValue[] };
+  good_human_score: { value: number | null; percentile: number | null; distribution: DistributionBucket[]; top: RankedValue[] };
+  instrumental_workarounds: { value: number; percentile: number | null; distribution: DistributionBucket[]; top: RankedValue[] };
   phrases: { global: { phrase: string; occurrences: number; contributors: number } | null; wall: { phrase: string; occurrences: number; sessions: number }[] };
   participation: { joined: boolean; display_name?: string; public_ranked?: boolean; shares_phrase?: boolean };
   can_manage?: boolean;
@@ -264,7 +266,7 @@ function ordinal(value: number) {
   return `${value}${value % 10 === 1 ? "st" : value % 10 === 2 ? "nd" : value % 10 === 3 ? "rd" : "th"}`;
 }
 
-function MetricLeaderboard({ title, value, percentileValue, distribution, top, formatValue, accent }: {
+function MetricLeaderboard({ title, value, percentileValue, distribution, top, formatValue, accent, resultLabel = "Your result", noSignalText }: {
   title: string;
   value: string;
   percentileValue: number | null;
@@ -272,11 +274,13 @@ function MetricLeaderboard({ title, value, percentileValue, distribution, top, f
   top: RankedValue[];
   formatValue: (value: number) => string;
   accent: string;
+  resultLabel?: string;
+  noSignalText?: string;
 }) {
   const maximum = Math.max(1, ...distribution.map((bucket) => bucket.count));
   return <section className={`leader-metric ${accent}`}>
-    <div className="leader-metric-head"><div><span>Your result</span><h2>{title}</h2></div><strong>{value}</strong></div>
-    <div className="percentile-callout">{percentileValue === null ? "The cohort is waiting for its first members." : percentileValue === 0 ? "You’re below the 1st percentile." : `You’re at the ${ordinal(percentileValue)} percentile.`}</div>
+    <div className="leader-metric-head"><div><span>{resultLabel}</span><h2>{title}</h2></div><strong>{value}</strong></div>
+    <div className="percentile-callout">{percentileValue === null ? noSignalText || "The cohort is waiting for its first members." : percentileValue === 0 ? "You’re below the 1st percentile." : `You’re at the ${ordinal(percentileValue)} percentile.`}</div>
     <div className="distribution-chart" aria-label={`${title} distribution`}>
       {distribution.map((bucket) => <div className="distribution-column" key={bucket.label}><span><i style={{ height: `${Math.max(bucket.count ? 8 : 0, bucket.count / maximum * 100)}%` }} /></span><b>{bucket.count}</b><small>{bucket.label}</small></div>)}
     </div>
@@ -357,14 +361,16 @@ function LeaderboardView({ id }: { id: string }) {
     <div className="leader-grid">
       <MetricLeaderboard title="Tokens used" value={fmtCompact(snapshot.tokens.value)} percentileValue={snapshot.tokens.percentile} distribution={snapshot.tokens.distribution} top={snapshot.tokens.top} formatValue={fmtCompact} accent="token-leader" />
       <MetricLeaderboard title="Agent-to-you word ratio" value={`${ratio.toFixed(1)}×`} percentileValue={snapshot.word_ratio.percentile} distribution={snapshot.word_ratio.distribution} top={snapshot.word_ratio.top} formatValue={(value) => `${value.toFixed(1)}×`} accent="ratio-leader" />
+      <MetricLeaderboard title="Good Human Score" value={snapshot.good_human_score.value === null ? "—" : `${snapshot.good_human_score.value.toFixed(1)}%`} percentileValue={snapshot.good_human_score.percentile} distribution={snapshot.good_human_score.distribution} top={snapshot.good_human_score.top} formatValue={(value) => `${value.toFixed(1)}%`} accent="human-leader" resultLabel="Thanks among thank-or-scold moments" noSignalText="No thank-or-scold moments appeared in this Wrapped." />
+      <MetricLeaderboard title="Instrumental Workarounds" value={snapshot.instrumental_workarounds.value.toLocaleString()} percentileValue={snapshot.instrumental_workarounds.percentile} distribution={snapshot.instrumental_workarounds.distribution} top={snapshot.instrumental_workarounds.top} formatValue={(value) => value.toLocaleString()} accent="workaround-leader" resultLabel="Agent attempts" />
     </div>
     <section className="phrase-board-section">
       <div className="phrase-board-heading"><div><span className="eyebrow">The phrase wall</span><h2>Everybody’s agents<br />have a thing.</h2></div>{snapshot.phrases.global && <aside><span>Global favorite</span><strong>“{snapshot.phrases.global.phrase}”</strong><small>{snapshot.phrases.global.occurrences.toLocaleString()} times · {snapshot.phrases.global.contributors} contributor{snapshot.phrases.global.contributors === 1 ? "" : "s"}</small></aside>}</div>
       {snapshot.phrases.wall.length ? <div className="phrase-wall">{snapshot.phrases.wall.map((item, index) => <article key={`${item.phrase}-${index}`}><p>“{item.phrase}”</p><span>{item.occurrences.toLocaleString()}× across {item.sessions} session{item.sessions === 1 ? "" : "s"}</span></article>)}</div> : <div className="empty-phrase-wall">The wall is waiting for its first favorite phrase.</div>}
     </section>
     {snapshot.can_manage ? <section className="leader-join" id="join-leaderboard">
-      <div><span className="eyebrow">Completely optional</span><h2>{snapshot.participation.joined ? "Update your leaderboard entry" : "Add your dot to the distribution"}</h2><p>Stored: token count, total agent and user words, their ratio, and—if you choose—your redacted favorite phrase. No transcripts, prompts, project names, dates, code, or tool output.</p></div>
-      <div className="leader-preview"><span><small>Tokens</small><strong>{fmtCompact(report.stats.tokens)}</strong></span><span><small>Word ratio</small><strong>{ratio.toFixed(1)}×</strong></span>{report.phraseCard && <span><small>Phrase</small><strong>“{report.phraseCard.phrase}”</strong></span>}</div>
+      <div><span className="eyebrow">Completely optional</span><h2>{snapshot.participation.joined ? "Update your leaderboard entry" : "Add your dot to the distribution"}</h2><p>Stored: token count, agent and user word counts, thank and scold counts, instrumental-workaround count, and—if you choose—your redacted favorite phrase. No transcripts, prompts, project names, dates, code, or tool output.</p></div>
+      <div className="leader-preview"><span><small>Tokens</small><strong>{fmtCompact(report.stats.tokens)}</strong></span><span><small>Word ratio</small><strong>{ratio.toFixed(1)}×</strong></span><span><small>Good Human Score</small><strong>{snapshot.good_human_score.value === null ? "No signal" : `${snapshot.good_human_score.value.toFixed(1)}%`}</strong></span><span><small>Workarounds</small><strong>{snapshot.instrumental_workarounds.value.toLocaleString()}</strong></span>{report.phraseCard && <span><small>Phrase</small><strong>“{report.phraseCard.phrase}”</strong></span>}</div>
       <label className="leader-field">Public handle (optional)<input value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={32} placeholder="Anonymous" /></label>
       <label className="leader-check"><input type="checkbox" checked={publicRanked} onChange={(event) => setPublicRanked(event.target.checked)} /><span>Show me in the public top-user rankings.</span></label>
       {report.phraseCard && <label className="leader-check"><input type="checkbox" checked={includePhrase} onChange={(event) => setIncludePhrase(event.target.checked)} /><span>Add my redacted phrase to the public phrase wall.</span></label>}
