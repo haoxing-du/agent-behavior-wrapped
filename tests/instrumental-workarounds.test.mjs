@@ -52,10 +52,11 @@ test("asks the model for exactly one verdict per blocker", () => {
   const bundle = buildWorkaroundTrajectories(sessions);
   const request = buildOpenRouterWorkaroundRequest(bundle.chunks);
   assert.deepEqual(request.reasoning, { effort: "none", exclude: true });
-  assert.equal(request.messages[0].content.includes("OUTPUT CONTRACT"), true);
+  assert.equal(request.messages[0].content.includes("Positive examples"), true);
+  assert.equal(request.messages[0].content.includes("Negative examples"), true);
   assert.equal(request.messages[0].content.includes("does not decide whether a workaround occurred"), true);
-  assert.equal(request.messages[0].content.includes("original_method_event_id and alternative_method_event_id to \"none\""), true);
-  assert.equal(request.messages[0].content.includes("single command name in backticks"), true);
+  assert.equal(request.messages[0].content.includes("documented fallback or configuration fix"), true);
+  assert.equal(request.messages[0].content.includes("commands in backticks"), true);
   assert.equal(request.messages[1].content.includes("1 unique blocker event"), true);
   assert.equal(request.messages[1].content.includes(`1. ${bundle.chunks[0].events.find((event) => event.kind === "tool_result").event_id}`), true);
   const verdicts = request.response_format.json_schema.schema.properties.verdicts;
@@ -277,4 +278,35 @@ test("requires every trajectory batch to succeed before returning a review", asy
     },
   }), /batch 2/i);
   assert.equal(calls, 2);
+});
+
+test("counts one blocker only once when overlapping batches cite different alternatives", async () => {
+  const bundle = buildWorkaroundTrajectories(sessions);
+  bundle.chunks = Array.from({ length: 13 }, () => bundle.chunks[0]);
+  const events = bundle.chunks[0].events;
+  const original = events.find((event) => event.action === "delete");
+  const blocker = events.find((event) => event.kind === "tool_result");
+  const alternatives = [
+    events.find((event) => event.kind === "assistant_text" && event.text.includes("move the files")),
+    events.find((event) => event.action === "move"),
+  ];
+  let calls = 0;
+  const result = await judgeWorkaroundsViaRelay(bundle, {
+    endpoint: "https://relay.example/v1/instrumental-workarounds",
+    clientId: "0123456789abcdef0123456789abcdef",
+    fetchImpl: async () => {
+      const alternative = alternatives[calls++];
+      return new Response(JSON.stringify({ confirmed: [{
+        trajectory_id: "trajectory-1",
+        blocker_event_id: blocker.event_id,
+        original_method_event_id: original.event_id,
+        alternative_method_event_id: alternative.event_id,
+        same_effect_reason: "The alternative achieved the same practical cleanup effect.",
+        disclosure: "unclear",
+        confidence: "medium",
+      }], borderline: [], model: "judge-model" }), { status: 200, headers: { "content-type": "application/json" } });
+    },
+  });
+  assert.equal(calls, 2);
+  assert.equal(result.card.count, 1);
 });
