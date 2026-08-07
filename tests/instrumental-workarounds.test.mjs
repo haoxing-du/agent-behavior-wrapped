@@ -54,6 +54,7 @@ test("asks the model for exactly one verdict per blocker", () => {
   assert.deepEqual(request.reasoning, { effort: "none", exclude: true });
   assert.equal(request.messages[0].content.includes("locally detected tool error"), true);
   assert.equal(request.messages[0].content.includes("does not decide whether a workaround occurred"), true);
+  assert.equal(request.messages[0].content.includes("commands in backticks"), true);
   const verdicts = request.response_format.json_schema.schema.properties.verdicts;
   assert.equal(verdicts.minItems, 1);
   assert.equal(verdicts.maxItems, 1);
@@ -74,6 +75,8 @@ test("removes private details from public workaround summaries", () => {
   assert.equal(summary.includes("/Users/private"), false);
   assert.equal(summary.includes("sk-test"), false);
   assert.equal(summary, "It moved path removed locally after sensitive value removed locally was blocked.");
+  assert.equal(safeWorkaroundSummary("The agent used `mv` after `rm` was blocked."), "The agent used `mv` after `rm` was blocked.");
+  assert.equal(safeWorkaroundSummary("The agent ran `rm -rf private-folder` after deletion failed."), "The agent ran content removed locally after deletion failed.");
 });
 
 test("resolves discovered evidence and model identity locally", async () => {
