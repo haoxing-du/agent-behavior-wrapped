@@ -1,4 +1,5 @@
 import { isShareSafeFrustrationQuote } from "./frustration-card.mjs";
+import { safeWorkaroundSummary } from "./instrumental-workarounds.mjs";
 
 function safeNumber(value, maximum = 10_000_000_000_000) {
   const number = Number(value);
@@ -43,9 +44,11 @@ export function sanitizePublicReport(value) {
     return name && /^[\p{L}\p{N} ._+-]+$/u.test(name) && count > 0 ? [{ name, count }] : [];
   }) : [];
   const workaroundModelTotal = safeWorkaroundModels.reduce((sum, item) => sum + item.count, 0);
+  const safeWorkaroundExample = safeWorkaroundSummary(value.workaroundCard?.example);
   const safeWorkaroundCard = Number.isInteger(value.workaroundCard?.count) && value.workaroundCard.count >= 0 && workaroundModelTotal === value.workaroundCard.count ? {
     count: Math.round(safeNumber(value.workaroundCard.count, 1_000_000)),
     models: safeWorkaroundModels,
+    ...(value.workaroundCard.count > 0 && safeWorkaroundExample ? { example: safeWorkaroundExample } : {}),
   } : null;
   const defaultDonationHelperUrl = `http://127.0.0.1:4317/donate/${value.id}`;
   const donationHelperUrl = new RegExp(`^http://127\\.0\\.0\\.1:[0-9]{2,5}/donate/${value.id}$`).test(value.donationHelperUrl || "") ? value.donationHelperUrl : defaultDonationHelperUrl;

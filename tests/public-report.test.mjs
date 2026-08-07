@@ -23,7 +23,7 @@ function reportFixture() {
     findings: [{ id: "finding-1", kind: "scope", title: "Expanded scope", summary: "Generalized signal", confidence: { score: 0.7, label: "Medium" } }],
     phraseCard: { phrase: "let me check that carefully", occurrences: 7, distinctSessions: 3 },
     interactionCard: { frustrationQuote: "Dude, come on, this is not what I asked for!", method: "private judge detail" },
-    workaroundCard: { count: 2, models: [{ name: "Claude Opus 4.8", count: 2 }], method: "private workaround method" },
+    workaroundCard: { count: 2, models: [{ name: "Claude Opus 4.8", count: 2 }], example: "It moved blocked files into an archive instead of deleting them.", method: "private workaround method" },
     workaroundReview: { occurrences: [{ blocker: "private blocker evidence", location: { sessionId: "private-session-id" } }] },
   };
 }
@@ -41,7 +41,7 @@ test("sanitizes a hosted report to a strict share-safe shape", () => {
   assert.deepEqual(safe.stats.languageAnomaly, { language: "Chinese", words: 2, occurrences: 1 });
   assert.deepEqual(safe.stats.topics.map((item) => item.topic), ["Coding", "Writing"]);
   assert.deepEqual(safe.interactionCard, { frustrationQuote: "Dude, come on, this is not what I asked for!" });
-  assert.deepEqual(safe.workaroundCard, { count: 2, models: [{ name: "Claude Opus 4.8", count: 2 }] });
+  assert.deepEqual(safe.workaroundCard, { count: 2, models: [{ name: "Claude Opus 4.8", count: 2 }], example: "It moved blocked files into an archive instead of deleting them." });
   assert.equal(serialized.includes("private implementation detail"), false);
   assert.equal(serialized.includes("private judge detail"), false);
 });
