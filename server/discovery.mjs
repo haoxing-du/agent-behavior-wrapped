@@ -303,7 +303,10 @@ function restrictionErrorSummary(value) {
 
 function normalizeCodexRecords(records) {
   const normalized = [];
-  let currentModel = "Codex model";
+  const firstDeclaredModel = records.find((record) => record?.type === "turn_context" && typeof record?.payload?.model === "string" && record.payload.model)?.payload.model;
+  const isForkedSession = records.some((record) => record?.type === "session_meta" && (record?.payload?.forked_from_id || record?.payload?.parent_thread_id));
+  let currentModel = firstDeclaredModel || "Codex model";
+  let hasSeenModelContext = false;
   const pendingTools = new Map();
   const anonymousTools = [];
   let previousUsage = { input_tokens: 0, output_tokens: 0, cache_write_input_tokens: 0, cached_input_tokens: 0 };
@@ -311,6 +314,7 @@ function normalizeCodexRecords(records) {
     const payload = record?.payload || {};
     if (record.type === "turn_context" && typeof payload.model === "string") {
       currentModel = payload.model;
+      hasSeenModelContext = true;
     } else if (record.type === "response_item" && payload.type === "message" && (payload.role === "user" || payload.role === "assistant")) {
       const content = textBlocks(payload.content);
       if (content.length) normalized.push({ type: payload.role, timestamp: record.timestamp, message: { content, ...(payload.role === "assistant" ? { model: currentModel } : {}) } });
@@ -336,6 +340,7 @@ function normalizeCodexRecords(records) {
       const total = payload.info.total_token_usage;
       const usage = Object.fromEntries(Object.keys(previousUsage).map((key) => [key, Math.max(0, (Number(total[key]) || 0) - previousUsage[key])]));
       previousUsage = Object.fromEntries(Object.keys(previousUsage).map((key) => [key, Number(total[key]) || 0]));
+      if (isForkedSession && !hasSeenModelContext) continue;
       if (Object.values(usage).some(Boolean)) normalized.push({
         type: "system",
         timestamp: record.timestamp,

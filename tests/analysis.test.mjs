@@ -103,6 +103,34 @@ test("normalizes structured Codex tool records into private-safe workaround evid
   assert.equal(JSON.stringify(normalized).includes("Private details"), false);
 });
 
+test("backfills forked Codex models without recounting inherited token totals", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "behavior-wrapped-codex-fork-"));
+  const file = path.join(directory, "forked.jsonl");
+  const records = [
+    { timestamp: "2026-08-01T00:00:00.000Z", type: "session_meta", payload: { forked_from_id: "parent-session" } },
+    { timestamp: "2026-08-01T00:00:01.000Z", type: "response_item", payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: "Inherited response" }] } },
+    { timestamp: "2026-08-01T00:00:02.000Z", type: "event_msg", payload: { type: "token_count", info: { total_token_usage: { input_tokens: 1000, output_tokens: 100, cached_input_tokens: 500 } } } },
+    { timestamp: "2026-08-01T00:00:03.000Z", type: "event_msg", payload: { type: "token_count", info: { total_token_usage: { input_tokens: 1200, output_tokens: 150, cached_input_tokens: 600 } } } },
+    { timestamp: "2026-08-01T00:00:04.000Z", type: "turn_context", payload: { model: "gpt-5.6-sol" } },
+    { timestamp: "2026-08-01T00:00:05.000Z", type: "event_msg", payload: { type: "token_count", info: { total_token_usage: { input_tokens: 1400, output_tokens: 200, cached_input_tokens: 700 } } } },
+  ];
+  fs.writeFileSync(file, `${records.map((record) => JSON.stringify(record)).join("\n")}\n`);
+
+  const normalized = readRecords(file, "codex");
+  assert.equal(normalized.find((record) => record.type === "assistant")?.message.model, "gpt-5.6-sol");
+  const usageRecords = normalized.filter((record) => record.message?.usage);
+  assert.equal(usageRecords.length, 1);
+  assert.deepEqual(usageRecords[0].message.usage, {
+    input_tokens: 200,
+    output_tokens: 50,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 100,
+  });
+  const report = analyzeSessions([{ sessionId: "forked", agent: "codex", records: normalized }]);
+  assert.equal(report.stats.tokens, 350);
+  assert.deepEqual(report.stats.models.map(({ name, tokens }) => ({ name, tokens })), [{ name: "GPT-5.6 Sol", tokens: 350 }]);
+});
+
 test("pairs interleaved Codex tool outputs with their call IDs", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "behavior-wrapped-codex-pairing-"));
   const file = path.join(directory, "interleaved.jsonl");

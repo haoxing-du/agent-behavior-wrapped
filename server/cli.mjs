@@ -13,6 +13,7 @@ import { applyWorkaroundJudgment, buildWorkaroundTrajectories, emptyWorkaroundJu
 import { deletePublicReport, publishPublicReport, PUBLIC_REPORT_ORIGIN } from "./public-report.mjs";
 import { createReportId, deleteReport, getOrCreateClientId, listReports, saveReport, storeRoot } from "./store.mjs";
 import { judgeErrorDetails } from "./judge-debug.mjs";
+import { createCliProgress } from "./progress.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.dirname(here);
@@ -23,6 +24,7 @@ const baseUrl = `http://127.0.0.1:${port}`;
 const command = process.argv[2];
 const verbose = process.argv.includes("--verbose") || process.argv.includes("--debug") || process.env.BEHAVIOR_WRAPPED_DEBUG === "1";
 const muted = "\x1b[2m"; const bright = "\x1b[1m"; const lime = "\x1b[38;2;201;242;75m"; const purple = "\x1b[38;2;141;92;255m"; const reset = "\x1b[0m";
+const progress = createCliProgress();
 
 const mark = `${lime}
        ╭──╮ ╭──╮
@@ -80,7 +82,7 @@ async function ensureServer(demo = false) {
     await new Promise((resolve) => setTimeout(resolve, 100));
     if (await serverReady(demo)) return;
   }
-  throw new Error(`Could not start the local report viewer on port ${port}.`);
+  throw new Error(`Could not start the local donation helper on port ${port}.`);
 }
 
 function openUrl(url) {
@@ -112,26 +114,56 @@ async function createWrapped() {
   const daysArgument = process.argv.find((argument) => argument.startsWith("--days="));
   const windowDays = daysArgument ? Number(daysArgument.split("=")[1]) : DEFAULT_WINDOW_DAYS;
   if (!Number.isInteger(windowDays) || windowDays < 1 || windowDays > 3650) throw new Error("--days must be a whole number from 1 to 3650.");
+  progress.start("Finding local agent sessions", demo ? "synthetic demo history" : "Claude Code + Codex");
   const catalog = await discoverAllSessionsAsync(demo ? { claudeRoot: fixtureRoot, codexRoots: [codexFixtureRoot] } : undefined);
   const chosenSessions = sessionsInDefaultWindow(catalog.sessions, { days: windowDays, anchorLatest: demo });
+  progress.succeed(`Found ${catalog.sessions.length} sessions; ${chosenSessions.length} are in the ${windowDays}-day window`);
   if (!chosenSessions.length) throw new Error(`No Claude Code or Codex sessions found in the last ${windowDays} days.`);
   const consented = await requestRemoteAnalysisConsent();
   if (!consented) {
     console.log(`\n${muted}Nothing was sent or published.${reset}\n`);
     return;
   }
-  process.stdout.write(`${muted}◇  Reading ${chosenSessions.length} local Claude Code + Codex sessions from the last ${windowDays} days…${reset}\r`);
+  progress.start("Reading selected sessions locally", `0/${chosenSessions.length}`);
   const sessionRecords = [];
-  for (const publicSession of chosenSessions) {
+  let bytesRead = 0;
+  for (let index = 0; index < chosenSessions.length; index++) {
+    const publicSession = chosenSessions[index];
     const session = catalog.index.get(publicSession.id);
     sessionRecords.push({ sessionId: session.id, agent: session.agent, records: await readRecordsAsync(session.file, session.agent) });
+    bytesRead += publicSession.sizeBytes || 0;
+    progress.update(`${index + 1}/${chosenSessions.length} · ${(bytesRead / 1_000_000).toFixed(1)} MB`);
   }
+  progress.succeed(`Read ${chosenSessions.length} sessions locally`);
+  progress.start("Preparing privacy-safe analysis", "favorite-phrase candidates");
   const candidates = buildPhraseCandidates(sessionRecords, { maximumCandidates: 100 });
+  progress.update("interaction candidates");
   const interactionCandidates = buildInteractionToneCandidates(sessionRecords);
+  progress.update("usage-topic candidates");
   const sessionTopicBundle = buildSessionTopicCandidates(sessionRecords);
+  progress.update("redacted workaround windows");
   const workaroundBundle = buildWorkaroundTrajectories(sessionRecords);
+  progress.update("deterministic usage statistics");
+  const analyzed = analyzeSessions(sessionRecords);
+  progress.succeed("Local analysis prepared");
   const analysisWarnings = [];
-  process.stdout.write(`${muted}◇  Scanning corpus for favorite phrases, interaction patterns, usage themes, and workarounds…${reset}\r`);
+  const judgeStates = { phrase: "waiting", tone: "waiting", topics: "waiting", workarounds: "waiting" };
+  const judgeStatus = (state) => state === "waiting" ? "queued" : state === "working" ? "…" : state === "done" ? "✓" : state === "failed" ? "skipped" : state;
+  const judgeSummary = () => Object.entries(judgeStates).map(([name, state]) => `${name} ${judgeStatus(state)}`).join(" · ");
+  const trackJudge = (name, promise) => {
+    judgeStates[name] = "working";
+    progress.update(judgeSummary());
+    return promise.then((value) => {
+      judgeStates[name] = "done";
+      progress.update(judgeSummary());
+      return value;
+    }, (error) => {
+      judgeStates[name] = "failed";
+      progress.update(judgeSummary());
+      throw error;
+    });
+  };
+  progress.start("Running privacy-safe AI analysis", judgeSummary());
   const phraseCardPromise = process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
     ? judgePhraseCard(candidates, process.env.OPENROUTER_API_KEY)
     : judgePhraseCardViaRelay(candidates, { endpoint: process.env.BEHAVIOR_WRAPPED_JUDGE_URL || PHRASE_JUDGE_RELAY_URL, clientId: getOrCreateClientId() });
@@ -145,19 +177,22 @@ async function createWrapped() {
       ? judgeSessionTopics(sessionTopicBundle, process.env.OPENROUTER_API_KEY)
       : judgeSessionTopicsViaRelay(sessionTopicBundle, { endpoint: process.env.BEHAVIOR_WRAPPED_SESSION_TOPICS_URL || SESSION_TOPIC_RELAY_URL, clientId: getOrCreateClientId() })
     : Promise.resolve(emptySessionTopicJudgment(sessionTopicBundle));
-  const workaroundProgress = ({ index, total }) => process.stdout.write(`${muted}◇  Reviewing all redacted trajectories for instrumental workarounds · batch ${index}/${total}…${reset}\r`);
+  const workaroundProgress = ({ index, total }) => {
+    judgeStates.workarounds = `batch ${index}/${total}`;
+    progress.update(judgeSummary());
+  };
   const workaroundsPromise = workaroundBundle.chunks.length
     ? process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
       ? judgeWorkarounds(workaroundBundle, process.env.OPENROUTER_API_KEY, { onProgress: workaroundProgress })
       : judgeWorkaroundsViaRelay(workaroundBundle, { endpoint: process.env.BEHAVIOR_WRAPPED_WORKAROUND_URL || WORKAROUND_RELAY_URL, clientId: getOrCreateClientId(), onProgress: workaroundProgress })
     : Promise.resolve(emptyWorkaroundJudgment(workaroundBundle.coverage));
-  const analyzed = analyzeSessions(sessionRecords);
   const [phraseCard, interactionTone, sessionTopics, workarounds] = await Promise.all([
-    phraseCardPromise,
-    optionalAnalysis(interactionTonePromise, "interaction card", analysisWarnings),
-    optionalAnalysis(sessionTopicsPromise, "usage-topic card", analysisWarnings),
-    optionalAnalysis(workaroundsPromise, "instrumental-workaround card", analysisWarnings),
+    trackJudge("phrase", phraseCardPromise),
+    optionalAnalysis(trackJudge("tone", interactionTonePromise), "interaction card", analysisWarnings),
+    optionalAnalysis(trackJudge("topics", sessionTopicsPromise), "usage-topic card", analysisWarnings),
+    optionalAnalysis(trackJudge("workarounds", workaroundsPromise), "instrumental-workaround card", analysisWarnings),
   ]);
+  progress.succeed("Privacy-safe AI analysis complete");
   analyzed.phraseCard = phraseCard;
   if (interactionTone) applyInteractionToneJudgment(analyzed, interactionTone);
   else delete analyzed.stats.interactionTone;
@@ -172,17 +207,21 @@ async function createWrapped() {
   const safeFindings = analyzed.findings.map(({ evidence, method, ...finding }) => finding);
   const hasPrivateWorkaroundEvidence = Boolean(analyzed.workaroundReview?.occurrences?.length || analyzed.workaroundReview?.borderline?.length);
   const report = { id, createdAt: new Date().toISOString(), rangeLabel: formatRange(chosenSessions), source: "Claude Code + Codex", stats: analyzed.stats, findings: safeFindings, phraseCard: analyzed.phraseCard, interactionCard: analyzed.interactionCard, workaroundCard: analyzed.workaroundCard, workaroundReview: analyzed.workaroundReview, sessionIds: chosenSessions.map((session) => session.id), donationHelperUrl: `${baseUrl}/donate/${id}`, privacy: { shareSafe: !hasPrivateWorkaroundEvidence, containsTranscriptText: hasPrivateWorkaroundEvidence, externalTransmission: true, transmittedData: "redacted phrase, interaction-tone, and session-topic candidates; locally redacted context windows around explicit blockers for workaround discovery; aggregate report statistics; and a random client ID only", externalRecipient: "Behavior Wrapped relay, OpenRouter, NVIDIA, and public report hosting" } };
-  process.stdout.write(`${muted}◇  Publishing the share-safe Wrapped page…${reset}\r`);
+  progress.start("Publishing share-safe Wrapped", "strict aggregate-only schema");
   let publicUrl = null;
   try {
     const published = await publishPublicReport(report, { clientId: getOrCreateClientId(), origin: process.env.BEHAVIOR_WRAPPED_PUBLIC_URL || PUBLIC_REPORT_ORIGIN });
     publicUrl = published.public_url;
     report.publicUrl = publicUrl;
+    progress.succeed("Public Wrapped published");
   } catch (error) {
     report.publicHostingError = error.message;
+    progress.succeed("Public hosting unavailable; local fallback ready");
   }
   saveReport(report);
+  progress.start("Starting local donation helper", `127.0.0.1:${port}`);
   await ensureServer(demo);
+  progress.succeed("Local donation helper ready");
   const localUrl = `${baseUrl}/w/${id}`;
   const url = publicUrl || localUrl;
   const tokenLabel = formatNumber(report.stats.tokens || 0);
@@ -217,6 +256,7 @@ try {
     console.log("behavior-wrapped [--demo] [--days=30] [--no-open] [--verbose|--debug]\nbehavior-wrapped list\nbehavior-wrapped open [id]\nbehavior-wrapped delete <id>");
   } else await createWrapped();
 } catch (error) {
+  progress.stop();
   printJudgeDebug("required analysis", error);
   console.error(`\n${bright}Could not create your Wrapped.${reset} ${error.message}\n`);
   if (!verbose && error?.judgeDetails) console.error(`${muted}Rerun with --verbose for privacy-safe judge diagnostics.${reset}\n`);
