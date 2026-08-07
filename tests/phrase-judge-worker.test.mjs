@@ -109,18 +109,76 @@ test("worker validates interaction candidates and returns classifications withou
   assert.deepEqual(validateInteractionToneRelayPayload({ candidates: [interactionCandidate] }), [interactionCandidate]);
   assert.equal(validateInteractionToneRelayPayload({ candidates: [{ ...interactionCandidate, text: "See https://private.example" }] }), null);
   let upstreamBody;
-  const selection = {
-    frustrated: [{ candidate_id: "interaction-1", confidence: 0.94 }],
+  const upstreamSelection = {
+    classifications: [{ candidate_id: "interaction-1", frustrated: true, grateful: false }],
+    funniest_frustration_candidate_id: "interaction-1",
+  };
+  const expectedSelection = {
+    frustrated: [{ candidate_id: "interaction-1", confidence: 1 }],
     grateful: [],
     funniest_frustration_candidate_id: "interaction-1",
   };
   const response = await handleRequest(interactionRequest(), env(), async (_url, init) => {
     upstreamBody = JSON.parse(init.body);
-    return new Response(JSON.stringify({ model: OPENROUTER_MODEL, choices: [{ message: { content: JSON.stringify(selection) } }] }), { status: 200, headers: { "content-type": "application/json" } });
+    return new Response(JSON.stringify({ model: OPENROUTER_MODEL, choices: [{ message: { content: JSON.stringify(upstreamSelection) } }] }), { status: 200, headers: { "content-type": "application/json" } });
   });
   assert.equal(response.status, 200);
-  assert.equal(upstreamBody.messages[0].content.includes("Evaluate each supplied excerpt independently"), true);
-  assert.deepEqual(await response.json(), { ...selection, model: OPENROUTER_MODEL, usage: null });
+  assert.equal(upstreamBody.messages[0].content.includes("Evaluate every supplied excerpt independently"), true);
+  assert.deepEqual(await response.json(), { ...expectedSelection, model: OPENROUTER_MODEL, usage: null });
+});
+
+test("worker retries one malformed interaction-tone completion", async () => {
+  let calls = 0;
+  const selection = {
+    classifications: [{ candidate_id: "interaction-1", frustrated: true, grateful: false }],
+    funniest_frustration_candidate_id: "interaction-1",
+  };
+  const response = await handleRequest(interactionRequest(), env(), async () => {
+    calls++;
+    const content = calls === 1 ? "" : JSON.stringify(selection);
+    return new Response(JSON.stringify({ model: OPENROUTER_MODEL, choices: [{ message: { content } }] }), { status: 200, headers: { "content-type": "application/json" } });
+  });
+  assert.equal(calls, 2);
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).frustrated, [{ candidate_id: "interaction-1", confidence: 1 }]);
+});
+
+test("worker batches a full interaction corpus and restores the original candidate IDs", async () => {
+  const candidates = Array.from({ length: 81 }, (_, index) => ({
+    candidate_id: `interaction-${index + 1}`,
+    text: `Dude, candidate message number ${index + 1} was wrong.`,
+    occurrences: 1,
+  }));
+  const upstreamBodies = [];
+  const response = await handleRequest(interactionRequest({ candidates }), env(), async (_url, init) => {
+    const requestBody = JSON.parse(init.body);
+    upstreamBodies.push(requestBody);
+    const supplied = JSON.parse(requestBody.messages[1].content.split("\n\n")[1]);
+    const classifications = supplied.map((item, index) => ({
+      candidate_id: item.candidate_id,
+      frustrated: index === supplied.length - 1,
+      grateful: false,
+    }));
+    return new Response(JSON.stringify({
+      model: OPENROUTER_MODEL,
+      choices: [{ message: { content: JSON.stringify({ classifications, funniest_frustration_candidate_id: classifications.at(-1).candidate_id }) } }],
+      usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 },
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  });
+  assert.equal(response.status, 200);
+  assert.equal(upstreamBodies.length, 3);
+  assert.deepEqual(upstreamBodies.map((body) => body.response_format.json_schema.schema.properties.classifications.maxItems), [30, 30, 21]);
+  assert.deepEqual(await response.json(), {
+    frustrated: [
+      { candidate_id: "interaction-30", confidence: 1 },
+      { candidate_id: "interaction-60", confidence: 1 },
+      { candidate_id: "interaction-81", confidence: 1 },
+    ],
+    grateful: [],
+    funniest_frustration_candidate_id: "interaction-30",
+    model: OPENROUTER_MODEL,
+    usage: { prompt_tokens: 30, completion_tokens: 6, total_tokens: 36 },
+  });
 });
 
 test("worker validates session openings and returns only topic classifications", async () => {

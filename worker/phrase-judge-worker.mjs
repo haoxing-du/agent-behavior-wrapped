@@ -1,6 +1,6 @@
 import { buildOpenRouterJudgeRequest, extractCandidateId, OPENROUTER_MODEL } from "../server/phrase-card.mjs";
 import { buildOpenRouterFrustrationRequest, isShareSafeFrustrationQuote } from "../server/frustration-card.mjs";
-import { buildOpenRouterInteractionToneRequest, extractInteractionToneSelection, INTERACTION_TONE_MAX_CANDIDATES, isShareSafeInteractionText } from "../server/interaction-tone.mjs";
+import { buildOpenRouterInteractionToneRequest, extractInteractionToneSelection, interactionToneBatches, INTERACTION_TONE_MAX_CANDIDATES, isShareSafeInteractionText, mergeInteractionToneSelections, restoreInteractionToneIds } from "../server/interaction-tone.mjs";
 import { buildOpenRouterSessionTopicRequest, extractSessionTopicSelection, isShareSafeTopicMessage, SESSION_TOPIC_MAX_CANDIDATES } from "../server/session-topics.mjs";
 import { buildOpenRouterWorkaroundRequest, extractWorkaroundSelection, validateWorkaroundChunks } from "../server/instrumental-workarounds.mjs";
 import { sanitizePublicReport } from "../server/public-report-schema.mjs";
@@ -475,6 +475,72 @@ async function readLimitedBody(request, maximumBytes = MAX_BODY_BYTES) {
   return new TextDecoder().decode(body);
 }
 
+async function requestOpenRouter(env, fetchImpl, requestBody) {
+  let upstream;
+  try {
+    upstream = await fetchImpl("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
+        "x-title": "Behavior Wrapped",
+      },
+      body: JSON.stringify(requestBody),
+    });
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: "openrouter_fetch_error",
+      name: error?.name || null,
+      message: String(error?.message || "request failed").slice(0, 240),
+    }));
+    return { errorResponse: json({ error: "Card judge is temporarily unavailable.", diagnostic: { code: "upstream_fetch_error", name: safeText(error?.name, 60) || "Error", message: safeUpstreamMessage(error?.message || "request failed") } }, 502), retryable: true };
+  }
+  const body = await upstream.json().catch(() => ({}));
+  if (!upstream.ok) {
+    console.error(JSON.stringify({
+      event: "openrouter_error",
+      status: upstream.status,
+      code: body?.error?.code || null,
+      message: String(body?.error?.message || "request failed").slice(0, 240),
+    }));
+    return { errorResponse: json({ error: "Card judge is temporarily unavailable.", diagnostic: { code: "upstream_http", status: upstream.status, upstream_code: safeText(String(body?.error?.code ?? ""), 80) || null, upstream_message: safeUpstreamMessage(body?.error?.message || "request failed") } }, 502), retryable: upstream.status === 429 || upstream.status >= 500 };
+  }
+  return { body };
+}
+
+function mergedUsage(bodies) {
+  const usage = bodies.map((body) => body.usage).filter(Boolean);
+  return usage.length ? {
+    prompt_tokens: usage.reduce((sum, item) => sum + (item.prompt_tokens || 0), 0),
+    completion_tokens: usage.reduce((sum, item) => sum + (item.completion_tokens || 0), 0),
+    total_tokens: usage.reduce((sum, item) => sum + (item.total_tokens || 0), 0),
+  } : null;
+}
+
+async function judgeInteractionToneBatch(env, fetchImpl, batch) {
+  let lastBody = {};
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const result = await requestOpenRouter(env, fetchImpl, buildOpenRouterInteractionToneRequest(batch.local));
+    if (result.errorResponse) {
+      if (attempt === 0 && result.retryable) continue;
+      return result;
+    }
+    lastBody = result.body;
+    const selection = extractInteractionToneSelection(result.body, batch.local);
+    if (selection) return { body: result.body, selection: restoreInteractionToneIds(selection, batch) };
+  }
+  return { body: lastBody, selection: null };
+}
+
+async function interactionToneCacheEntry(candidates) {
+  const cache = globalThis.caches?.default;
+  if (!cache || !globalThis.crypto?.subtle) return null;
+  const bytes = new TextEncoder().encode(JSON.stringify(candidates));
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const hash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return { cache, key: new Request(`https://agent-behavior-wrapped-judge.haoxingdu.workers.dev/.cache/interaction-tone-v2/${hash}`) };
+}
+
 export async function handleRequest(request, env, fetchImpl = fetch) {
   const url = new URL(request.url);
   if (request.method === "GET" && url.pathname === "/health") return json({ service: "behavior-wrapped-phrase-judge", healthy: true });
@@ -520,6 +586,13 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
   const candidates = workaroundRoute ? validateWorkaroundRelayPayload(body) : sessionTopicRoute ? validateSessionTopicRelayPayload(body) : interactionToneRoute ? validateInteractionToneRelayPayload(body) : frustrationRoute ? validateFrustrationRelayPayload(body) : validateRelayPayload(body);
   if (!candidates) return json({ error: "Invalid redacted analysis payload." }, 400);
 
+  const toneCache = interactionToneRoute ? await interactionToneCacheEntry(candidates) : null;
+  const cachedTone = toneCache ? await toneCache.cache.match(toneCache.key) : null;
+  if (cachedTone) {
+    const cachedBody = await cachedTone.json().catch(() => null);
+    if (cachedBody && extractInteractionToneSelection(cachedBody, candidates)) return json(cachedBody);
+  }
+
   const clientHeader = request.headers.get("x-behavior-wrapped-client") || "";
   const networkId = request.headers.get("cf-connecting-ip") || "unknown";
   const clientKey = /^[a-f0-9]{32}$/.test(clientHeader) ? clientHeader : networkId;
@@ -529,35 +602,26 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
   if (!await applyRateLimit(env.GLOBAL_RATE_LIMITER, "all-clients")) return json({ error: "The shared phrase judge is busy. Try again shortly." }, 429);
   if (!env.OPENROUTER_API_KEY) return json({ error: "Phrase judge is not configured." }, 503);
 
-  let upstream;
-  try {
-    upstream = await fetchImpl("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
-        "x-title": "Behavior Wrapped",
-      },
-      body: JSON.stringify(workaroundRoute ? buildOpenRouterWorkaroundRequest(candidates) : sessionTopicRoute ? buildOpenRouterSessionTopicRequest(candidates) : interactionToneRoute ? buildOpenRouterInteractionToneRequest(candidates) : frustrationRoute ? buildOpenRouterFrustrationRequest(candidates) : buildOpenRouterJudgeRequest(candidates)),
-    });
-  } catch (error) {
-    console.error(JSON.stringify({
-      event: "openrouter_fetch_error",
-      name: error?.name || null,
-      message: String(error?.message || "request failed").slice(0, 240),
-    }));
-    return json({ error: "Card judge is temporarily unavailable.", diagnostic: { code: "upstream_fetch_error", name: safeText(error?.name, 60) || "Error", message: safeUpstreamMessage(error?.message || "request failed") } }, 502);
+  if (interactionToneRoute) {
+    const batches = interactionToneBatches(candidates);
+    const results = await Promise.all(batches.map((batch) => judgeInteractionToneBatch(env, fetchImpl, batch)));
+    const failed = results.find((result) => result.errorResponse);
+    if (failed) return failed.errorResponse;
+    const selections = results.map((result) => result.selection);
+    const invalidIndex = selections.findIndex((selection) => !selection);
+    if (invalidIndex >= 0) return json({ error: "Interaction-tone judge returned an invalid classification.", diagnostic: judgeResponseDiagnostic(results[invalidIndex].body, ["classifications"]) }, 502);
+    const responseBody = {
+      ...mergeInteractionToneSelections(candidates, selections),
+      model: results[0]?.body?.model || OPENROUTER_MODEL,
+      usage: mergedUsage(results.map((result) => result.body)),
+    };
+    if (toneCache) await toneCache.cache.put(toneCache.key, new Response(JSON.stringify(responseBody), { headers: { "content-type": "application/json", "cache-control": "public, max-age=604800" } }));
+    return json(responseBody);
   }
-  const upstreamBody = await upstream.json().catch(() => ({}));
-  if (!upstream.ok) {
-    console.error(JSON.stringify({
-      event: "openrouter_error",
-      status: upstream.status,
-      code: upstreamBody?.error?.code || null,
-      message: String(upstreamBody?.error?.message || "request failed").slice(0, 240),
-    }));
-    return json({ error: "Card judge is temporarily unavailable.", diagnostic: { code: "upstream_http", status: upstream.status, upstream_code: safeText(String(upstreamBody?.error?.code ?? ""), 80) || null, upstream_message: safeUpstreamMessage(upstreamBody?.error?.message || "request failed") } }, 502);
-  }
+
+  const upstreamResult = await requestOpenRouter(env, fetchImpl, workaroundRoute ? buildOpenRouterWorkaroundRequest(candidates) : sessionTopicRoute ? buildOpenRouterSessionTopicRequest(candidates) : frustrationRoute ? buildOpenRouterFrustrationRequest(candidates) : buildOpenRouterJudgeRequest(candidates));
+  if (upstreamResult.errorResponse) return upstreamResult.errorResponse;
+  const upstreamBody = upstreamResult.body;
   const usage = upstreamBody.usage ? {
     prompt_tokens: upstreamBody.usage.prompt_tokens || 0,
     completion_tokens: upstreamBody.usage.completion_tokens || 0,
@@ -566,11 +630,6 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
   if (workaroundRoute) {
     const selection = extractWorkaroundSelection(upstreamBody, candidates);
     if (!selection) return json({ error: "Instrumental-workaround judge returned an invalid review.", diagnostic: judgeResponseDiagnostic(upstreamBody, ["verdicts"]) }, 502);
-    return json({ ...selection, model: upstreamBody.model || OPENROUTER_MODEL, usage });
-  }
-  if (interactionToneRoute) {
-    const selection = extractInteractionToneSelection(upstreamBody, candidates);
-    if (!selection) return json({ error: "Interaction-tone judge returned an invalid classification.", diagnostic: judgeResponseDiagnostic(upstreamBody, ["frustrated", "grateful"]) }, 502);
     return json({ ...selection, model: upstreamBody.model || OPENROUTER_MODEL, usage });
   }
   if (sessionTopicRoute) {
