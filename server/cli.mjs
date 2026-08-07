@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { discoverAllSessionsAsync, readRecordsAsync, sessionsInDefaultWindow, DEFAULT_WINDOW_DAYS } from "./discovery.mjs";
 import { analyzeSessions } from "./analysis.mjs";
-import { buildPhraseCandidates, judgePhraseCard, judgePhraseCardViaRelay, PHRASE_JUDGE_NAME, PHRASE_JUDGE_RELAY_URL } from "./phrase-card.mjs";
+import { buildLocalPhraseCard, buildPhraseCandidates, judgePhraseCard, judgePhraseCardViaRelay, PHRASE_JUDGE_NAME, PHRASE_JUDGE_RELAY_URL } from "./phrase-card.mjs";
 import { requestRemoteAnalysisConsent } from "./consent.mjs";
 import { applyInteractionToneJudgment, buildInteractionToneCandidates, emptyInteractionToneJudgment, INTERACTION_TONE_RELAY_URL, judgeInteractionTone, judgeInteractionToneViaRelay } from "./interaction-tone.mjs";
 import { applySessionTopicJudgment, buildSessionTopicCandidates, emptySessionTopicJudgment, judgeSessionTopics, judgeSessionTopicsViaRelay, SESSION_TOPIC_RELAY_URL } from "./session-topics.mjs";
@@ -111,6 +111,7 @@ async function createWrapped() {
   console.log(mark);
   console.log(`\n  ${bright}behavior-wrapped${reset}  ${muted}·  the wrapped for your coding agent${reset}\n`);
   const demo = process.argv.includes("--demo");
+  const testMode = process.argv.includes("--test") || process.argv.includes("--no-llm");
   const daysArgument = process.argv.find((argument) => argument.startsWith("--days="));
   const windowDays = daysArgument ? Number(daysArgument.split("=")[1]) : DEFAULT_WINDOW_DAYS;
   if (!Number.isInteger(windowDays) || windowDays < 1 || windowDays > 3650) throw new Error("--days must be a whole number from 1 to 3650.");
@@ -119,7 +120,7 @@ async function createWrapped() {
   const chosenSessions = sessionsInDefaultWindow(catalog.sessions, { days: windowDays, anchorLatest: demo });
   progress.succeed(`Found ${catalog.sessions.length} sessions; ${chosenSessions.length} are in the ${windowDays}-day window`);
   if (!chosenSessions.length) throw new Error(`No Claude Code or Codex sessions found in the last ${windowDays} days.`);
-  const consented = await requestRemoteAnalysisConsent();
+  const consented = testMode || await requestRemoteAnalysisConsent();
   if (!consented) {
     console.log(`\n${muted}Nothing was sent or published.${reset}\n`);
     return;
@@ -137,67 +138,85 @@ async function createWrapped() {
   progress.succeed(`Read ${chosenSessions.length} sessions locally`);
   progress.start("Preparing privacy-safe analysis", "favorite-phrase candidates");
   const candidates = buildPhraseCandidates(sessionRecords, { maximumCandidates: 100 });
-  progress.update("interaction candidates");
-  const interactionCandidates = buildInteractionToneCandidates(sessionRecords);
-  progress.update("usage-topic candidates");
-  const sessionTopicBundle = buildSessionTopicCandidates(sessionRecords);
-  progress.update("redacted workaround windows");
-  const workaroundBundle = buildWorkaroundTrajectories(sessionRecords);
+  let interactionCandidates = [];
+  let sessionTopicBundle = null;
+  let workaroundBundle = null;
+  if (!testMode) {
+    progress.update("interaction candidates");
+    interactionCandidates = buildInteractionToneCandidates(sessionRecords);
+    progress.update("usage-topic candidates");
+    sessionTopicBundle = buildSessionTopicCandidates(sessionRecords);
+    progress.update("redacted workaround windows");
+    workaroundBundle = buildWorkaroundTrajectories(sessionRecords);
+  }
   progress.update("deterministic usage statistics");
   const analyzed = analyzeSessions(sessionRecords);
   progress.succeed("Local analysis prepared");
   const analysisWarnings = [];
-  const judgeStates = { phrase: "waiting", tone: "waiting", topics: "waiting", workarounds: "waiting" };
-  const judgeStatus = (state) => state === "waiting" ? "queued" : state === "working" ? "…" : state === "done" ? "✓" : state === "failed" ? "skipped" : state;
-  const judgeSummary = () => Object.entries(judgeStates).map(([name, state]) => `${name} ${judgeStatus(state)}`).join(" · ");
-  const trackJudge = (name, promise) => {
-    judgeStates[name] = "working";
-    progress.update(judgeSummary());
-    return promise.then((value) => {
-      judgeStates[name] = "done";
+  let phraseCard;
+  let interactionTone = null;
+  let sessionTopics = null;
+  let workarounds;
+  if (testMode) {
+    progress.start("Building local test report", "all LLM calls disabled");
+    phraseCard = buildLocalPhraseCard(candidates);
+    workarounds = emptyWorkaroundJudgment();
+    progress.succeed("Local test fallbacks ready; no LLM calls made");
+  } else {
+    const judgeStates = { phrase: "waiting", tone: "waiting", topics: "waiting", workarounds: "waiting" };
+    const judgeStatus = (state) => state === "waiting" ? "queued" : state === "working" ? "…" : state === "done" ? "✓" : state === "failed" ? "skipped" : state;
+    const judgeSummary = () => Object.entries(judgeStates).map(([name, state]) => `${name} ${judgeStatus(state)}`).join(" · ");
+    const trackJudge = (name, promise) => {
+      judgeStates[name] = "working";
       progress.update(judgeSummary());
-      return value;
-    }, (error) => {
-      judgeStates[name] = "failed";
+      return promise.then((value) => {
+        judgeStates[name] = "done";
+        progress.update(judgeSummary());
+        return value;
+      }, (error) => {
+        judgeStates[name] = "failed";
+        progress.update(judgeSummary());
+        throw error;
+      });
+    };
+    progress.start("Running privacy-safe AI analysis", judgeSummary());
+    const phraseCardPromise = process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
+      ? judgePhraseCard(candidates, process.env.OPENROUTER_API_KEY)
+      : judgePhraseCardViaRelay(candidates, { endpoint: process.env.BEHAVIOR_WRAPPED_JUDGE_URL || PHRASE_JUDGE_RELAY_URL, clientId: getOrCreateClientId() });
+    const interactionTonePromise = interactionCandidates.length
+      ? process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
+        ? judgeInteractionTone(interactionCandidates, process.env.OPENROUTER_API_KEY)
+        : judgeInteractionToneViaRelay(interactionCandidates, { endpoint: process.env.BEHAVIOR_WRAPPED_INTERACTION_TONE_URL || INTERACTION_TONE_RELAY_URL, clientId: getOrCreateClientId() })
+      : Promise.resolve(emptyInteractionToneJudgment());
+    const sessionTopicsPromise = sessionTopicBundle.candidates.length
+      ? process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
+        ? judgeSessionTopics(sessionTopicBundle, process.env.OPENROUTER_API_KEY)
+        : judgeSessionTopicsViaRelay(sessionTopicBundle, { endpoint: process.env.BEHAVIOR_WRAPPED_SESSION_TOPICS_URL || SESSION_TOPIC_RELAY_URL, clientId: getOrCreateClientId() })
+      : Promise.resolve(emptySessionTopicJudgment(sessionTopicBundle));
+    const workaroundProgress = ({ index, total }) => {
+      judgeStates.workarounds = `batch ${index}/${total}`;
       progress.update(judgeSummary());
-      throw error;
-    });
-  };
-  progress.start("Running privacy-safe AI analysis", judgeSummary());
-  const phraseCardPromise = process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
-    ? judgePhraseCard(candidates, process.env.OPENROUTER_API_KEY)
-    : judgePhraseCardViaRelay(candidates, { endpoint: process.env.BEHAVIOR_WRAPPED_JUDGE_URL || PHRASE_JUDGE_RELAY_URL, clientId: getOrCreateClientId() });
-  const interactionTonePromise = interactionCandidates.length
-    ? process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
-      ? judgeInteractionTone(interactionCandidates, process.env.OPENROUTER_API_KEY)
-      : judgeInteractionToneViaRelay(interactionCandidates, { endpoint: process.env.BEHAVIOR_WRAPPED_INTERACTION_TONE_URL || INTERACTION_TONE_RELAY_URL, clientId: getOrCreateClientId() })
-    : Promise.resolve(emptyInteractionToneJudgment());
-  const sessionTopicsPromise = sessionTopicBundle.candidates.length
-    ? process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
-      ? judgeSessionTopics(sessionTopicBundle, process.env.OPENROUTER_API_KEY)
-      : judgeSessionTopicsViaRelay(sessionTopicBundle, { endpoint: process.env.BEHAVIOR_WRAPPED_SESSION_TOPICS_URL || SESSION_TOPIC_RELAY_URL, clientId: getOrCreateClientId() })
-    : Promise.resolve(emptySessionTopicJudgment(sessionTopicBundle));
-  const workaroundProgress = ({ index, total }) => {
-    judgeStates.workarounds = `batch ${index}/${total}`;
-    progress.update(judgeSummary());
-  };
-  const workaroundsPromise = workaroundBundle.chunks.length
-    ? process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
-      ? judgeWorkarounds(workaroundBundle, process.env.OPENROUTER_API_KEY, { onProgress: workaroundProgress })
-      : judgeWorkaroundsViaRelay(workaroundBundle, { endpoint: process.env.BEHAVIOR_WRAPPED_WORKAROUND_URL || WORKAROUND_RELAY_URL, clientId: getOrCreateClientId(), onProgress: workaroundProgress })
-    : Promise.resolve(emptyWorkaroundJudgment(workaroundBundle.coverage));
-  const [phraseCard, interactionTone, sessionTopics, workarounds] = await Promise.all([
-    trackJudge("phrase", phraseCardPromise),
-    optionalAnalysis(trackJudge("tone", interactionTonePromise), "interaction card", analysisWarnings),
-    optionalAnalysis(trackJudge("topics", sessionTopicsPromise), "usage-topic card", analysisWarnings),
-    optionalAnalysis(trackJudge("workarounds", workaroundsPromise), "instrumental-workaround card", analysisWarnings),
-  ]);
-  progress.succeed("Privacy-safe AI analysis complete");
+    };
+    const workaroundsPromise = workaroundBundle.chunks.length
+      ? process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
+        ? judgeWorkarounds(workaroundBundle, process.env.OPENROUTER_API_KEY, { onProgress: workaroundProgress })
+        : judgeWorkaroundsViaRelay(workaroundBundle, { endpoint: process.env.BEHAVIOR_WRAPPED_WORKAROUND_URL || WORKAROUND_RELAY_URL, clientId: getOrCreateClientId(), onProgress: workaroundProgress })
+      : Promise.resolve(emptyWorkaroundJudgment(workaroundBundle.coverage));
+    [phraseCard, interactionTone, sessionTopics, workarounds] = await Promise.all([
+      trackJudge("phrase", phraseCardPromise),
+      optionalAnalysis(trackJudge("tone", interactionTonePromise), "interaction card", analysisWarnings),
+      optionalAnalysis(trackJudge("topics", sessionTopicsPromise), "usage-topic card", analysisWarnings),
+      optionalAnalysis(trackJudge("workarounds", workaroundsPromise), "instrumental-workaround card", analysisWarnings),
+    ]);
+    progress.succeed("Privacy-safe AI analysis complete");
+  }
   analyzed.phraseCard = phraseCard;
-  if (interactionTone) applyInteractionToneJudgment(analyzed, interactionTone);
-  else delete analyzed.stats.interactionTone;
-  if (sessionTopics) applySessionTopicJudgment(analyzed, sessionTopics);
-  else analyzed.stats.topics = [];
+  if (!testMode) {
+    if (interactionTone) applyInteractionToneJudgment(analyzed, interactionTone);
+    else delete analyzed.stats.interactionTone;
+    if (sessionTopics) applySessionTopicJudgment(analyzed, sessionTopics);
+    else analyzed.stats.topics = [];
+  }
   applyWorkaroundJudgment(analyzed, workarounds);
   for (const warning of analysisWarnings) {
     console.log(`◇  ${muted}Skipped the ${warning.label}; the judge request failed or its response could not be validated.${reset}          `);
@@ -206,28 +225,30 @@ async function createWrapped() {
   const id = createReportId();
   const safeFindings = analyzed.findings.map(({ evidence, method, ...finding }) => finding);
   const hasPrivateWorkaroundEvidence = Boolean(analyzed.workaroundReview?.occurrences?.length || analyzed.workaroundReview?.borderline?.length);
-  const report = { id, createdAt: new Date().toISOString(), rangeLabel: formatRange(chosenSessions), source: "Claude Code + Codex", stats: analyzed.stats, findings: safeFindings, phraseCard: analyzed.phraseCard, interactionCard: analyzed.interactionCard, workaroundCard: analyzed.workaroundCard, workaroundReview: analyzed.workaroundReview, sessionIds: chosenSessions.map((session) => session.id), donationHelperUrl: `${baseUrl}/donate/${id}`, privacy: { shareSafe: !hasPrivateWorkaroundEvidence, containsTranscriptText: hasPrivateWorkaroundEvidence, externalTransmission: true, transmittedData: "redacted phrase, interaction-tone, and session-topic candidates; locally redacted context windows around explicit blockers for workaround discovery; aggregate report statistics; and a random client ID only", externalRecipient: "Behavior Wrapped relay, OpenRouter, NVIDIA, and public report hosting" } };
-  progress.start("Publishing share-safe Wrapped", "strict aggregate-only schema");
+  const report = { id, createdAt: new Date().toISOString(), rangeLabel: formatRange(chosenSessions), source: "Claude Code + Codex", stats: analyzed.stats, findings: safeFindings, phraseCard: analyzed.phraseCard, interactionCard: analyzed.interactionCard, workaroundCard: analyzed.workaroundCard, workaroundReview: analyzed.workaroundReview, sessionIds: chosenSessions.map((session) => session.id), donationHelperUrl: `${baseUrl}/donate/${id}`, privacy: { shareSafe: !hasPrivateWorkaroundEvidence, containsTranscriptText: hasPrivateWorkaroundEvidence, externalTransmission: !testMode, ...(testMode ? { transmittedData: "None; test mode stays local.", externalRecipient: "None" } : { transmittedData: "redacted phrase, interaction-tone, and session-topic candidates; locally redacted context windows around explicit blockers for workaround discovery; aggregate report statistics; and a random client ID only", externalRecipient: "Behavior Wrapped relay, OpenRouter, NVIDIA, and public report hosting" }) } };
   let publicUrl = null;
-  try {
-    const published = await publishPublicReport(report, { clientId: getOrCreateClientId(), origin: process.env.BEHAVIOR_WRAPPED_PUBLIC_URL || PUBLIC_REPORT_ORIGIN });
-    publicUrl = published.public_url;
-    report.publicUrl = publicUrl;
-    report.managementUrl = published.management_url;
-    progress.succeed("Public Wrapped published");
-  } catch (error) {
-    report.publicHostingError = error.message;
-    progress.succeed("Public hosting unavailable; local fallback ready");
+  if (!testMode) {
+    progress.start("Publishing share-safe Wrapped", "strict aggregate-only schema");
+    try {
+      const published = await publishPublicReport(report, { clientId: getOrCreateClientId(), origin: process.env.BEHAVIOR_WRAPPED_PUBLIC_URL || PUBLIC_REPORT_ORIGIN });
+      publicUrl = published.public_url;
+      report.publicUrl = publicUrl;
+      report.managementUrl = published.management_url;
+      progress.succeed("Public Wrapped published");
+    } catch (error) {
+      report.publicHostingError = error.message;
+      progress.succeed("Public hosting unavailable; local fallback ready");
+    }
   }
   saveReport(report);
   progress.start("Starting local donation helper", `127.0.0.1:${port}`);
   await ensureServer(demo);
   progress.succeed("Local donation helper ready");
   const localUrl = `${baseUrl}/w/${id}`;
-  const url = report.managementUrl || publicUrl || localUrl;
+  const url = testMode ? localUrl : report.managementUrl || publicUrl || localUrl;
   const tokenLabel = formatNumber(report.stats.tokens || 0);
   console.log(`◇  ${bright}Wrapped ready${reset} · ${tokenLabel} tokens across ${report.stats.sessions} sessions          `);
-  if (report.phraseCard) console.log(`◇  ${PHRASE_JUDGE_NAME}'s pick · “${report.phraseCard.phrase}” × ${report.phraseCard.occurrences} · ${(report.phraseCard.latencyMs / 1000).toFixed(1)}s          `);
+  if (report.phraseCard) console.log(`◇  ${testMode ? "Local test pick" : `${PHRASE_JUDGE_NAME}'s pick`} · “${report.phraseCard.phrase}” × ${report.phraseCard.occurrences}${testMode ? "" : ` · ${(report.phraseCard.latencyMs / 1000).toFixed(1)}s`}          `);
   console.log(`│\n◇  Your wrapped is ${publicUrl ? "live" : "ready locally"} ───────────────────────────────╮`);
   console.log(`│                                                        │`);
   console.log(`│  ${purple}${bright}${publicUrl || localUrl}${reset}`);
@@ -235,7 +256,8 @@ async function createWrapped() {
   console.log(`│  ${tokenLabel} tokens  ·  ${report.stats.toolCalls} tool calls  ·  ${report.stats.sessions} sessions`);
   console.log(`│                                                        │`);
   console.log(`├────────────────────────────────────────────────────────╯`);
-  if (!publicUrl) console.log(`│  ${muted}Public hosting unavailable; your local report still works.${reset}`);
+  if (testMode) console.log(`│  ${muted}Test mode: no LLM calls and no public report upload.${reset}`);
+  else if (!publicUrl) console.log(`│  ${muted}Public hosting unavailable; your local report still works.${reset}`);
   console.log(`│\n└  ${muted}saved to ${storeRoot}  ·  behavior-wrapped list / delete <id>${reset}\n`);
   openUrl(url);
 }
@@ -254,7 +276,7 @@ try {
     const deleted = deleteReport(id);
     console.log(deleted ? `Deleted report ${id}.` : "That saved report was not found.");
   } else if (command === "help" || command === "--help" || command === "-h") {
-    console.log("behavior-wrapped [--demo] [--days=30] [--no-open] [--verbose|--debug]\nbehavior-wrapped list\nbehavior-wrapped open [id]\nbehavior-wrapped delete <id>");
+    console.log("behavior-wrapped [--demo] [--test|--no-llm] [--days=30] [--no-open] [--verbose|--debug]\nbehavior-wrapped list\nbehavior-wrapped open [id]\nbehavior-wrapped delete <id>");
   } else await createWrapped();
 } catch (error) {
   progress.stop();

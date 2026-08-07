@@ -196,6 +196,16 @@ function phraseCardFromSelection(candidates, candidateId, { model, provider, lat
   };
 }
 
+export function buildLocalPhraseCard(candidates) {
+  if (!candidates.length) return null;
+  return phraseCardFromSelection(candidates, candidates[0].candidate_id, {
+    model: "Local deterministic selection",
+    provider: "Local test mode",
+    latencyMs: 0,
+    method: "Test mode selected the highest-ranked locally counted phrase without an LLM call.",
+  });
+}
+
 function timeoutMessage(error, timeoutMs) {
   if (error?.name === "TimeoutError" || error?.name === "AbortError") return new Error(`${PHRASE_JUDGE_NAME} timed out after ${Math.round(timeoutMs / 1000)} seconds.`);
   return error;

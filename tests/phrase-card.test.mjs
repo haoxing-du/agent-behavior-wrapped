@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { discoverSessions, readRecords } from "../server/discovery.mjs";
-import { buildPhraseCandidates, OPENROUTER_MODEL, judgePhraseCard, judgePhraseCardViaRelay } from "../server/phrase-card.mjs";
+import { buildLocalPhraseCard, buildPhraseCandidates, OPENROUTER_MODEL, judgePhraseCard, judgePhraseCardViaRelay } from "../server/phrase-card.mjs";
 import { judgeErrorDetails } from "../server/judge-debug.mjs";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "projects");
@@ -31,6 +31,17 @@ test("keeps safe single-occurrence candidates when a small selection has no repe
   assert.ok(candidates.length > 0);
   assert.equal(candidates[0].occurrences, 1);
   assert.equal(candidates[0].distinct_sessions, 1);
+});
+
+test("builds a deterministic local phrase card without a judge call", () => {
+  const candidates = buildPhraseCandidates(fixtureRecords());
+  const card = buildLocalPhraseCard(candidates);
+  assert.equal(card.phrase, candidates[0].phrase);
+  assert.equal(card.occurrences, candidates[0].occurrences);
+  assert.equal(card.distinctSessions, candidates[0].distinct_sessions);
+  assert.equal(card.provider, "Local test mode");
+  assert.equal(card.latencyMs, 0);
+  assert.equal(buildLocalPhraseCard([]), null);
 });
 
 test("requires four tokens and rejects dangling or predictably truncated endings", () => {

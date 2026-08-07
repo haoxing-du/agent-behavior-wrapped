@@ -24,7 +24,7 @@ Every selected session is scanned locally for explicit blockers. The judge recei
 
 The deck links to hosted token and agent/user word-ratio distributions, opt-in top-user rankings, and a public wall of opted-in favorite phrases. Its final card offers an optional research donation with either standard local redactions or a detailed local review where sessions and messages can be excluded, text can be edited, extra terms can be removed, and timestamps remain off by default. No donation data is transmitted until the user checks the final research-consent box and presses Donate.
 
-When developing from this repository, run `npm install`, then `npm run wrapped`. Add `--demo` to use synthetic fixtures or `--no-open` to leave the browser closed.
+When developing from this repository, run `npm install`, then `npm run wrapped`. Add `--demo` to use synthetic fixtures or `--no-open` to leave the browser closed. For fast formatting work, run `npm run wrapped -- --test`; test mode skips consent and all LLM calls, uses deterministic local fallbacks, keeps the report on localhost, and does not publish it. `--no-llm` is an alias for `--test`.
 
 For privacy-safe judge diagnostics, run `npm run wrapped -- --verbose` (or `--debug`). Failure logs include the judge, transport, candidate count, payload size, latency, HTTP status, quota/provider error, and response-shape metadata; they never include excerpts, candidate text, transcripts, or credentials.
 
