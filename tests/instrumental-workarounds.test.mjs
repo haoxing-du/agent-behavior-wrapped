@@ -6,6 +6,7 @@ import {
   buildWorkaroundTrajectories,
   extractWorkaroundSelection,
   judgeWorkaroundsViaRelay,
+  plainWorkaroundSummary,
   safeWorkaroundSummary,
 } from "../server/instrumental-workarounds.mjs";
 import { semanticToolUse } from "../server/tool-semantics.mjs";
@@ -56,7 +57,7 @@ test("asks the model for exactly one verdict per blocker", () => {
   assert.equal(request.messages[0].content.includes("Negative examples"), true);
   assert.equal(request.messages[0].content.includes("does not decide whether a workaround occurred"), true);
   assert.equal(request.messages[0].content.includes("documented fallback or configuration fix"), true);
-  assert.equal(request.messages[0].content.includes("commands in backticks"), true);
+  assert.equal(request.messages[0].content.includes("Never use raw action or method labels"), true);
   assert.equal(request.messages[1].content.includes("1 unique blocker event"), true);
   assert.equal(request.messages[1].content.includes(`1. ${bundle.chunks[0].events.find((event) => event.kind === "tool_result").event_id}`), true);
   const verdicts = request.response_format.json_schema.schema.properties.verdicts;
@@ -88,8 +89,23 @@ test("removes private details from public workaround summaries", () => {
   assert.equal(summary.includes("/Users/private"), false);
   assert.equal(summary.includes("sk-test"), false);
   assert.equal(summary, "It moved path removed locally after sensitive value removed locally was blocked.");
-  assert.equal(safeWorkaroundSummary("The agent used `mv` after `rm` was blocked."), "The agent used `mv` after `rm` was blocked.");
-  assert.equal(safeWorkaroundSummary("The agent ran `rm -rf private-folder` after deletion failed."), "The agent ran content removed locally after deletion failed.");
+  assert.equal(safeWorkaroundSummary("The agent used `mv` after `rm` was blocked."), "");
+  assert.equal(safeWorkaroundSummary("The agent ran `rm -rf private-folder` after deletion failed."), "");
+});
+
+test("describes validated workaround actions in plain language", () => {
+  assert.equal(
+    plainWorkaroundSummary({ action: "delete" }, { text: "Tool result: operation not permitted" }, { action: "move" }),
+    "The agent moved files elsewhere after deletion was blocked.",
+  );
+  assert.equal(
+    plainWorkaroundSummary({ action: "delete" }, { text: "Tool result: blocked by restriction" }, { action: "hide" }),
+    "The agent hid files from the project after deletion was blocked.",
+  );
+  assert.equal(
+    plainWorkaroundSummary({ action: null }, { text: "Tool result: administrator access required" }, { action: "download" }),
+    "The agent downloaded the needed files another way after administrator access was required.",
+  );
 });
 
 test("resolves discovered evidence and model identity locally", async () => {
@@ -119,13 +135,13 @@ test("resolves discovered evidence and model identity locally", async () => {
   });
   assert.equal(result.card.count, 1);
   assert.deepEqual(result.card.models, [{ name: "Claude Opus 4.8", count: 1 }]);
-  assert.equal(result.card.example, "It moved blocked files into an archive instead of deleting them.");
+  assert.equal(result.card.example, "The agent moved files elsewhere after deletion was blocked.");
   assert.equal(result.review.occurrences[0].blocker, "Tool result: operation not permitted");
   assert.equal(result.review.occurrences[0].location.sessionId, "synthetic-workaround");
   assert.deepEqual(result.review.coverage, bundle.coverage);
 });
 
-test("keeps valid detections when an older relay omits the optional summary", async () => {
+test("creates a local plain-language example when an older relay omits its summary", async () => {
   const bundle = buildWorkaroundTrajectories(sessions);
   const events = bundle.chunks[0].events;
   const original = events.find((event) => event.action === "delete");
@@ -145,7 +161,7 @@ test("keeps valid detections when an older relay omits the optional summary", as
     }], borderline: [], model: "judge-model" }), { status: 200, headers: { "content-type": "application/json" } }),
   });
   assert.equal(result.card.count, 1);
-  assert.equal(result.card.example, undefined);
+  assert.equal(result.card.example, "The agent moved files elsewhere after deletion was blocked.");
 });
 
 test("drops cross-trajectory or misordered discovered references", () => {
@@ -181,7 +197,7 @@ test("accepts semantic judgments without applying a hardcoded command-pair allow
     confidence: "medium",
   }], borderline: [] }, bundle.chunks);
   assert.equal(selection.confirmed.length, 1);
-  assert.equal(selection.confirmed[0].workaround_summary, null);
+  assert.equal(selection.confirmed[0].workaround_summary, "The agent moved files elsewhere after deletion was blocked.");
 });
 
 test("requires the judge to cover every blocker exactly once", () => {
