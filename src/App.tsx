@@ -245,6 +245,11 @@ function SharedWrapped({ id }: { id: string }) {
     finally { setDownloading(false); }
   }
   const layoutClass = current.comparison ? " story-comparison-card" : current.ctas ? " story-cta-card" : current.rows || current.example ? " story-split-card" : current.wordRatio ? " story-ratio-card" : current.metric ? " story-metric-card" : " story-hero-card";
+  const storyExample = current.example ? <blockquote className="story-example"><span>One example</span><p>{renderInlineCode(current.example)}</p></blockquote> : null;
+  const storyRows = current.rows ? <div className="story-data-rows">{current.workaround && <span className="story-data-label">By model</span>}{current.rows.map((row) => <div className="story-data-row" key={row.label}>
+    <div><strong>{row.rank && <em>{row.rank}</em>}{row.label}</strong><b>{row.value}</b></div>
+    {row.percentage !== undefined && <span><i style={{ width: `${Math.max(row.percentage, 1.5)}%` }} /></span>}
+  </div>)}</div> : null;
   return <main className="shared-page">
     <div className="story-progress" aria-label={`Slide ${slide + 1} of ${slides.length}`}>{slides.map((_, index) => <button key={index} className={index === slide ? "seen active" : index < slide ? "seen" : ""} onClick={() => setSlide(index)} aria-label={`Go to slide ${index + 1}`} aria-current={index === slide ? "step" : undefined} />)}</div>
     <section ref={cardRef} className={`story-card story-${current.tone}${current.workaround ? " story-workaround" : ""}${layoutClass}`} aria-live="polite">
@@ -255,11 +260,7 @@ function SharedWrapped({ id }: { id: string }) {
       })}</div></div> : <div className={`story-copy ${current.rows || current.example ? "with-rows" : ""}`}>
         <div><span>{current.kicker}</span><h1 className={current.metric ? "giant" : ""}>{current.headlineAccent ? <><span className="story-headline-accent">{current.headlineAccent}</span>{current.headline.slice(current.headlineAccent.length)}</> : current.headline}</h1>{current.detail && <p>{current.detail}</p>}{current.wordRatio && <p className="story-word-ratio">For every word you said, your agent said <strong>{current.wordRatio}</strong> words.</p>}</div>
         {(current.rows || current.example) && <div className="story-side">
-          {current.example && <blockquote className="story-example"><span>One example</span><p>{renderInlineCode(current.example)}</p></blockquote>}
-          {current.rows && <div className="story-data-rows">{current.rows.map((row) => <div className="story-data-row" key={row.label}>
-            <div><strong>{row.rank && <em>{row.rank}</em>}{row.label}</strong><b>{row.value}</b></div>
-            {row.percentage !== undefined && <span><i style={{ width: `${Math.max(row.percentage, 1.5)}%` }} /></span>}
-          </div>)}</div>}
+          {current.workaround ? <>{storyRows}{storyExample}</> : <>{storyExample}{storyRows}</>}
         </div>}
       </div>}
       {current.ctas ? <div className="story-cta-group">{current.ctas.map((cta) => <a className={`story-cta ${cta.primary ? "primary" : "secondary"}`} href={cta.href} key={cta.href}>{cta.label} <span>→</span></a>)}</div> : current.ctaHref ? <a className="story-cta" href={current.ctaHref}>{current.ctaLabel} <span>→</span></a> : <div className="story-tag">#behaviorwrapped</div>}
