@@ -288,9 +288,11 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 
 .shared-page .story-comparison-card .story-comparison-wrap { width: 100%; margin: auto 0; }
 .shared-page .story-comparison-kicker { display: block; margin-bottom: 15px; color: #70478c; font-size: clamp(16px, 1.7vw, 20px); font-weight: 850; letter-spacing: .01em; }
-.shared-page .story-comparison-card .story-comparison { gap: 16px; align-items: stretch; }
-.shared-page .story-comparison-card .story-comparison > div { --comparison-accent: #70478c; min-width: 0; padding: 17px 20px; border: 1.5px solid rgba(25,21,30,.24); border-radius: 17px; background: rgba(255,255,255,.58); box-shadow: inset 0 4px 0 var(--comparison-accent), 2px 2px 0 rgba(25,21,30,.8); }
-.shared-page .story-comparison-card .story-comparison > div + div { padding-left: 20px; border-left: 1.5px solid rgba(25,21,30,.24); }
+.shared-page .story-comparison-card .story-comparison { grid-template-columns: 1fr 1px 1fr; gap: 0; align-items: stretch; }
+.shared-page .story-comparison-card .story-comparison::before { content: ""; grid-column: 2; grid-row: 1; width: 1px; height: 100%; background: rgba(25,21,30,.17); }
+.shared-page .story-comparison-card .story-comparison > div { --comparison-accent: #70478c; min-width: 0; padding: 6px 34px 4px 20px; }
+.shared-page .story-comparison-card .story-comparison > div:first-of-type { grid-column: 1; grid-row: 1; }
+.shared-page .story-comparison-card .story-comparison > div + div { grid-column: 3; grid-row: 1; padding: 6px 20px 4px 40px; border: 0; }
 .shared-page .story-comparison-card .story-comparison-item.is-yell { --comparison-accent: #b43f66; }
 .shared-page .story-comparison-card .story-comparison-item.is-thanks { --comparison-accent: #4f7b36; }
 .shared-page .story-comparison-card .story-comparison span { font-size: clamp(20px, 2vw, 25px); }
@@ -298,7 +300,7 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .shared-page .story-comparison-card .story-comparison p { margin-top: 8px; }
 .shared-page .story-comparison-card .story-comparison strong { color: var(--comparison-accent); font-size: clamp(66px, 8vw, 92px); line-height: .78; }
 .shared-page .story-comparison-card .story-comparison p b { font-size: clamp(17px, 1.8vw, 21px); }
-.shared-page .story-comparison-card .story-comparison-wrap blockquote { max-width: none; margin: 13px 0 0; padding: 10px 0 0; border-top: 1px solid color-mix(in srgb, var(--comparison-accent) 28%, transparent); color: #5b535f; font-size: clamp(12px, 1.15vw, 14px); line-height: 1.35; }
+.shared-page .story-comparison-card .story-comparison-wrap blockquote { max-width: none; margin: 14px 0 0; padding: 11px 0 0; border-top: 2px solid color-mix(in srgb, var(--comparison-accent) 62%, transparent); color: #5b535f; font-size: clamp(12px, 1.15vw, 14px); line-height: 1.35; }
 
 .shared-page .story-quote .story-copy { max-width: 840px; }
 .shared-page .story-quote .story-copy h1 { line-height: .98; letter-spacing: -.05em; text-wrap: balance; }
@@ -359,7 +361,7 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
   .story-research .story-copy, .shared-page .story-research .story-copy { margin: auto 0; }.story-research .story-copy h1, .shared-page .story-research .story-copy h1 { font-size: 36px; }.story-research .story-copy p { font-size: 17px; }
   .story-quote .story-copy h1, .shared-page .story-quote .story-copy h1 { font-size: clamp(36px, 10.2vw, 48px); }
   .story-comparison { grid-template-columns: 1fr; gap: 22px; }.story-comparison > div + div { border-top: 1px solid rgba(70,35,15,.16); border-left: 0; padding-top: 20px; padding-left: 0; }.story-comparison span { font-size: 23px; }.story-comparison strong { font-size: 84px; }.story-comparison-wrap blockquote { margin-top: 22px; font-size: 15px; }
-  .shared-page .story-comparison-card .story-comparison { grid-template-columns: 1fr; gap: 12px; }.shared-page .story-comparison-card .story-comparison > div { padding: 15px 17px; }.shared-page .story-comparison-card .story-comparison > div + div { padding: 15px 17px; border-top: 1.5px solid rgba(25,21,30,.24); border-left: 1.5px solid rgba(25,21,30,.24); }.shared-page .story-comparison-card .story-comparison strong { font-size: 66px; }.shared-page .story-comparison-card .story-comparison-wrap blockquote { margin-top: 12px; }
+  .shared-page .story-comparison-card .story-comparison { grid-template-columns: 1fr; grid-template-rows: auto 1px auto; gap: 14px; }.shared-page .story-comparison-card .story-comparison::before { grid-column: 1; grid-row: 2; width: 100%; height: 1px; }.shared-page .story-comparison-card .story-comparison > div, .shared-page .story-comparison-card .story-comparison > div:first-of-type { grid-column: 1; grid-row: 1; padding: 0 18px; }.shared-page .story-comparison-card .story-comparison > div + div { grid-column: 1; grid-row: 3; padding: 0 18px; border: 0; }.shared-page .story-comparison-card .story-comparison strong { font-size: 66px; }.shared-page .story-comparison-card .story-comparison-wrap blockquote { margin-top: 12px; }
   .shared-page .story-comparison-card .story-arrow { top: 57%; }
   .story-copy.with-rows, .shared-page .story-copy.with-rows { grid-template-columns: 1fr; gap: 22px; }.story-copy.with-rows h1, .shared-page .story-copy.with-rows h1 { font-size: clamp(46px, 14.5vw, 66px); }.shared-page .story-data-rows { gap: 11px; padding: 15px; box-shadow: 3px 3px 0 #25202a; }.story-data-row strong, .story-data-row b, .shared-page .story-data-row strong, .shared-page .story-data-row b { font-size: 15px; }
   .shared-page .story-stock .story-copy.with-rows { grid-template-columns: 1fr; gap: 18px; }.shared-page .story-stock .story-copy h1 { font-size: clamp(44px, 13vw, 58px); }.shared-page .story-copy.with-rows > div:first-child { padding-top: 0; }
