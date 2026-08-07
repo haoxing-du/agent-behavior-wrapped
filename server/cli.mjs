@@ -101,8 +101,8 @@ function printList() {
 async function openSaved(id) {
   const report = id ? listReports().find((item) => item.id === id) : listReports()[0];
   if (!report) throw new Error("That saved report was not found.");
-  await ensureServer(false);
-  const url = `${baseUrl}/w/${report.id}`;
+  const url = report.managementUrl || report.publicUrl || `${baseUrl}/w/${report.id}`;
+  if (!report.publicUrl) await ensureServer(false);
   console.log(`${purple}${url}${reset}`);
   openUrl(url);
 }
@@ -213,6 +213,7 @@ async function createWrapped() {
     const published = await publishPublicReport(report, { clientId: getOrCreateClientId(), origin: process.env.BEHAVIOR_WRAPPED_PUBLIC_URL || PUBLIC_REPORT_ORIGIN });
     publicUrl = published.public_url;
     report.publicUrl = publicUrl;
+    report.managementUrl = published.management_url;
     progress.succeed("Public Wrapped published");
   } catch (error) {
     report.publicHostingError = error.message;
@@ -223,13 +224,13 @@ async function createWrapped() {
   await ensureServer(demo);
   progress.succeed("Local donation helper ready");
   const localUrl = `${baseUrl}/w/${id}`;
-  const url = publicUrl || localUrl;
+  const url = report.managementUrl || publicUrl || localUrl;
   const tokenLabel = formatNumber(report.stats.tokens || 0);
   console.log(`◇  ${bright}Wrapped ready${reset} · ${tokenLabel} tokens across ${report.stats.sessions} sessions          `);
   if (report.phraseCard) console.log(`◇  ${PHRASE_JUDGE_NAME}'s pick · “${report.phraseCard.phrase}” × ${report.phraseCard.occurrences} · ${(report.phraseCard.latencyMs / 1000).toFixed(1)}s          `);
   console.log(`│\n◇  Your wrapped is ${publicUrl ? "live" : "ready locally"} ───────────────────────────────╮`);
   console.log(`│                                                        │`);
-  console.log(`│  ${purple}${bright}${url}${reset}`);
+  console.log(`│  ${purple}${bright}${publicUrl || localUrl}${reset}`);
   console.log(`│                                                        │`);
   console.log(`│  ${tokenLabel} tokens  ·  ${report.stats.toolCalls} tool calls  ·  ${report.stats.sessions} sessions`);
   console.log(`│                                                        │`);

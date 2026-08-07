@@ -13,6 +13,45 @@ const aggregate = {
   phrase_sessions: 5,
 };
 
+const publicReport = {
+  id: "leaderReport123",
+  stats: { tokens: aggregate.tokens, agentWords: aggregate.agent_words, userWords: aggregate.user_words, agentUserWordRatio: aggregate.word_ratio },
+  phraseCard: { phrase: aggregate.favorite_phrase, occurrences: aggregate.phrase_occurrences, distinctSessions: aggregate.phrase_sessions },
+};
+
+async function sha256(value) {
+  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function leaderboardDatabase(managementTokenHash) {
+  let entry = null;
+  return {
+    get entry() { return entry; },
+    prepare(sql) {
+      let values = [];
+      return {
+        bind(...next) { values = next; return this; },
+        async first() {
+          if (sql.includes("FROM public_reports")) return { report_json: JSON.stringify(publicReport), owner_hash: "owner-hash", management_token_hash: managementTokenHash };
+          if (sql.includes("SUM(phrase_occurrences)")) return null;
+          if (sql.includes("WHERE client_hash = ?")) return entry ? { display_name: entry.displayName, public_ranked: entry.publicRanked, shares_phrase: entry.sharesPhrase } : null;
+          return null;
+        },
+        async all() {
+          if (sql === "SELECT tokens, word_ratio FROM leaderboard_entries") return { results: entry ? [{ tokens: entry.tokens, word_ratio: entry.wordRatio }] : [] };
+          return { results: [] };
+        },
+        async run() {
+          if (sql.startsWith("INSERT INTO leaderboard_entries")) entry = { ownerHash: values[0], displayName: values[1], publicRanked: values[2], tokens: values[3], wordRatio: values[6], sharesPhrase: Boolean(values[7]) };
+          if (sql.startsWith("DELETE FROM leaderboard_entries")) entry = null;
+          return { meta: { changes: 1 } };
+        },
+      };
+    },
+  };
+}
+
 test("builds a narrow leaderboard aggregate from a saved report", () => {
   const value = leaderboardAggregateFromReport({
     stats: { tokens: 12_500_000, agentWords: 8_000, userWords: 2_000 },
@@ -50,4 +89,38 @@ test("requires explicit consent before storing a leaderboard entry", async () =>
   const response = await handleRequest(request, { CLIENT_RATE_LIMITER: { limit: async () => ({ success: true }) } });
   assert.equal(response.status, 400);
   assert.match((await response.json()).error, /consent/i);
+});
+
+test("a shared public report cannot be enrolled without its management credential", async () => {
+  const token = "d".repeat(64);
+  const database = leaderboardDatabase(await sha256(token));
+  const response = await handleRequest(new Request("https://example.com/api/reports/leaderReport123/leaderboard", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action: "join", consent: true, displayName: "Tester", publicRanked: true, includePhrase: false }),
+  }), { LEADERBOARD_DB: database, CLIENT_RATE_LIMITER: { limit: async () => ({ success: true }) } });
+  assert.equal(response.status, 403);
+  assert.equal(database.entry, null);
+});
+
+test("the creator can explicitly store and later remove a permanent aggregate entry", async () => {
+  const token = "e".repeat(64);
+  const database = leaderboardDatabase(await sha256(token));
+  const headers = { "content-type": "application/json", "x-behavior-wrapped-management": token };
+  const joined = await handleRequest(new Request("https://example.com/api/reports/leaderReport123/leaderboard", {
+    method: "POST", headers,
+    body: JSON.stringify({ action: "join", consent: true, displayName: "Tester", publicRanked: true, includePhrase: false }),
+  }), { LEADERBOARD_DB: database, CLIENT_RATE_LIMITER: { limit: async () => ({ success: true }) } });
+  assert.equal(joined.status, 200);
+  const snapshot = await joined.json();
+  assert.equal(snapshot.can_manage, true);
+  assert.equal(snapshot.participation.joined, true);
+  assert.equal(database.entry.ownerHash, "owner-hash");
+  assert.equal(database.entry.sharesPhrase, false);
+
+  const removed = await handleRequest(new Request("https://example.com/api/reports/leaderReport123/leaderboard", { method: "DELETE", headers }), {
+    LEADERBOARD_DB: database, CLIENT_RATE_LIMITER: { limit: async () => ({ success: true }) },
+  });
+  assert.equal(removed.status, 200);
+  assert.equal(database.entry, null);
 });

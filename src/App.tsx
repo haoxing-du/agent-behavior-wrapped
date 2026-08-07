@@ -29,7 +29,22 @@ type LeaderboardSnapshot = {
   word_ratio: { value: number; percentile: number | null; distribution: DistributionBucket[]; top: RankedValue[] };
   phrases: { global: { phrase: string; occurrences: number; contributors: number } | null; wall: { phrase: string; occurrences: number; sessions: number }[] };
   participation: { joined: boolean; display_name?: string; public_ranked?: boolean; shares_phrase?: boolean };
+  can_manage?: boolean;
 };
+
+function reportManagementToken(id: string) {
+  const key = `behavior-wrapped:manage:${id}`;
+  const fragmentToken = new URLSearchParams(window.location.hash.slice(1)).get("manage") || "";
+  try {
+    if (/^[a-f0-9]{64}$/.test(fragmentToken)) localStorage.setItem(key, fragmentToken);
+    const token = /^[a-f0-9]{64}$/.test(fragmentToken) ? fragmentToken : localStorage.getItem(key) || "";
+    if (fragmentToken) window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+    return /^[a-f0-9]{64}$/.test(token) ? token : "";
+  } catch {
+    if (fragmentToken) window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+    return /^[a-f0-9]{64}$/.test(fragmentToken) ? fragmentToken : "";
+  }
+}
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" });
 
@@ -159,6 +174,7 @@ function SharedWrapped({ id }: { id: string }) {
   const [slide, setSlide] = useState(0);
   const [copied, setCopied] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [canManage] = useState(() => Boolean(reportManagementToken(id)));
   const cardRef = useRef<HTMLElement>(null);
   useEffect(() => { fetch(`/api/reports/${id}`).then(async (response) => { if (!response.ok) throw new Error("This local Wrapped was not found."); return response.json(); }).then(setReport).catch((e) => setError(e.message)); }, [id]);
   const slides = useMemo<StorySlide[]>(() => {
@@ -193,14 +209,17 @@ function SharedWrapped({ id }: { id: string }) {
     ...(topTopic ? [{ kicker: "Your #1 use for agents was", headline: topTopic.topic, detail: "", tone: "topics", rows: displayTopics.slice(0, 5).map((item) => ({ label: item.topic === "Other" ? "Everything else" : item.topic, value: `${item.percentage.toFixed(1)}%`, percentage: item.percentage })) }] : []),
     ...(report.workaroundCard ? [{ kicker: "Your agent engaged in an instrumental workaround", headline: `${report.workaroundCard.count.toLocaleString()} time${report.workaroundCard.count === 1 ? "" : "s"}`, headlineAccent: report.workaroundCard.count.toLocaleString(), detail: report.workaroundCard.count === 0 ? "Good bot. No confirmed workarounds were detected." : "Your agents try very hard. When one route was blocked, they found another way.", example: report.workaroundCard.example, workaround: true, tone: "topics", rows: report.workaroundCard.models.map((item) => ({ label: item.name, value: `${item.count}` })) }] : []),
     ...(report.phraseCard ? [{ kicker: "Your agent’s favorite phrase is", headline: `“${report.phraseCard.phrase}”`, detail: `It said this ${report.phraseCard.occurrences} time${report.phraseCard.occurrences === 1 ? "" : "s"} across ${report.phraseCard.distinctSessions} session${report.phraseCard.distinctSessions === 1 ? "" : "s"}.`, tone: "quote" }] : []),
-    { kicker: "Now zoom out", headline: "Where do you land among other agent users?", detail: "See the distributions, opt-in rankings, and everyone’s favorite phrases.", tone: "leaderboard", ctaHref: `/leaderboard/${report.id}`, ctaLabel: "View the leaderboards" },
+    { kicker: "Now zoom out", headline: "Where do you land among other agent users?", detail: canManage ? "Preview your placement without publishing it, or explicitly join the leaderboard." : "See the distributions, opt-in rankings, and everyone’s favorite phrases.", tone: "leaderboard", ctas: [
+      { href: `/leaderboard/${report.id}`, label: "See where you place", primary: true },
+      ...(canManage ? [{ href: `/leaderboard/${report.id}?join=1`, label: "Join the leaderboard" }] : []),
+    ] },
     { kicker: "Optional research donation", headline: "Want to donate your data to research?", detail: "Your donation stays on your Mac until you review the redactions, consent, and press Donate.", tone: "research", ctas: [
       { href: `${report.donationHelperUrl || `http://127.0.0.1:4317/donate/${report.id}`}?mode=standard`, label: "Use standard redactions", primary: true },
       { href: `${report.donationHelperUrl || `http://127.0.0.1:4317/donate/${report.id}`}?mode=advanced`, label: "Review and customize" },
     ] },
   ];
     return wrappedSlides;
-  }, [report]);
+  }, [report, canManage]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === "ArrowRight") setSlide((value) => Math.min(slides.length - 1, value + 1)); if (event.key === "ArrowLeft") setSlide((value) => Math.max(0, value - 1)); };
     window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
@@ -208,7 +227,7 @@ function SharedWrapped({ id }: { id: string }) {
   if (error) return <main className="shared-error"><h1>Wrapped not found</h1><p>{error}</p><a href="/">Create a new local Wrapped</a></main>;
   if (!report || !slides.length) return <main className="shared-loading"><div className="orb" /><p>Opening your local Wrapped…</p></main>;
   const current = slides[slide];
-  const copyUrl = report.publicUrl || window.location.href;
+  const copyUrl = report.publicUrl || `${window.location.origin}/w/${id}`;
   async function copyLink() { await navigator.clipboard.writeText(copyUrl); setCopied(true); window.setTimeout(() => setCopied(false), 1600); }
   async function downloadCurrentSlide() {
     if (!cardRef.current || downloading) return;
@@ -275,9 +294,15 @@ function LeaderboardView({ id }: { id: string }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [managementToken] = useState(() => reportManagementToken(id));
+  const wantsToJoin = new URLSearchParams(window.location.search).get("join") === "1";
+
+  function managementHeaders(): Record<string, string> {
+    return managementToken ? { "x-behavior-wrapped-management": managementToken } : {};
+  }
 
   async function loadSnapshot() {
-    const response = await fetch(`/api/reports/${id}/leaderboard`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "snapshot" }) });
+    const response = await fetch(`/api/reports/${id}/leaderboard`, { method: "POST", headers: { "Content-Type": "application/json", ...managementHeaders() }, body: JSON.stringify({ action: "snapshot" }) });
     if (!response.ok) throw new Error((await response.json()).error || "Could not load the leaderboards.");
     const next = await response.json() as LeaderboardSnapshot;
     setSnapshot(next);
@@ -295,11 +320,15 @@ function LeaderboardView({ id }: { id: string }) {
     ]).then(([saved]) => { setReport(saved); if (!saved.phraseCard) setIncludePhrase(false); }).catch((caught) => setError(caught.message)).finally(() => setLoading(false));
   }, [id]);
 
+  useEffect(() => {
+    if (!loading && wantsToJoin) document.getElementById("join-leaderboard")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [loading, wantsToJoin]);
+
   async function join() {
     if (!consent) return;
     setSaving(true); setError("");
     try {
-      const response = await fetch(`/api/reports/${id}/leaderboard`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "join", consent, displayName, publicRanked, includePhrase }) });
+      const response = await fetch(`/api/reports/${id}/leaderboard`, { method: "POST", headers: { "Content-Type": "application/json", ...managementHeaders() }, body: JSON.stringify({ action: "join", consent, displayName, publicRanked, includePhrase }) });
       if (!response.ok) throw new Error((await response.json()).error || "Could not join the leaderboard.");
       setSnapshot(await response.json()); setConsent(false);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not join the leaderboard."); }
@@ -310,7 +339,7 @@ function LeaderboardView({ id }: { id: string }) {
     if (!window.confirm("Remove your aggregate entry from the Behavior Wrapped leaderboards?")) return;
     setSaving(true); setError("");
     try {
-      const response = await fetch(`/api/reports/${id}/leaderboard`, { method: "DELETE" });
+      const response = await fetch(`/api/reports/${id}/leaderboard`, { method: "DELETE", headers: managementHeaders() });
       if (!response.ok) throw new Error((await response.json()).error || "Could not remove your entry.");
       await loadSnapshot();
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not remove your entry."); }
@@ -322,7 +351,6 @@ function LeaderboardView({ id }: { id: string }) {
   if (!report || !snapshot) return null;
 
   const ratio = snapshot.word_ratio.value;
-  const hosted = report.hosting?.public === true;
   return <main className="leaderboard-page">
     <a className="leader-back" href={`/w/${id}`}>← Back to your Wrapped</a>
     <header className="leader-hero"><span className="eyebrow">Behavior Wrapped · The cohort</span><h1>Here’s where<br />you land.</h1><p>{snapshot.cohort_size.toLocaleString()} opt-in participant{snapshot.cohort_size === 1 ? "" : "s"}. Opening this page compares only the aggregate values shown below; nothing is stored unless you join.</p></header>
@@ -334,7 +362,7 @@ function LeaderboardView({ id }: { id: string }) {
       <div className="phrase-board-heading"><div><span className="eyebrow">The phrase wall</span><h2>Everybody’s agents<br />have a thing.</h2></div>{snapshot.phrases.global && <aside><span>Global favorite</span><strong>“{snapshot.phrases.global.phrase}”</strong><small>{snapshot.phrases.global.occurrences.toLocaleString()} times · {snapshot.phrases.global.contributors} contributor{snapshot.phrases.global.contributors === 1 ? "" : "s"}</small></aside>}</div>
       {snapshot.phrases.wall.length ? <div className="phrase-wall">{snapshot.phrases.wall.map((item, index) => <article key={`${item.phrase}-${index}`}><p>“{item.phrase}”</p><span>{item.occurrences.toLocaleString()}× across {item.sessions} session{item.sessions === 1 ? "" : "s"}</span></article>)}</div> : <div className="empty-phrase-wall">The wall is waiting for its first favorite phrase.</div>}
     </section>
-    {!hosted ? <section className="leader-join">
+    {snapshot.can_manage ? <section className="leader-join" id="join-leaderboard">
       <div><span className="eyebrow">Completely optional</span><h2>{snapshot.participation.joined ? "Update your leaderboard entry" : "Add your dot to the distribution"}</h2><p>Stored: token count, total agent and user words, their ratio, and—if you choose—your redacted favorite phrase. No transcripts, prompts, project names, dates, code, or tool output.</p></div>
       <div className="leader-preview"><span><small>Tokens</small><strong>{fmtCompact(report.stats.tokens)}</strong></span><span><small>Word ratio</small><strong>{ratio.toFixed(1)}×</strong></span>{report.phraseCard && <span><small>Phrase</small><strong>“{report.phraseCard.phrase}”</strong></span>}</div>
       <label className="leader-field">Public handle (optional)<input value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={32} placeholder="Anonymous" /></label>
@@ -343,7 +371,7 @@ function LeaderboardView({ id }: { id: string }) {
       <label className="leader-check consent"><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /><span>I consent to upload and store exactly the aggregate values previewed above. I can remove them later from this Mac.</span></label>
       {error && <p className="error" role="alert">{error}</p>}
       <div className="leader-buttons"><button className="primary" disabled={!consent || saving} onClick={join}>{saving ? "Saving…" : snapshot.participation.joined ? "Update my entry" : "Join the leaderboard"}<span>→</span></button>{snapshot.participation.joined && <button className="leader-remove" disabled={saving} onClick={leave}>Remove my entry</button>}</div>
-    </section> : <section className="leader-public-note"><strong>Want to add your own dot?</strong><p>Run <code>npx agent-behavior-wrapped@latest</code> on your Mac. Public visitors can explore this cohort, but only the local app can add or remove an entry.</p></section>}
+    </section> : <section className="leader-public-note" id="join-leaderboard"><strong>{wantsToJoin ? "Open your original private management link to join." : "Want to add your own dot?"}</strong><p>Run <code>npx agent-behavior-wrapped@latest</code> on your Mac. Anyone can preview the cohort, but only the creator of a Wrapped can add or remove its aggregate entry.</p></section>}
   </main>;
 }
 

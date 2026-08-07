@@ -169,6 +169,19 @@ async function clientHash(clientId) {
   return [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+function safeEqual(left, right) {
+  if (typeof left !== "string" || typeof right !== "string" || left.length !== right.length) return false;
+  let difference = 0;
+  for (let index = 0; index < left.length; index++) difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  return difference === 0;
+}
+
+async function canManagePublicReport(request, record) {
+  const token = request.headers.get("x-behavior-wrapped-management") || "";
+  if (!/^[a-f0-9]{64}$/.test(token) || !/^[a-f0-9]{64}$/.test(record?.management_token_hash || "")) return false;
+  return safeEqual(await clientHash(token), record.management_token_hash);
+}
+
 function percentile(atOrBelow, total) {
   return total ? Math.round(atOrBelow / total * 100) : null;
 }
@@ -227,11 +240,15 @@ function aggregateFromPublicReport(report) {
   });
 }
 
-async function loadPublicReport(env, id) {
+async function loadPublicReportRecord(env, id) {
   if (!env.LEADERBOARD_DB) return null;
-  const row = await env.LEADERBOARD_DB.prepare("SELECT report_json FROM public_reports WHERE id = ?").bind(id).first();
+  const row = await env.LEADERBOARD_DB.prepare("SELECT report_json, owner_hash, management_token_hash FROM public_reports WHERE id = ?").bind(id).first();
   if (!row?.report_json) return null;
-  try { return JSON.parse(row.report_json); } catch { return null; }
+  try { return { ...row, report: JSON.parse(row.report_json) }; } catch { return null; }
+}
+
+async function loadPublicReport(env, id) {
+  return (await loadPublicReportRecord(env, id))?.report || null;
 }
 
 async function handlePublicReports(request, env) {
@@ -254,10 +271,12 @@ async function handlePublicReports(request, env) {
   try { body = JSON.parse(raw); } catch { return json({ error: "Invalid JSON." }, 400); }
   const report = sanitizePublicReport(body?.report);
   if (!report) return json({ error: "Invalid share-safe report." }, 400);
+  if (!/^[a-f0-9]{64}$/.test(body?.management_token || "")) return json({ error: "A valid report management credential is required." }, 400);
+  const managementTokenHash = await clientHash(body.management_token);
   const serialized = JSON.stringify(report);
   if (serialized.length > 40_000 || /"(?:sessionIds|evidence|transcript|tool_result|tool_use)"\s*:/.test(serialized)) return json({ error: "Report contains data that cannot be hosted publicly." }, 400);
   try {
-    await env.LEADERBOARD_DB.prepare("INSERT INTO public_reports (id, owner_hash, report_json, updated_at) VALUES (?, ?, ?, datetime('now'))").bind(report.id, hash, serialized).run();
+    await env.LEADERBOARD_DB.prepare("INSERT INTO public_reports (id, owner_hash, management_token_hash, report_json, updated_at) VALUES (?, ?, ?, ?, datetime('now'))").bind(report.id, hash, managementTokenHash, serialized).run();
   } catch { return json({ error: "That public report ID already exists." }, 409); }
   const origin = new URL(request.url).origin;
   return json({ id: report.id, public_url: `${origin}/w/${report.id}` }, 201);
@@ -305,6 +324,53 @@ async function handleLeaderboard(request, env) {
       phrase, phrase ? aggregate.phrase_occurrences : 0, phrase ? aggregate.phrase_sessions : 0,
     ).run();
   return json(await leaderboardSnapshot(env, aggregate, hash));
+}
+
+async function saveLeaderboardEntry(env, hash, aggregate, body) {
+  if (body.consent !== true || typeof body.publicRanked !== "boolean" || typeof body.includePhrase !== "boolean") return { error: "Explicit leaderboard consent is required.", status: 400 };
+  const name = displayName(body.displayName);
+  if (!name) return { error: "Display name must be 32 characters or fewer and contain only letters, numbers, spaces, dots, underscores, or hyphens.", status: 400 };
+  const phrase = body.includePhrase ? aggregate.favorite_phrase : null;
+  await env.LEADERBOARD_DB.prepare(`INSERT INTO leaderboard_entries
+    (client_hash, display_name, public_ranked, tokens, agent_words, user_words, word_ratio, favorite_phrase, phrase_occurrences, phrase_sessions, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(client_hash) DO UPDATE SET display_name=excluded.display_name, public_ranked=excluded.public_ranked,
+    tokens=excluded.tokens, agent_words=excluded.agent_words, user_words=excluded.user_words, word_ratio=excluded.word_ratio,
+    favorite_phrase=excluded.favorite_phrase, phrase_occurrences=excluded.phrase_occurrences,
+    phrase_sessions=excluded.phrase_sessions, updated_at=datetime('now')`).bind(
+      hash, name, body.publicRanked ? 1 : 0, aggregate.tokens, aggregate.agent_words, aggregate.user_words, aggregate.word_ratio,
+      phrase, phrase ? aggregate.phrase_occurrences : 0, phrase ? aggregate.phrase_sessions : 0,
+    ).run();
+  return null;
+}
+
+async function handlePublicLeaderboard(request, env, id) {
+  if (!env.LEADERBOARD_DB) return json({ error: "Leaderboard storage is not configured." }, 503);
+  const record = await loadPublicReportRecord(env, id);
+  if (!record) return json({ error: "Public Wrapped not found." }, 404);
+  const aggregate = aggregateFromPublicReport(record.report);
+  if (!aggregate) return json({ error: "This report does not contain leaderboard aggregates." }, 400);
+  const canManage = await canManagePublicReport(request, record);
+
+  if (request.method === "DELETE") {
+    if (!canManage) return json({ error: "Only the creator of this Wrapped can remove its leaderboard entry." }, 403);
+    await env.LEADERBOARD_DB.prepare("DELETE FROM leaderboard_entries WHERE client_hash = ?").bind(record.owner_hash).run();
+    return json({ removed: true });
+  }
+  if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
+  const raw = await readLimitedBody(request);
+  if (raw === null) return json({ error: "Request too large." }, 413);
+  let body;
+  try { body = JSON.parse(raw); } catch { return json({ error: "Invalid JSON." }, 400); }
+  if (body.action === "join") {
+    if (!canManage) return json({ error: "Only the creator of this Wrapped can join with these results." }, 403);
+    const failure = await saveLeaderboardEntry(env, record.owner_hash, aggregate, body);
+    if (failure) return json({ error: failure.error }, failure.status);
+  } else if (body.action !== "snapshot") {
+    return json({ error: "Invalid leaderboard action." }, 400);
+  }
+  try { return json({ ...await leaderboardSnapshot(env, aggregate, canManage ? record.owner_hash : `public:${id}`), can_manage: canManage }); }
+  catch { return json({ error: "Leaderboard storage is not configured." }, 503); }
 }
 
 async function handleResearchDonation(request, env) {
@@ -370,15 +436,10 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
     return handleResearchDonation(request, env);
   }
   const publicLeaderboardMatch = url.pathname.match(/^\/api\/reports\/([A-Za-z0-9_-]{8,32})\/leaderboard$/);
-  if (request.method === "POST" && publicLeaderboardMatch) {
+  if (publicLeaderboardMatch && new Set(["POST", "DELETE"]).has(request.method)) {
     const networkId = request.headers.get("cf-connecting-ip") || "unknown";
     if (!await applyRateLimit(env.CLIENT_RATE_LIMITER, `public-leaderboard:${networkId}`)) return json({ error: "Too many leaderboard requests. Try again shortly." }, 429);
-    const report = await loadPublicReport(env, publicLeaderboardMatch[1]);
-    if (!report) return json({ error: "Public Wrapped not found." }, 404);
-    const aggregate = aggregateFromPublicReport(report);
-    if (!aggregate) return json({ error: "This report does not contain leaderboard aggregates." }, 400);
-    try { return json(await leaderboardSnapshot(env, aggregate, `public:${report.id}`)); }
-    catch { return json({ error: "Leaderboard storage is not configured." }, 503); }
+    return handlePublicLeaderboard(request, env, publicLeaderboardMatch[1]);
   }
   if (url.pathname.startsWith("/v1/reports")) {
     if (request.headers.get("x-behavior-wrapped-protocol") !== "1") return json({ error: "Unsupported client protocol." }, 400);

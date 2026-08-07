@@ -55,6 +55,7 @@ test("the local publisher strips private session IDs before upload", async () =>
   let uploaded;
   const result = await publishPublicReport({ ...reportFixture(), privateNotes: "must never cross the network", interactionReview: { excerpts: ["private future field"] } }, {
     clientId: "b".repeat(32),
+    managementToken: "c".repeat(64),
     origin: "https://example.test",
     fetchImpl: async (_url, request) => {
       uploaded = JSON.parse(request.body);
@@ -65,7 +66,9 @@ test("the local publisher strips private session IDs before upload", async () =>
   assert.equal("workaroundReview" in uploaded.report, false);
   assert.equal("privateNotes" in uploaded.report, false);
   assert.equal("interactionReview" in uploaded.report, false);
+  assert.equal(uploaded.management_token, "c".repeat(64));
   assert.equal(JSON.stringify(uploaded).includes("private future field"), false);
   assert.equal(uploaded.report.rangeLabel, "Your recent agent history");
   assert.equal(result.public_url, "https://example.test/w/shareSafe1234");
+  assert.equal(result.management_url, `https://example.test/w/shareSafe1234#manage=${"c".repeat(64)}`);
 });

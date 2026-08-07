@@ -1,10 +1,12 @@
 export const PUBLIC_REPORT_ORIGIN = "https://agent-behavior-wrapped-judge.haoxingdu.workers.dev";
+import { randomBytes } from "node:crypto";
 import { sanitizePublicReport } from "./public-report-schema.mjs";
 const REQUEST_TIMEOUT_MS = 15_000;
 
-export async function publishPublicReport(report, { clientId, fetchImpl = fetch, origin = PUBLIC_REPORT_ORIGIN } = {}) {
+export async function publishPublicReport(report, { clientId, fetchImpl = fetch, origin = PUBLIC_REPORT_ORIGIN, managementToken = randomBytes(32).toString("hex") } = {}) {
   const shareSafeReport = sanitizePublicReport(report);
   if (!shareSafeReport) throw new Error("The report could not be reduced to the public schema.");
+  if (!/^[a-f0-9]{64}$/.test(managementToken)) throw new Error("The report management credential is invalid.");
   const serialized = JSON.stringify(shareSafeReport);
   if (/"(?:sessionIds|evidence|transcript|tool_result|tool_use)"\s*:/.test(serialized)) throw new Error("The report contains private fields and was not published.");
   let response;
@@ -13,7 +15,7 @@ export async function publishPublicReport(report, { clientId, fetchImpl = fetch,
       method: "POST",
       headers: { "content-type": "application/json", "x-behavior-wrapped-protocol": "1", ...(clientId ? { "x-behavior-wrapped-client": clientId } : {}) },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      body: JSON.stringify({ report: shareSafeReport }),
+      body: JSON.stringify({ report: shareSafeReport, management_token: managementToken }),
     });
   } catch (error) {
     if (error?.name === "TimeoutError" || error?.name === "AbortError") throw new Error("Public hosting timed out.");
@@ -21,7 +23,7 @@ export async function publishPublicReport(report, { clientId, fetchImpl = fetch,
   }
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body?.error || "Public hosting is temporarily unavailable.");
-  return body;
+  return { ...body, management_url: `${body.public_url}#manage=${managementToken}` };
 }
 
 export async function deletePublicReport(id, { clientId, fetchImpl = fetch, origin = PUBLIC_REPORT_ORIGIN } = {}) {
