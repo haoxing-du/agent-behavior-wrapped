@@ -253,7 +253,7 @@ function SharedWrapped({ id }: { id: string }) {
   return <main className="shared-page">
     <div className="story-progress" aria-label={`Slide ${slide + 1} of ${slides.length}`}>{slides.map((_, index) => <button key={index} className={index === slide ? "seen active" : index < slide ? "seen" : ""} onClick={() => setSlide(index)} aria-label={`Go to slide ${index + 1}`} aria-current={index === slide ? "step" : undefined} />)}</div>
     <section ref={cardRef} className={`story-card story-${current.tone}${current.workaround ? " story-workaround" : ""}${layoutClass}`} aria-live="polite">
-      <div className="story-brand"><GiftbotMark /><strong>Behavior Wrapped</strong><i /> <span>{report.source}</span></div>
+      <div className="story-brand"><GiftbotMark /><strong>Behavior Wrapped</strong></div>
       {current.comparison ? <div className="story-comparison-wrap"><span className="story-comparison-kicker">{current.kicker}</span><div className="story-comparison">{current.comparison.map((item) => {
         const [beforeHighlight, afterHighlight = ""] = item.label.split(item.highlight);
         return <div className={`story-comparison-item is-${item.accent}`} key={item.label}><span>{beforeHighlight}<em>{item.highlight}</em>{afterHighlight}</span><p><strong>{item.value}</strong><b>{item.suffix}</b></p>{item.quote && <blockquote><b>You said:</b> “{item.quote}”</blockquote>}</div>;
