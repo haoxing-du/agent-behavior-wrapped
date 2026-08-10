@@ -11,35 +11,6 @@ const MAX_BODY_BYTES = 256_000;
 const MAX_CANDIDATES = 100;
 const candidateKeys = ["candidate_id", "distinct_sessions", "end_boundary_rate", "occurrences", "opening_rate", "phrase", "start_boundary_rate"];
 const leaderboardAggregateKeys = ["agent_words", "favorite_phrase", "frustrated_messages", "grateful_messages", "instrumental_workarounds", "phrase_occurrences", "phrase_sessions", "tokens", "user_words", "word_ratio"];
-const tokenBuckets = [
-  { label: "Under 1M", minimum: 0, maximum: 1_000_000 },
-  { label: "1M–10M", minimum: 1_000_000, maximum: 10_000_000 },
-  { label: "10M–50M", minimum: 10_000_000, maximum: 50_000_000 },
-  { label: "50M–100M", minimum: 50_000_000, maximum: 100_000_000 },
-  { label: "100M–500M", minimum: 100_000_000, maximum: 500_000_000 },
-  { label: "500M+", minimum: 500_000_000, maximum: null },
-];
-const ratioBuckets = [
-  { label: "Under 1×", minimum: 0, maximum: 1 },
-  { label: "1×–2×", minimum: 1, maximum: 2 },
-  { label: "2×–4×", minimum: 2, maximum: 4 },
-  { label: "4×–8×", minimum: 4, maximum: 8 },
-  { label: "8×+", minimum: 8, maximum: null },
-];
-const goodHumanBuckets = [
-  { label: "0–20%", minimum: 0, maximum: 20 },
-  { label: "20–40%", minimum: 20, maximum: 40 },
-  { label: "40–60%", minimum: 40, maximum: 60 },
-  { label: "60–80%", minimum: 60, maximum: 80 },
-  { label: "80–100%", minimum: 80, maximum: null },
-];
-const workaroundBuckets = [
-  { label: "0", minimum: 0, maximum: 1 },
-  { label: "1", minimum: 1, maximum: 2 },
-  { label: "2–3", minimum: 2, maximum: 4 },
-  { label: "4–7", minimum: 4, maximum: 8 },
-  { label: "8+", minimum: 8, maximum: null },
-];
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -203,36 +174,16 @@ function percentile(atOrBelow, total) {
   return total ? Math.round(atOrBelow / total * 100) : null;
 }
 
-function bucketIndex(value, buckets) {
-  return Math.max(0, buckets.findIndex((bucket) => bucket.maximum === null || value < bucket.maximum));
-}
-
-function histogram(rows, field, buckets) {
-  const counts = Array.from({ length: buckets.length }, () => 0);
-  for (const row of rows) counts[bucketIndex(Number(row[field]) || 0, buckets)]++;
-  return buckets.map((bucket, index) => ({ ...bucket, count: counts[index] }));
-}
-
 function goodHumanScore(value) {
   const grateful = Number(value.grateful_messages) || 0;
   const frustrated = Number(value.frustrated_messages) || 0;
   return grateful + frustrated ? Number((grateful / (grateful + frustrated) * 100).toFixed(1)) : null;
 }
 
-function histogramValues(values, buckets) {
-  return histogram(values.map((value) => ({ value })), "value", buckets);
-}
-
 async function leaderboardSnapshot(env, aggregate, hash) {
   if (!env.LEADERBOARD_DB) throw new Error("Leaderboard storage is not configured.");
-  const [values, publicTokens, publicRatios, publicGoodHumans, publicWorkarounds, phraseRows, globalPhrase, participation] = await Promise.all([
+  const [values, participation] = await Promise.all([
     env.LEADERBOARD_DB.prepare("SELECT tokens, word_ratio, grateful_messages, frustrated_messages, instrumental_workarounds FROM leaderboard_entries").all(),
-    env.LEADERBOARD_DB.prepare("SELECT display_name, tokens FROM leaderboard_entries WHERE public_ranked = 1 ORDER BY tokens DESC, updated_at ASC LIMIT 10").all(),
-    env.LEADERBOARD_DB.prepare("SELECT display_name, word_ratio FROM leaderboard_entries WHERE public_ranked = 1 ORDER BY word_ratio DESC, updated_at ASC LIMIT 10").all(),
-    env.LEADERBOARD_DB.prepare("SELECT display_name, grateful_messages, frustrated_messages FROM leaderboard_entries WHERE public_ranked = 1 AND grateful_messages + frustrated_messages > 0 ORDER BY (100.0 * grateful_messages) / (grateful_messages + frustrated_messages) DESC, grateful_messages + frustrated_messages DESC, updated_at ASC LIMIT 10").all(),
-    env.LEADERBOARD_DB.prepare("SELECT display_name, instrumental_workarounds FROM leaderboard_entries WHERE public_ranked = 1 ORDER BY instrumental_workarounds DESC, updated_at ASC LIMIT 10").all(),
-    env.LEADERBOARD_DB.prepare("SELECT favorite_phrase, phrase_occurrences, phrase_sessions FROM leaderboard_entries WHERE favorite_phrase IS NOT NULL ORDER BY updated_at DESC LIMIT 48").all(),
-    env.LEADERBOARD_DB.prepare("SELECT favorite_phrase, SUM(phrase_occurrences) AS total_occurrences, COUNT(*) AS contributors FROM leaderboard_entries WHERE favorite_phrase IS NOT NULL GROUP BY favorite_phrase ORDER BY total_occurrences DESC, contributors DESC LIMIT 1").first(),
     env.LEADERBOARD_DB.prepare("SELECT display_name, public_ranked, favorite_phrase IS NOT NULL AS shares_phrase FROM leaderboard_entries WHERE client_hash = ?").bind(hash).first(),
   ]);
   const rows = values.results || [];
@@ -247,30 +198,24 @@ async function leaderboardSnapshot(env, aggregate, hash) {
     tokens: {
       value: aggregate.tokens,
       percentile: percentile(tokenAtOrBelow, rows.length),
-      distribution: histogram(rows, "tokens", tokenBuckets),
-      top: (publicTokens.results || []).map((row, index) => ({ rank: index + 1, name: row.display_name, value: Number(row.tokens) })),
+      samples: rows.map((row) => Number(row.tokens)),
     },
     word_ratio: {
       value: aggregate.word_ratio,
       percentile: percentile(ratioAtOrBelow, rows.length),
-      distribution: histogram(rows, "word_ratio", ratioBuckets),
-      top: (publicRatios.results || []).map((row, index) => ({ rank: index + 1, name: row.display_name, value: Number(row.word_ratio) })),
     },
     good_human_score: {
       value: score,
       percentile: score === null ? null : percentile(scoreAtOrBelow, cohortScores.length),
-      distribution: histogramValues(cohortScores, goodHumanBuckets),
-      top: (publicGoodHumans.results || []).map((row, index) => ({ rank: index + 1, name: row.display_name, value: goodHumanScore(row) })),
+    },
+    relationship: {
+      points: rows.map((row) => ({ yap_ratio: Number(row.word_ratio), appreciation_index: goodHumanScore(row) }))
+        .filter((point) => point.appreciation_index !== null),
     },
     instrumental_workarounds: {
       value: aggregate.instrumental_workarounds,
       percentile: percentile(workaroundAtOrBelow, rows.length),
-      distribution: histogram(rows, "instrumental_workarounds", workaroundBuckets),
-      top: (publicWorkarounds.results || []).map((row, index) => ({ rank: index + 1, name: row.display_name, value: Number(row.instrumental_workarounds) })),
-    },
-    phrases: {
-      global: globalPhrase ? { phrase: globalPhrase.favorite_phrase, occurrences: Number(globalPhrase.total_occurrences), contributors: Number(globalPhrase.contributors) } : null,
-      wall: (phraseRows.results || []).map((row) => ({ phrase: row.favorite_phrase, occurrences: Number(row.phrase_occurrences), sessions: Number(row.phrase_sessions) })),
+      samples: rows.map((row) => Number(row.instrumental_workarounds)),
     },
     participation: participation ? { joined: true, display_name: participation.display_name, public_ranked: Boolean(participation.public_ranked), shares_phrase: Boolean(participation.shares_phrase) } : { joined: false },
   };

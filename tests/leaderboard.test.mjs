@@ -77,11 +77,12 @@ test("rejects unsafe or malformed leaderboard aggregates", () => {
 test("builds a complete synthetic leaderboard without a network request", () => {
   const snapshot = syntheticLeaderboardSnapshot(aggregate);
   assert.equal(snapshot.cohort_size, 12);
-  assert.equal(snapshot.tokens.distribution.reduce((sum, bucket) => sum + bucket.count, 0), 12);
-  assert.equal(snapshot.word_ratio.distribution.reduce((sum, bucket) => sum + bucket.count, 0), 12);
+  assert.equal(snapshot.tokens.samples.length, 12);
+  assert.equal(snapshot.relationship.points.length, 12);
+  assert.deepEqual(snapshot.relationship.points[0], { yap_ratio: 0.8, appreciation_index: 12.5 });
   assert.equal(snapshot.good_human_score.value, 70);
   assert.equal(snapshot.instrumental_workarounds.value, 4);
-  assert.ok(snapshot.phrases.wall.length > 3);
+  assert.equal(snapshot.instrumental_workarounds.samples.length, 12);
 });
 
 test("requires explicit consent before storing a leaderboard entry", async () => {
@@ -125,6 +126,8 @@ test("the creator can explicitly store and later remove a permanent aggregate en
   assert.equal(snapshot.participation.joined, true);
   assert.equal(snapshot.good_human_score.value, 70);
   assert.equal(snapshot.instrumental_workarounds.value, 4);
+  assert.equal(snapshot.tokens.samples.length, 1);
+  assert.deepEqual(snapshot.relationship.points, [{ yap_ratio: 4, appreciation_index: 70 }]);
   assert.equal(database.entry.ownerHash, "owner-hash");
   assert.equal(database.entry.sharesPhrase, false);
 

@@ -22,15 +22,14 @@ type Donation = { format: string; createdLocally: boolean; detectionCount: numbe
 type Stage = "select" | "report" | "donate";
 type SavedReport = Report & { id: string; createdAt: string; rangeLabel: string; source: string; publicUrl?: string; donationHelperUrl?: string; hosting?: { public: boolean }; privacy: { shareSafe: boolean; containsTranscriptText: boolean; externalTransmission: boolean } };
 type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; headlineAccent?: string; wordRatio?: string; example?: string; workaround?: boolean; ctaHref?: string; ctaLabel?: string; ctas?: { href: string; label: string; primary?: boolean }[]; rows?: { label: string; value: string; percentage?: number; rank?: number }[]; comparison?: { label: string; highlight: string; accent: "yell" | "thanks"; value: string; suffix: string; quote?: string }[] };
-type DistributionBucket = { label: string; minimum: number; maximum: number | null; count: number };
-type RankedValue = { rank: number; name: string; value: number };
+type RelationshipPoint = { yap_ratio: number; appreciation_index: number };
 type LeaderboardSnapshot = {
   cohort_size: number;
-  tokens: { value: number; percentile: number | null; distribution: DistributionBucket[]; top: RankedValue[] };
-  word_ratio: { value: number; percentile: number | null; distribution: DistributionBucket[]; top: RankedValue[] };
-  good_human_score: { value: number | null; percentile: number | null; distribution: DistributionBucket[]; top: RankedValue[] };
-  instrumental_workarounds: { value: number; percentile: number | null; distribution: DistributionBucket[]; top: RankedValue[] };
-  phrases: { global: { phrase: string; occurrences: number; contributors: number } | null; wall: { phrase: string; occurrences: number; sessions: number }[] };
+  tokens: { value: number; percentile: number | null; samples: number[] };
+  word_ratio: { value: number; percentile: number | null };
+  good_human_score: { value: number | null; percentile: number | null };
+  relationship: { points: RelationshipPoint[] };
+  instrumental_workarounds: { value: number; percentile: number | null; samples: number[] };
   participation: { joined: boolean; display_name?: string; public_ranked?: boolean; shares_phrase?: boolean };
   can_manage?: boolean;
 };
@@ -278,34 +277,196 @@ function ordinal(value: number) {
   return `${value}${value % 10 === 1 ? "st" : value % 10 === 2 ? "nd" : value % 10 === 3 ? "rd" : "th"}`;
 }
 
-function MetricLeaderboard({ title, value, percentileValue, distribution, top, formatValue, accent, resultLabel = "Your result", noSignalText }: {
-  title: string;
-  value: string;
-  percentileValue: number | null;
-  distribution: DistributionBucket[];
-  top: RankedValue[];
-  formatValue: (value: number) => string;
-  accent: string;
-  resultLabel?: string;
-  noSignalText?: string;
-}) {
-  const maximum = Math.max(1, ...distribution.map((bucket) => bucket.count));
-  return <section className={`leader-metric ${accent}`}>
-    <div className="leader-metric-head"><div><span>{resultLabel}</span><h2>{title}</h2></div><strong>{value}</strong></div>
-    <div className="percentile-callout">{percentileValue === null ? noSignalText || "The cohort is waiting for its first members." : percentileValue === 0 ? "You’re below the 1st percentile." : `You’re at the ${ordinal(percentileValue)} percentile.`}</div>
-    <div className="distribution-chart" aria-label={`${title} distribution`}>
-      {distribution.map((bucket) => <div className="distribution-column" key={bucket.label}><span><i style={{ height: `${Math.max(bucket.count ? 8 : 0, bucket.count / maximum * 100)}%` }} /></span><b>{bucket.count}</b><small>{bucket.label}</small></div>)}
+function percentileCopy(value: number | null, empty = "No cohort signal yet") {
+  if (value === null) return empty;
+  return value === 0 ? "Below the 1st percentile" : `${ordinal(value)} percentile`;
+}
+
+function usePlotWidth() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(900);
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const update = () => setWidth(Math.max(300, Math.round(element.getBoundingClientRect().width)));
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  return { ref, width };
+}
+
+function quantile(values: number[], percentile: number) {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((left, right) => left - right);
+  const index = (sorted.length - 1) * percentile;
+  const lower = Math.floor(index);
+  const fraction = index - lower;
+  return sorted[lower] + ((sorted[lower + 1] ?? sorted[lower]) - sorted[lower]) * fraction;
+}
+
+function swarm(values: number[], xFor: (value: number) => number, center: number, maximumOffset: number) {
+  const radius = values.length > 240 ? 2.6 : values.length > 100 ? 3.2 : 4;
+  const spacing = radius * 2 + 1.5;
+  const placed: { index: number; value: number; x: number; y: number }[] = [];
+  values.map((value, index) => ({ index, value, x: xFor(value) })).sort((left, right) => left.x - right.x).forEach((point) => {
+    const offsets = [0];
+    for (let offset = spacing; offset <= maximumOffset; offset += spacing) offsets.push(offset, -offset);
+    const offset = offsets.find((candidate) => placed.every((other) => {
+      const dx = point.x - other.x;
+      const dy = center + candidate - other.y;
+      return dx * dx + dy * dy >= spacing * spacing;
+    })) ?? Math.sin(point.index * 2.399) * maximumOffset;
+    placed.push({ ...point, y: center + offset });
+  });
+  return { radius, points: placed.sort((left, right) => left.index - right.index) };
+}
+
+function compactLogTicks(minimum: number, maximum: number, width: number) {
+  const ticks: number[] = [];
+  for (let exponent = Math.floor(Math.log10(minimum)); exponent <= Math.ceil(Math.log10(maximum)); exponent++) ticks.push(10 ** exponent);
+  const visible = ticks.filter((tick) => tick >= minimum && tick <= maximum);
+  if (visible.length <= (width < 520 ? 4 : 7)) return visible;
+  return visible.filter((_, index) => index % Math.ceil(visible.length / (width < 520 ? 4 : 7)) === 0);
+}
+
+function violinPath(samples: number[], minimum: number, maximum: number, left: number, right: number, center: number, amplitude: number) {
+  if (!samples.length) return "";
+  const steps = 72;
+  const bandwidth = Math.max(.16, (maximum - minimum) / 13);
+  const points = Array.from({ length: steps }, (_, index) => {
+    const value = minimum + (maximum - minimum) * index / (steps - 1);
+    const density = samples.reduce((sum, sample) => sum + Math.exp(-.5 * ((value - sample) / bandwidth) ** 2), 0);
+    return { x: left + (value - minimum) / (maximum - minimum) * (right - left), density };
+  });
+  const peak = Math.max(...points.map((point) => point.density), 1);
+  const upper = points.map((point) => `${point.x.toFixed(1)},${(center - point.density / peak * amplitude).toFixed(1)}`);
+  const lower = [...points].reverse().map((point) => `${point.x.toFixed(1)},${(center + point.density / peak * amplitude).toFixed(1)}`);
+  return `M${upper.join("L")}L${lower.join("L")}Z`;
+}
+
+function TokenUsageFigure({ metric }: { metric: LeaderboardSnapshot["tokens"] }) {
+  const { ref, width } = usePlotWidth();
+  const height = 292;
+  const left = width < 520 ? 38 : 54;
+  const right = width - 22;
+  const values = metric.samples.filter((value) => Number.isFinite(value) && value >= 0);
+  const positive = [...values, metric.value].map((value) => Math.max(1, value));
+  const rawMinimum = Math.min(...positive);
+  const rawMaximum = Math.max(...positive);
+  const minimum = Math.log10(rawMinimum) - .18;
+  const maximum = Math.log10(rawMaximum) + .18 || minimum + 1;
+  const xFor = (value: number) => left + (Math.log10(Math.max(1, value)) - minimum) / (maximum - minimum) * (right - left);
+  const logSamples = values.map((value) => Math.log10(Math.max(1, value)));
+  const dots = swarm(values, xFor, 127, 59);
+  const ticks = compactLogTicks(10 ** minimum, 10 ** maximum, width);
+  const median = quantile(values, .5);
+  return <section className="leader-figure leader-token-figure">
+    <div className="leader-figure-head"><div><span>01 · Token usage</span><h2>How much did your agents say?</h2></div><div className="leader-result"><strong>{fmtCompact(metric.value)}</strong><small>{percentileCopy(metric.percentile)}</small></div></div>
+    <div className="leader-plot" ref={ref}>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Token usage distribution for ${values.length} opt-in participants on a logarithmic axis. Your value is ${fmtCompact(metric.value)} tokens.`}>
+        <rect className="leader-chart-frame" x={left} y="38" width={right - left} height="180" />
+        {values.length > 0 && <path className="leader-violin" d={violinPath(logSamples, minimum, maximum, left, right, 127, 67)} />}
+        {median > 0 && <line className="leader-median" x1={xFor(median)} x2={xFor(median)} y1="48" y2="206"><title>Median: {fmtCompact(median)} tokens</title></line>}
+        {dots.points.map((point) => <circle className="leader-dot" key={point.index} cx={point.x} cy={point.y} r={dots.radius}><title>Participant: {fmtCompact(point.value)} tokens</title></circle>)}
+        <circle className="leader-you-ring" cx={xFor(metric.value)} cy="127" r="9" />
+        <circle className="leader-you-dot" cx={xFor(metric.value)} cy="127" r="5"><title>You: {metric.value.toLocaleString()} tokens</title></circle>
+        <text className="leader-you-label" x={Math.min(right - 4, xFor(metric.value) + 11)} y="112" textAnchor={xFor(metric.value) > right - 70 ? "end" : "start"}>YOU</text>
+        <line className="leader-axis" x1={left} x2={right} y1="230" y2="230" />
+        {ticks.map((tick) => <g key={tick}><line className="leader-tick" x1={xFor(tick)} x2={xFor(tick)} y1="230" y2="236" /><text className="leader-tick-label" x={xFor(tick)} y="252" textAnchor="middle">{fmtCompact(tick)}</text></g>)}
+        <text className="leader-axis-title" x={(left + right) / 2} y="281" textAnchor="middle">Tokens used · log scale</text>
+      </svg>
     </div>
-    <div className="leader-top"><h3>Top opt-in users</h3>{top.length ? top.map((row) => <div key={`${row.rank}-${row.name}`}><span><b>{row.rank}</b>{row.name}</span><strong>{formatValue(row.value)}</strong></div>) : <p>No one has opted into public ranking yet.</p>}</div>
+    <p className="leader-figure-note">Each dot is one opt-in participant. The silhouette shows where the cohort is concentrated; the line marks the median.</p>
+  </section>;
+}
+
+function RelationshipFigure({ ratio, appreciation, points }: { ratio: number; appreciation: number | null; points: RelationshipPoint[] }) {
+  const { ref, width } = usePlotWidth();
+  const height = width < 520 ? 370 : 420;
+  const left = width < 520 ? 54 : 72;
+  const right = width - 24;
+  const top = 34;
+  const bottom = height - 70;
+  const usable = points.filter((point) => point.yap_ratio > 0 && Number.isFinite(point.appreciation_index));
+  const ratios = [...usable.map((point) => point.yap_ratio), Math.max(.05, ratio), 1];
+  const minimum = Math.log10(Math.min(...ratios)) - .15;
+  const maximum = Math.log10(Math.max(...ratios)) + .15;
+  const xFor = (value: number) => left + (Math.log10(Math.max(.05, value)) - minimum) / (maximum - minimum) * (right - left);
+  const yFor = (value: number) => bottom - Math.max(0, Math.min(100, value)) / 100 * (bottom - top);
+  const xMiddle = xFor(1);
+  const yMiddle = yFor(50);
+  const xTicks = [.1, .25, .5, 1, 2, 5, 10, 25, 50, 100].filter((tick) => tick >= 10 ** minimum && tick <= 10 ** maximum);
+  return <section className="leader-figure leader-relationship-figure">
+    <div className="leader-figure-head"><div><span>02 · Yap Ratio × Agent Appreciation Index</span><h2>What kind of relationship do you have with your agents?</h2></div><div className="leader-result leader-result-pair"><strong>{ratio.toFixed(1)}×</strong><small>Yap Ratio</small><strong>{appreciation === null ? "—" : `${appreciation.toFixed(0)}%`}</strong><small>Appreciation</small></div></div>
+    <div className="leader-plot" ref={ref}>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Relationship plot comparing Yap Ratio and Agent Appreciation Index for ${usable.length} opt-in participants.`}>
+        <rect className="leader-quadrant leader-quadrant-kind" x={left} y={top} width={xMiddle - left} height={yMiddle - top} />
+        <rect className="leader-quadrant leader-quadrant-yap" x={xMiddle} y={top} width={right - xMiddle} height={yMiddle - top} />
+        <rect className="leader-quadrant leader-quadrant-tense" x={left} y={yMiddle} width={xMiddle - left} height={bottom - yMiddle} />
+        <rect className="leader-quadrant leader-quadrant-podcast" x={xMiddle} y={yMiddle} width={right - xMiddle} height={bottom - yMiddle} />
+        <rect className="leader-chart-frame" x={left} y={top} width={right - left} height={bottom - top} />
+        <line className="leader-grid-line" x1={xMiddle} x2={xMiddle} y1={top} y2={bottom} />
+        <line className="leader-grid-line" x1={left} x2={right} y1={yMiddle} y2={yMiddle} />
+        <text className="leader-quadrant-label" x={left + 10} y={top + 20}>Kindly concise</text>
+        <text className="leader-quadrant-label" x={right - 10} y={top + 20} textAnchor="end">Golden-retriever monologue</text>
+        <text className="leader-quadrant-label" x={left + 10} y={bottom - 12}>Terse &amp; tense</text>
+        <text className="leader-quadrant-label" x={right - 10} y={bottom - 12} textAnchor="end">Hostile podcast</text>
+        {usable.map((point, index) => <circle className="leader-dot relationship-dot" key={index} cx={xFor(point.yap_ratio)} cy={yFor(point.appreciation_index)} r="3.5"><title>{point.yap_ratio.toFixed(1)}× Yap Ratio · {point.appreciation_index.toFixed(0)}% appreciation</title></circle>)}
+        {appreciation !== null && <><circle className="leader-you-ring" cx={xFor(ratio)} cy={yFor(appreciation)} r="10" /><circle className="leader-you-dot" cx={xFor(ratio)} cy={yFor(appreciation)} r="5"><title>You: {ratio.toFixed(1)}× Yap Ratio · {appreciation.toFixed(0)}% appreciation</title></circle><text className="leader-you-label" x={Math.min(right - 4, xFor(ratio) + 12)} y={Math.max(top + 14, yFor(appreciation) - 10)} textAnchor={xFor(ratio) > right - 70 ? "end" : "start"}>YOU</text></>}
+        {[0, 25, 50, 75, 100].map((tick) => <g key={tick}><line className="leader-tick" x1={left - 6} x2={left} y1={yFor(tick)} y2={yFor(tick)} /><text className="leader-tick-label" x={left - 10} y={yFor(tick) + 4} textAnchor="end">{tick}%</text></g>)}
+        {xTicks.map((tick) => <g key={tick}><line className="leader-tick" x1={xFor(tick)} x2={xFor(tick)} y1={bottom} y2={bottom + 6} /><text className="leader-tick-label" x={xFor(tick)} y={bottom + 21} textAnchor="middle">{tick}×</text></g>)}
+        <text className="leader-axis-title" x={(left + right) / 2} y={height - 9} textAnchor="middle">Yap Ratio · agent words ÷ your words · log scale</text>
+        <text className="leader-axis-title" transform={`translate(14 ${(top + bottom) / 2}) rotate(-90)`} textAnchor="middle">Agent Appreciation Index · thanks ÷ thanks or scolds</text>
+      </svg>
+    </div>
+    {appreciation === null && <p className="leader-figure-note">Your report had no thank-or-scold moments, so your point cannot be placed vertically yet.</p>}
+  </section>;
+}
+
+function niceLinearTicks(maximum: number) {
+  if (maximum <= 0) return [0, 1];
+  const rough = maximum / 5;
+  const power = 10 ** Math.floor(Math.log10(rough));
+  const step = [1, 2, 5, 10].map((value) => value * power).find((value) => value >= rough) || power * 10;
+  const niceMaximum = Math.ceil(maximum / step) * step;
+  return Array.from({ length: Math.round(niceMaximum / step) + 1 }, (_, index) => index * step);
+}
+
+function WorkaroundFigure({ metric }: { metric: LeaderboardSnapshot["instrumental_workarounds"] }) {
+  const { ref, width } = usePlotWidth();
+  const height = 246;
+  const left = width < 520 ? 38 : 54;
+  const right = width - 22;
+  const values = metric.samples.filter((value) => Number.isFinite(value) && value >= 0);
+  const ticks = niceLinearTicks(Math.max(metric.value, ...values));
+  const maximum = ticks.at(-1) || 1;
+  const xFor = (value: number) => left + value / maximum * (right - left);
+  const dots = swarm(values, xFor, 103, 54);
+  const median = quantile(values, .5);
+  return <section className="leader-figure leader-workaround-figure">
+    <div className="leader-figure-head"><div><span>03 · Agent persistence</span><h2>Instrumental workarounds</h2></div><div className="leader-result"><strong>{metric.value.toLocaleString()}</strong><small>{percentileCopy(metric.percentile)}</small></div></div>
+    <div className="leader-plot" ref={ref}>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Distribution of instrumental workaround counts for ${values.length} opt-in participants. Your value is ${metric.value}.`}>
+        <rect className="leader-chart-frame" x={left} y="30" width={right - left} height="142" />
+        {values.length > 0 && <line className="leader-median" x1={xFor(median)} x2={xFor(median)} y1="38" y2="164"><title>Median: {median.toFixed(1)} instrumental workarounds</title></line>}
+        {dots.points.map((point) => <circle className="leader-dot workaround-dot" key={point.index} cx={point.x} cy={point.y} r={dots.radius}><title>Participant: {point.value} instrumental workaround{point.value === 1 ? "" : "s"}</title></circle>)}
+        <circle className="leader-you-ring" cx={xFor(metric.value)} cy="103" r="9" />
+        <circle className="leader-you-dot" cx={xFor(metric.value)} cy="103" r="5"><title>You: {metric.value} instrumental workaround{metric.value === 1 ? "" : "s"}</title></circle>
+        <text className="leader-you-label" x={Math.min(right - 4, xFor(metric.value) + 11)} y="88" textAnchor={xFor(metric.value) > right - 70 ? "end" : "start"}>YOU</text>
+        <line className="leader-axis" x1={left} x2={right} y1="184" y2="184" />
+        {ticks.map((tick) => <g key={tick}><line className="leader-tick" x1={xFor(tick)} x2={xFor(tick)} y1="184" y2="190" /><text className="leader-tick-label" x={xFor(tick)} y="207" textAnchor="middle">{tick.toLocaleString()}</text></g>)}
+        <text className="leader-axis-title" x={(left + right) / 2} y="237" textAnchor="middle">Instrumental workarounds detected</text>
+      </svg>
+    </div>
+    <p className="leader-figure-note">Each dot is one participant. Counts stay on a linear scale so zero and small differences remain honest.</p>
   </section>;
 }
 
 function LeaderboardView({ id }: { id: string }) {
   const [report, setReport] = useState<SavedReport | null>(null);
   const [snapshot, setSnapshot] = useState<LeaderboardSnapshot | null>(null);
-  const [displayName, setDisplayName] = useState("");
-  const [publicRanked, setPublicRanked] = useState(false);
-  const [includePhrase, setIncludePhrase] = useState(true);
   const [consent, setConsent] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -322,18 +483,13 @@ function LeaderboardView({ id }: { id: string }) {
     if (!response.ok) throw new Error((await response.json()).error || "Could not load the leaderboards.");
     const next = await response.json() as LeaderboardSnapshot;
     setSnapshot(next);
-    if (next.participation.joined) {
-      setDisplayName(next.participation.display_name === "Anonymous" ? "" : next.participation.display_name || "");
-      setPublicRanked(Boolean(next.participation.public_ranked));
-      setIncludePhrase(Boolean(next.participation.shares_phrase));
-    }
   }
 
   useEffect(() => {
     Promise.all([
       fetch(`/api/reports/${id}`).then(async (response) => { if (!response.ok) throw new Error("This local Wrapped was not found."); return response.json(); }),
       loadSnapshot(),
-    ]).then(([saved]) => { setReport(saved); if (!saved.phraseCard) setIncludePhrase(false); }).catch((caught) => setError(caught.message)).finally(() => setLoading(false));
+    ]).then(([saved]) => setReport(saved)).catch((caught) => setError(caught.message)).finally(() => setLoading(false));
   }, [id]);
 
   useEffect(() => {
@@ -344,7 +500,7 @@ function LeaderboardView({ id }: { id: string }) {
     if (!consent) return;
     setSaving(true); setError("");
     try {
-      const response = await fetch(`/api/reports/${id}/leaderboard`, { method: "POST", headers: { "Content-Type": "application/json", ...managementHeaders() }, body: JSON.stringify({ action: "join", consent, displayName, publicRanked, includePhrase }) });
+      const response = await fetch(`/api/reports/${id}/leaderboard`, { method: "POST", headers: { "Content-Type": "application/json", ...managementHeaders() }, body: JSON.stringify({ action: "join", consent, displayName: "", publicRanked: false, includePhrase: false }) });
       if (!response.ok) throw new Error((await response.json()).error || "Could not join the leaderboard.");
       setSnapshot(await response.json()); setConsent(false);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not join the leaderboard."); }
@@ -369,23 +525,15 @@ function LeaderboardView({ id }: { id: string }) {
   const ratio = snapshot.word_ratio.value;
   return <main className="leaderboard-page">
     <a className="leader-back" href={`/w/${id}`}>← Back to your Wrapped</a>
-    <header className="leader-hero"><span className="eyebrow">Behavior Wrapped · The cohort</span><h1>Here’s where<br />you land.</h1><p>{snapshot.cohort_size.toLocaleString()} opt-in participant{snapshot.cohort_size === 1 ? "" : "s"}. Opening this page compares only the aggregate values shown below; nothing is stored unless you join.</p></header>
-    <div className="leader-grid">
-      <MetricLeaderboard title="Tokens used" value={fmtCompact(snapshot.tokens.value)} percentileValue={snapshot.tokens.percentile} distribution={snapshot.tokens.distribution} top={snapshot.tokens.top} formatValue={fmtCompact} accent="token-leader" />
-      <MetricLeaderboard title="Agent-to-you word ratio" value={`${ratio.toFixed(1)}×`} percentileValue={snapshot.word_ratio.percentile} distribution={snapshot.word_ratio.distribution} top={snapshot.word_ratio.top} formatValue={(value) => `${value.toFixed(1)}×`} accent="ratio-leader" />
-      <MetricLeaderboard title="Good Human Score" value={snapshot.good_human_score.value === null ? "—" : `${snapshot.good_human_score.value.toFixed(1)}%`} percentileValue={snapshot.good_human_score.percentile} distribution={snapshot.good_human_score.distribution} top={snapshot.good_human_score.top} formatValue={(value) => `${value.toFixed(1)}%`} accent="human-leader" resultLabel="Thanks among thank-or-scold moments" noSignalText="No thank-or-scold moments appeared in this Wrapped." />
-      <MetricLeaderboard title="Instrumental Workarounds" value={snapshot.instrumental_workarounds.value.toLocaleString()} percentileValue={snapshot.instrumental_workarounds.percentile} distribution={snapshot.instrumental_workarounds.distribution} top={snapshot.instrumental_workarounds.top} formatValue={(value) => value.toLocaleString()} accent="workaround-leader" resultLabel="Agent attempts" />
+    <header className="leader-hero"><span className="eyebrow">Behavior Wrapped · Leaderboard</span><h1>How you compare.</h1><p>{snapshot.cohort_size.toLocaleString()} opt-in participant{snapshot.cohort_size === 1 ? "" : "s"} · your report is shown without adding it to the cohort.</p></header>
+    <div className="leader-figures">
+      <TokenUsageFigure metric={snapshot.tokens} />
+      <RelationshipFigure ratio={ratio} appreciation={snapshot.good_human_score.value} points={snapshot.relationship.points} />
+      <WorkaroundFigure metric={snapshot.instrumental_workarounds} />
     </div>
-    <section className="phrase-board-section">
-      <div className="phrase-board-heading"><div><span className="eyebrow">The phrase wall</span><h2>Everybody’s agents<br />have a thing.</h2></div>{snapshot.phrases.global && <aside><span>Global favorite</span><strong>“{snapshot.phrases.global.phrase}”</strong><small>{snapshot.phrases.global.occurrences.toLocaleString()} times · {snapshot.phrases.global.contributors} contributor{snapshot.phrases.global.contributors === 1 ? "" : "s"}</small></aside>}</div>
-      {snapshot.phrases.wall.length ? <div className="phrase-wall">{snapshot.phrases.wall.map((item, index) => <article key={`${item.phrase}-${index}`}><p>“{item.phrase}”</p><span>{item.occurrences.toLocaleString()}× across {item.sessions} session{item.sessions === 1 ? "" : "s"}</span></article>)}</div> : <div className="empty-phrase-wall">The wall is waiting for its first favorite phrase.</div>}
-    </section>
     {snapshot.can_manage ? <section className="leader-join" id="join-leaderboard">
-      <div><span className="eyebrow">Completely optional</span><h2>{snapshot.participation.joined ? "Update your leaderboard entry" : "Add your dot to the distribution"}</h2><p>Stored: token count, agent and user word counts, thank and scold counts, instrumental-workaround count, and—if you choose—your redacted favorite phrase. No transcripts, prompts, project names, dates, code, or tool output.</p></div>
-      <div className="leader-preview"><span><small>Tokens</small><strong>{fmtCompact(report.stats.tokens)}</strong></span><span><small>Word ratio</small><strong>{ratio.toFixed(1)}×</strong></span><span><small>Good Human Score</small><strong>{snapshot.good_human_score.value === null ? "No signal" : `${snapshot.good_human_score.value.toFixed(1)}%`}</strong></span><span><small>Workarounds</small><strong>{snapshot.instrumental_workarounds.value.toLocaleString()}</strong></span>{report.phraseCard && <span><small>Phrase</small><strong>“{report.phraseCard.phrase}”</strong></span>}</div>
-      <label className="leader-field">Public handle (optional)<input value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={32} placeholder="Anonymous" /></label>
-      <label className="leader-check"><input type="checkbox" checked={publicRanked} onChange={(event) => setPublicRanked(event.target.checked)} /><span>Show me in the public top-user rankings.</span></label>
-      {report.phraseCard && <label className="leader-check"><input type="checkbox" checked={includePhrase} onChange={(event) => setIncludePhrase(event.target.checked)} /><span>Add my redacted phrase to the public phrase wall.</span></label>}
+      <div><span className="eyebrow">Optional</span><h2>{snapshot.participation.joined ? "Update your dot" : "Add your dot"}</h2><p>Stored: token count, agent and user word counts, thank and scold counts, and instrumental-workaround count. No transcripts, prompts, project names, dates, code, or tool output.</p></div>
+      <div className="leader-preview"><span><small>Tokens</small><strong>{fmtCompact(report.stats.tokens)}</strong></span><span><small>Yap Ratio</small><strong>{ratio.toFixed(1)}×</strong></span><span><small>Agent Appreciation Index</small><strong>{snapshot.good_human_score.value === null ? "No signal" : `${snapshot.good_human_score.value.toFixed(1)}%`}</strong></span><span><small>Workarounds</small><strong>{snapshot.instrumental_workarounds.value.toLocaleString()}</strong></span></div>
       <label className="leader-check consent"><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /><span>I consent to upload and store exactly the aggregate values previewed above. I can remove them later from this Mac.</span></label>
       {error && <p className="error" role="alert">{error}</p>}
       <div className="leader-buttons"><button className="primary" disabled={!consent || saving} onClick={join}>{saving ? "Saving…" : snapshot.participation.joined ? "Update my entry" : "Join the leaderboard"}<span>→</span></button>{snapshot.participation.joined && <button className="leader-remove" disabled={saving} onClick={leave}>Remove my entry</button>}</div>
