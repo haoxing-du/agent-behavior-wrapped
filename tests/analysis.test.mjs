@@ -175,6 +175,24 @@ test("averages human inputs and complete agent responses across tool-use records
   assert.equal(report.stats.agentUserWordRatio, 2.75);
 });
 
+test("distributes user turns by session and records the longest session", () => {
+  const turnCounts = [1, 2, 6, 11, 21, 51];
+  const report = analyzeSessions(turnCounts.map((turns, sessionIndex) => ({
+    sessionId: `turn-session-${sessionIndex}`,
+    records: Array.from({ length: turns }, (_, turnIndex) => ({ type: "user", message: { content: `Message ${turnIndex + 1}` } })),
+  })));
+  assert.equal(report.stats.longestSessionTurns, 51);
+  assert.equal(report.stats.sessionTurnDistribution.reduce((sum, bucket) => sum + bucket.sessions, 0), turnCounts.length);
+  assert.deepEqual(report.stats.sessionTurnDistribution.map(({ label, sessions, percentage }) => ({ label, sessions, percentage })), [
+    { label: "0–1 turns", sessions: 1, percentage: 16.7 },
+    { label: "2–5 turns", sessions: 1, percentage: 16.7 },
+    { label: "6–10 turns", sessions: 1, percentage: 16.7 },
+    { label: "11–20 turns", sessions: 1, percentage: 16.7 },
+    { label: "21–50 turns", sessions: 1, percentage: 16.7 },
+    { label: "51+ turns", sessions: 1, percentage: 16.7 },
+  ]);
+});
+
 test("title-cases model families that are not hardcoded", () => {
   const report = analyzeSessions([{ sessionId: "new-model-family", records: [
     { type: "user", message: { content: "Hello" } },

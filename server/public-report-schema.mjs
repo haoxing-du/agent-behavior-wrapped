@@ -20,6 +20,7 @@ function safeBreakdown(value, labelKey, countKey, allowedLabels) {
 }
 
 const stockPhraseLabels = ["You're right", "Say the word", "genuinely", "one wrinkle"];
+const sessionTurnBucketLabels = new Set(["0–1 turns", "2–5 turns", "6–10 turns", "11–20 turns", "21–50 turns", "51+ turns"]);
 
 function safeStockPhrases(value) {
   if (!Array.isArray(value)) return null;
@@ -72,6 +73,8 @@ export function sanitizePublicReport(value) {
       interruptions: Math.round(safeNumber(stats.interruptions)), tokens: Math.round(safeNumber(stats.tokens)), agentWords: Math.round(safeNumber(stats.agentWords)),
       userWords: Math.round(safeNumber(stats.userWords)), agentUserWordRatio: safeNumber(stats.agentUserWordRatio, 10_000),
       averageAgentResponseWords: Math.round(safeNumber(stats.averageAgentResponseWords)), averageUserInputWords: Math.round(safeNumber(stats.averageUserInputWords)),
+      longestSessionTurns: Math.round(safeNumber(stats.longestSessionTurns, 1_000_000)),
+      sessionTurnDistribution: safeBreakdown(stats.sessionTurnDistribution, "label", "sessions", sessionTurnBucketLabels),
       interactionTone: {
         frustratedMessages: Math.round(safeNumber(stats.interactionTone?.frustratedMessages, 1_000_000)),
         gratefulMessages: Math.round(safeNumber(stats.interactionTone?.gratefulMessages, 1_000_000)),
