@@ -244,6 +244,23 @@ async function loadPublicReport(env, id) {
   return (await loadPublicReportRecord(env, id))?.report || null;
 }
 
+async function leaderboardOptedOut(env, hash) {
+  return Boolean(await env.LEADERBOARD_DB.prepare("SELECT client_hash FROM leaderboard_opt_outs WHERE client_hash = ?").bind(hash).first());
+}
+
+async function upsertAnonymousLeaderboardEntry(env, hash, aggregate) {
+  await env.LEADERBOARD_DB.prepare(`INSERT INTO leaderboard_entries
+    (client_hash, display_name, public_ranked, tokens, agent_words, user_words, word_ratio, grateful_messages, frustrated_messages, instrumental_workarounds, favorite_phrase, phrase_occurrences, phrase_sessions, updated_at)
+    VALUES (?, 'Anonymous', 0, ?, ?, ?, ?, ?, ?, ?, NULL, 0, 0, datetime('now'))
+    ON CONFLICT(client_hash) DO UPDATE SET display_name='Anonymous', public_ranked=0,
+    tokens=excluded.tokens, agent_words=excluded.agent_words, user_words=excluded.user_words, word_ratio=excluded.word_ratio,
+    grateful_messages=excluded.grateful_messages, frustrated_messages=excluded.frustrated_messages, instrumental_workarounds=excluded.instrumental_workarounds,
+    favorite_phrase=NULL, phrase_occurrences=0, phrase_sessions=0, updated_at=datetime('now')`).bind(
+      hash, aggregate.tokens, aggregate.agent_words, aggregate.user_words, aggregate.word_ratio,
+      aggregate.grateful_messages, aggregate.frustrated_messages, aggregate.instrumental_workarounds,
+    ).run();
+}
+
 async function handlePublicReports(request, env) {
   if (!env.LEADERBOARD_DB) return json({ error: "Public report storage is not configured." }, 503);
   const clientId = request.headers.get("x-behavior-wrapped-client") || "";
@@ -271,6 +288,8 @@ async function handlePublicReports(request, env) {
   try {
     await env.LEADERBOARD_DB.prepare("INSERT INTO public_reports (id, owner_hash, management_token_hash, report_json, updated_at) VALUES (?, ?, ?, ?, datetime('now'))").bind(report.id, hash, managementTokenHash, serialized).run();
   } catch { return json({ error: "That public report ID already exists." }, 409); }
+  const aggregate = aggregateFromPublicReport(report);
+  if (aggregate && !await leaderboardOptedOut(env, hash)) await upsertAnonymousLeaderboardEntry(env, hash, aggregate);
   const origin = new URL(request.url).origin;
   return json({ id: report.id, public_url: `${origin}/w/${report.id}` }, 201);
 }
@@ -321,26 +340,6 @@ async function handleLeaderboard(request, env) {
   return json(await leaderboardSnapshot(env, aggregate, hash));
 }
 
-async function saveLeaderboardEntry(env, hash, aggregate, body) {
-  if (body.consent !== true || typeof body.publicRanked !== "boolean" || typeof body.includePhrase !== "boolean") return { error: "Explicit leaderboard consent is required.", status: 400 };
-  const name = displayName(body.displayName);
-  if (!name) return { error: "Display name must be 32 characters or fewer and contain only letters, numbers, spaces, dots, underscores, or hyphens.", status: 400 };
-  const phrase = body.includePhrase ? aggregate.favorite_phrase : null;
-  await env.LEADERBOARD_DB.prepare(`INSERT INTO leaderboard_entries
-    (client_hash, display_name, public_ranked, tokens, agent_words, user_words, word_ratio, grateful_messages, frustrated_messages, instrumental_workarounds, favorite_phrase, phrase_occurrences, phrase_sessions, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-    ON CONFLICT(client_hash) DO UPDATE SET display_name=excluded.display_name, public_ranked=excluded.public_ranked,
-    tokens=excluded.tokens, agent_words=excluded.agent_words, user_words=excluded.user_words, word_ratio=excluded.word_ratio,
-    grateful_messages=excluded.grateful_messages, frustrated_messages=excluded.frustrated_messages, instrumental_workarounds=excluded.instrumental_workarounds,
-    favorite_phrase=excluded.favorite_phrase, phrase_occurrences=excluded.phrase_occurrences,
-    phrase_sessions=excluded.phrase_sessions, updated_at=datetime('now')`).bind(
-      hash, name, body.publicRanked ? 1 : 0, aggregate.tokens, aggregate.agent_words, aggregate.user_words, aggregate.word_ratio,
-      aggregate.grateful_messages, aggregate.frustrated_messages, aggregate.instrumental_workarounds,
-      phrase, phrase ? aggregate.phrase_occurrences : 0, phrase ? aggregate.phrase_sessions : 0,
-    ).run();
-  return null;
-}
-
 async function handlePublicLeaderboard(request, env, id) {
   if (!env.LEADERBOARD_DB) return json({ error: "Leaderboard storage is not configured." }, 503);
   const record = await loadPublicReportRecord(env, id);
@@ -351,6 +350,7 @@ async function handlePublicLeaderboard(request, env, id) {
 
   if (request.method === "DELETE") {
     if (!canManage) return json({ error: "Only the creator of this Wrapped can remove its leaderboard entry." }, 403);
+    await env.LEADERBOARD_DB.prepare("INSERT INTO leaderboard_opt_outs (client_hash, opted_out_at) VALUES (?, datetime('now')) ON CONFLICT(client_hash) DO UPDATE SET opted_out_at=datetime('now')").bind(record.owner_hash).run();
     await env.LEADERBOARD_DB.prepare("DELETE FROM leaderboard_entries WHERE client_hash = ?").bind(record.owner_hash).run();
     return json({ removed: true });
   }
@@ -359,14 +359,17 @@ async function handlePublicLeaderboard(request, env, id) {
   if (raw === null) return json({ error: "Request too large." }, 413);
   let body;
   try { body = JSON.parse(raw); } catch { return json({ error: "Invalid JSON." }, 400); }
-  if (body.action === "join") {
-    if (!canManage) return json({ error: "Only the creator of this Wrapped can join with these results." }, 403);
-    const failure = await saveLeaderboardEntry(env, record.owner_hash, aggregate, body);
-    if (failure) return json({ error: failure.error }, failure.status);
+  let optedOut = await leaderboardOptedOut(env, record.owner_hash);
+  if (body.action === "include" || body.action === "join") {
+    if (!canManage) return json({ error: "Only the creator of this Wrapped can add these results." }, 403);
+    await env.LEADERBOARD_DB.prepare("DELETE FROM leaderboard_opt_outs WHERE client_hash = ?").bind(record.owner_hash).run();
+    await upsertAnonymousLeaderboardEntry(env, record.owner_hash, aggregate);
+    optedOut = false;
   } else if (body.action !== "snapshot") {
     return json({ error: "Invalid leaderboard action." }, 400);
   }
-  try { return json({ ...await leaderboardSnapshot(env, aggregate, canManage ? record.owner_hash : `public:${id}`), can_manage: canManage }); }
+  if (!optedOut) await upsertAnonymousLeaderboardEntry(env, record.owner_hash, aggregate);
+  try { return json({ ...await leaderboardSnapshot(env, aggregate, record.owner_hash), can_manage: canManage, opted_out: optedOut }); }
   catch { return json({ error: "Leaderboard storage is not configured." }, 503); }
 }
 

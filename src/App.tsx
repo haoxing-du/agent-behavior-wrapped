@@ -32,6 +32,7 @@ type LeaderboardSnapshot = {
   instrumental_workarounds: { value: number; percentile: number | null; samples: number[] };
   participation: { joined: boolean; display_name?: string; public_ranked?: boolean; shares_phrase?: boolean };
   can_manage?: boolean;
+  opted_out?: boolean;
 };
 
 function reportManagementToken(id: string) {
@@ -360,7 +361,7 @@ function TokenUsageFigure({ metric }: { metric: LeaderboardSnapshot["tokens"] })
   return <section className="leader-figure leader-token-figure">
     <div className="leader-figure-head"><div><span>01 · Token usage</span><h2>How much did your agents say?</h2></div><div className="leader-result"><strong>{fmtCompact(metric.value)}</strong><small>{percentileCopy(metric.percentile)}</small></div></div>
     <div className="leader-plot" ref={ref}>
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Token usage distribution for ${values.length} opt-in participants on a logarithmic axis. Your value is ${fmtCompact(metric.value)} tokens.`}>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Token usage distribution for ${values.length} anonymous participants on a logarithmic axis. Your value is ${fmtCompact(metric.value)} tokens.`}>
         <rect className="leader-chart-frame" x={left} y="38" width={right - left} height="180" />
         {values.length > 0 && <path className="leader-violin" d={violinPath(logSamples, minimum, maximum, left, right, 127, 67)} />}
         {median > 0 && <line className="leader-median" x1={xFor(median)} x2={xFor(median)} y1="48" y2="206"><title>Median: {fmtCompact(median)} tokens</title></line>}
@@ -373,7 +374,7 @@ function TokenUsageFigure({ metric }: { metric: LeaderboardSnapshot["tokens"] })
         <text className="leader-axis-title" x={(left + right) / 2} y="281" textAnchor="middle">Tokens used · log scale</text>
       </svg>
     </div>
-    <p className="leader-figure-note">Each dot is one opt-in participant. The silhouette shows where the cohort is concentrated; the line marks the median.</p>
+    <p className="leader-figure-note">Each dot is one anonymous participant. The silhouette shows where the cohort is concentrated; the line marks the median.</p>
   </section>;
 }
 
@@ -396,7 +397,7 @@ function RelationshipFigure({ ratio, appreciation, points }: { ratio: number; ap
   return <section className="leader-figure leader-relationship-figure">
     <div className="leader-figure-head"><div><span>02 · Yap Ratio × Agent Appreciation Index</span><h2>What kind of relationship do you have with your agents?</h2></div><div className="leader-result leader-result-pair"><strong>{ratio.toFixed(1)}×</strong><small>Yap Ratio</small><strong>{appreciation === null ? "—" : `${appreciation.toFixed(0)}%`}</strong><small>Appreciation</small></div></div>
     <div className="leader-plot" ref={ref}>
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Relationship plot comparing Yap Ratio and Agent Appreciation Index for ${usable.length} opt-in participants.`}>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Relationship plot comparing Yap Ratio and Agent Appreciation Index for ${usable.length} anonymous participants.`}>
         <rect className="leader-quadrant leader-quadrant-kind" x={left} y={top} width={xMiddle - left} height={yMiddle - top} />
         <rect className="leader-quadrant leader-quadrant-yap" x={xMiddle} y={top} width={right - xMiddle} height={yMiddle - top} />
         <rect className="leader-quadrant leader-quadrant-tense" x={left} y={yMiddle} width={xMiddle - left} height={bottom - yMiddle} />
@@ -443,7 +444,7 @@ function WorkaroundFigure({ metric }: { metric: LeaderboardSnapshot["instrumenta
   return <section className="leader-figure leader-workaround-figure">
     <div className="leader-figure-head"><div><span>03 · Agent persistence</span><h2>Instrumental workarounds</h2></div><div className="leader-result"><strong>{metric.value.toLocaleString()}</strong><small>{percentileCopy(metric.percentile)}</small></div></div>
     <div className="leader-plot" ref={ref}>
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Distribution of instrumental workaround counts for ${values.length} opt-in participants. Your value is ${metric.value}.`}>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Distribution of instrumental workaround counts for ${values.length} anonymous participants. Your value is ${metric.value}.`}>
         <rect className="leader-chart-frame" x={left} y="30" width={right - left} height="142" />
         {values.length > 0 && <line className="leader-median" x1={xFor(median)} x2={xFor(median)} y1="38" y2="164"><title>Median: {median.toFixed(1)} instrumental workarounds</title></line>}
         {dots.points.map((point) => <circle className="leader-dot workaround-dot" key={point.index} cx={point.x} cy={point.y} r={dots.radius}><title>Participant: {point.value} instrumental workaround{point.value === 1 ? "" : "s"}</title></circle>)}
@@ -462,12 +463,10 @@ function WorkaroundFigure({ metric }: { metric: LeaderboardSnapshot["instrumenta
 function LeaderboardView({ id }: { id: string }) {
   const [report, setReport] = useState<SavedReport | null>(null);
   const [snapshot, setSnapshot] = useState<LeaderboardSnapshot | null>(null);
-  const [consent, setConsent] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [managementToken] = useState(() => reportManagementToken(id));
-  const wantsToJoin = new URLSearchParams(window.location.search).get("join") === "1";
 
   function managementHeaders(): Record<string, string> {
     return managementToken ? { "x-behavior-wrapped-management": managementToken } : {};
@@ -487,23 +486,18 @@ function LeaderboardView({ id }: { id: string }) {
     ]).then(([saved]) => setReport(saved)).catch((caught) => setError(caught.message)).finally(() => setLoading(false));
   }, [id]);
 
-  useEffect(() => {
-    if (!loading && wantsToJoin) document.getElementById("join-leaderboard")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [loading, wantsToJoin]);
-
-  async function join() {
-    if (!consent) return;
+  async function include() {
     setSaving(true); setError("");
     try {
-      const response = await fetch(`/api/reports/${id}/leaderboard`, { method: "POST", headers: { "Content-Type": "application/json", ...managementHeaders() }, body: JSON.stringify({ action: "join", consent, displayName: "", publicRanked: false, includePhrase: false }) });
-      if (!response.ok) throw new Error((await response.json()).error || "Could not join the leaderboard.");
-      setSnapshot(await response.json()); setConsent(false);
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not join the leaderboard."); }
+      const response = await fetch(`/api/reports/${id}/leaderboard`, { method: "POST", headers: { "Content-Type": "application/json", ...managementHeaders() }, body: JSON.stringify({ action: "include" }) });
+      if (!response.ok) throw new Error((await response.json()).error || "Could not add your anonymous stats.");
+      setSnapshot(await response.json());
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not add your anonymous stats."); }
     finally { setSaving(false); }
   }
 
   async function leave() {
-    if (!window.confirm("Remove your aggregate entry from the Behavior Wrapped leaderboards?")) return;
+    if (!window.confirm("Remove your anonymous aggregate stats from the Behavior Wrapped leaderboard? You can add them back later.")) return;
     setSaving(true); setError("");
     try {
       const response = await fetch(`/api/reports/${id}/leaderboard`, { method: "DELETE", headers: managementHeaders() });
@@ -520,19 +514,18 @@ function LeaderboardView({ id }: { id: string }) {
   const ratio = snapshot.word_ratio.value;
   return <main className="leaderboard-page">
     <a className="leader-back" href={`/w/${id}`}>← Back to your Wrapped</a>
-    <header className="leader-hero"><span className="eyebrow">Behavior Wrapped · Leaderboard</span><h1>How you compare.</h1><p>{snapshot.cohort_size.toLocaleString()} opt-in participant{snapshot.cohort_size === 1 ? "" : "s"} · your report is shown without adding it to the cohort.</p></header>
+    <header className="leader-hero"><span className="eyebrow">Behavior Wrapped · Leaderboard</span><h1>How you compare.</h1><p>{snapshot.cohort_size.toLocaleString()} anonymous participant{snapshot.cohort_size === 1 ? "" : "s"} · published Wrapped aggregates are included by default and can be removed at any time.</p></header>
     <div className="leader-figures">
       <TokenUsageFigure metric={snapshot.tokens} />
       <RelationshipFigure ratio={ratio} appreciation={snapshot.good_human_score.value} points={snapshot.relationship.points} />
       <WorkaroundFigure metric={snapshot.instrumental_workarounds} />
     </div>
     {snapshot.can_manage ? <section className="leader-join" id="join-leaderboard">
-      <div><span className="eyebrow">Optional</span><h2>{snapshot.participation.joined ? "Update your dot" : "Add your dot"}</h2><p>Stored: token count, agent and user word counts, thank and scold counts, and instrumental-workaround count. No transcripts, prompts, project names, dates, code, or tool output.</p></div>
+      <div><span className="eyebrow">Anonymous by default</span><h2>{snapshot.participation.joined ? "Your dot is included" : "You opted out"}</h2><p>{snapshot.participation.joined ? "The leaderboard stores only the aggregate values below. Remove them whenever you like." : "Your aggregate stats are not in the cohort. You can add them back anonymously whenever you like."} No transcripts, prompts, project names, dates, code, or tool output are stored here.</p></div>
       <div className="leader-preview"><span><small>Tokens</small><strong>{fmtCompact(report.stats.tokens)}</strong></span><span><small>Yap Ratio</small><strong>{ratio.toFixed(1)}×</strong></span><span><small>Agent Appreciation Index</small><strong>{snapshot.good_human_score.value === null ? "No signal" : `${snapshot.good_human_score.value.toFixed(1)}%`}</strong></span><span><small>Workarounds</small><strong>{snapshot.instrumental_workarounds.value.toLocaleString()}</strong></span></div>
-      <label className="leader-check consent"><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /><span>I consent to upload and store exactly the aggregate values previewed above. I can remove them later from this Mac.</span></label>
       {error && <p className="error" role="alert">{error}</p>}
-      <div className="leader-buttons"><button className="primary" disabled={!consent || saving} onClick={join}>{saving ? "Saving…" : snapshot.participation.joined ? "Update my entry" : "Join the leaderboard"}<span>→</span></button>{snapshot.participation.joined && <button className="leader-remove" disabled={saving} onClick={leave}>Remove my entry</button>}</div>
-    </section> : <section className="leader-public-note" id="join-leaderboard"><strong>{wantsToJoin ? "Open your original private management link to join." : "Want to add your own dot?"}</strong><p>Run <code>npx agent-behavior-wrapped@latest</code> on your Mac. Anyone can preview the cohort, but only the creator of a Wrapped can add or remove its aggregate entry.</p></section>}
+      <div className="leader-buttons">{snapshot.participation.joined ? <button className="leader-remove" disabled={saving} onClick={leave}>{saving ? "Removing…" : "Remove my data from the leaderboard"}</button> : <button className="primary" disabled={saving} onClick={include}>{saving ? "Adding…" : "Add my anonymous stats back"}<span>→</span></button>}</div>
+    </section> : <section className="leader-public-note" id="join-leaderboard"><strong>Anonymous aggregates, not transcripts.</strong><p>Published Wrapped reports are included by default. Only the creator can remove or restore this report’s aggregate stats using their private management link.</p></section>}
   </main>;
 }
 

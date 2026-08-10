@@ -30,14 +30,17 @@ async function sha256(value) {
 
 function leaderboardDatabase(managementTokenHash) {
   let entry = null;
+  let optedOut = false;
   return {
     get entry() { return entry; },
+    get optedOut() { return optedOut; },
     prepare(sql) {
       let values = [];
       return {
         bind(...next) { values = next; return this; },
         async first() {
           if (sql.includes("FROM public_reports")) return { report_json: JSON.stringify(publicReport), owner_hash: "owner-hash", management_token_hash: managementTokenHash };
+          if (sql.includes("FROM leaderboard_opt_outs")) return optedOut ? { client_hash: "owner-hash" } : null;
           if (sql.includes("SUM(phrase_occurrences)")) return null;
           if (sql.includes("WHERE client_hash = ?")) return entry ? { display_name: entry.displayName, public_ranked: entry.publicRanked, shares_phrase: entry.sharesPhrase } : null;
           return null;
@@ -47,7 +50,10 @@ function leaderboardDatabase(managementTokenHash) {
           return { results: [] };
         },
         async run() {
-          if (sql.startsWith("INSERT INTO leaderboard_entries")) entry = { ownerHash: values[0], displayName: values[1], publicRanked: values[2], tokens: values[3], wordRatio: values[6], gratefulMessages: values[7], frustratedMessages: values[8], workarounds: values[9], sharesPhrase: Boolean(values[10]) };
+          if (sql.startsWith("INSERT INTO leaderboard_entries") && sql.includes("'Anonymous'")) entry = { ownerHash: values[0], displayName: "Anonymous", publicRanked: 0, tokens: values[1], wordRatio: values[4], gratefulMessages: values[5], frustratedMessages: values[6], workarounds: values[7], sharesPhrase: false };
+          else if (sql.startsWith("INSERT INTO leaderboard_entries")) entry = { ownerHash: values[0], displayName: values[1], publicRanked: values[2], tokens: values[3], wordRatio: values[6], gratefulMessages: values[7], frustratedMessages: values[8], workarounds: values[9], sharesPhrase: Boolean(values[10]) };
+          if (sql.startsWith("INSERT INTO leaderboard_opt_outs")) optedOut = true;
+          if (sql.startsWith("DELETE FROM leaderboard_opt_outs")) optedOut = false;
           if (sql.startsWith("DELETE FROM leaderboard_entries")) entry = null;
           return { meta: { changes: 1 } };
         },
@@ -100,28 +106,33 @@ test("requires explicit consent before storing a leaderboard entry", async () =>
   assert.match((await response.json()).error, /consent/i);
 });
 
-test("a shared public report cannot be enrolled without its management credential", async () => {
+test("a published report is included anonymously by default", async () => {
   const token = "d".repeat(64);
   const database = leaderboardDatabase(await sha256(token));
   const response = await handleRequest(new Request("https://example.com/api/reports/leaderReport123/leaderboard", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ action: "join", consent: true, displayName: "Tester", publicRanked: true, includePhrase: false }),
+    body: JSON.stringify({ action: "snapshot" }),
   }), { LEADERBOARD_DB: database, CLIENT_RATE_LIMITER: { limit: async () => ({ success: true }) } });
-  assert.equal(response.status, 403);
-  assert.equal(database.entry, null);
+  assert.equal(response.status, 200);
+  const snapshot = await response.json();
+  assert.equal(snapshot.can_manage, false);
+  assert.equal(snapshot.participation.joined, true);
+  assert.equal(database.entry.displayName, "Anonymous");
+  assert.equal(database.entry.publicRanked, 0);
+  assert.equal(database.entry.sharesPhrase, false);
 });
 
-test("the creator can explicitly store and later remove a permanent aggregate entry", async () => {
+test("the creator can persistently opt out and later add anonymous stats back", async () => {
   const token = "e".repeat(64);
   const database = leaderboardDatabase(await sha256(token));
   const headers = { "content-type": "application/json", "x-behavior-wrapped-management": token };
-  const joined = await handleRequest(new Request("https://example.com/api/reports/leaderReport123/leaderboard", {
+  const initial = await handleRequest(new Request("https://example.com/api/reports/leaderReport123/leaderboard", {
     method: "POST", headers,
-    body: JSON.stringify({ action: "join", consent: true, displayName: "Tester", publicRanked: true, includePhrase: false }),
+    body: JSON.stringify({ action: "snapshot" }),
   }), { LEADERBOARD_DB: database, CLIENT_RATE_LIMITER: { limit: async () => ({ success: true }) } });
-  assert.equal(joined.status, 200);
-  const snapshot = await joined.json();
+  assert.equal(initial.status, 200);
+  const snapshot = await initial.json();
   assert.equal(snapshot.can_manage, true);
   assert.equal(snapshot.participation.joined, true);
   assert.equal(snapshot.good_human_score.value, 70);
@@ -136,4 +147,20 @@ test("the creator can explicitly store and later remove a permanent aggregate en
   });
   assert.equal(removed.status, 200);
   assert.equal(database.entry, null);
+  assert.equal(database.optedOut, true);
+
+  const stillOut = await handleRequest(new Request("https://example.com/api/reports/leaderReport123/leaderboard", {
+    method: "POST", headers, body: JSON.stringify({ action: "snapshot" }),
+  }), { LEADERBOARD_DB: database, CLIENT_RATE_LIMITER: { limit: async () => ({ success: true }) } });
+  assert.equal(stillOut.status, 200);
+  assert.equal((await stillOut.json()).participation.joined, false);
+  assert.equal(database.entry, null);
+
+  const included = await handleRequest(new Request("https://example.com/api/reports/leaderReport123/leaderboard", {
+    method: "POST", headers, body: JSON.stringify({ action: "include" }),
+  }), { LEADERBOARD_DB: database, CLIENT_RATE_LIMITER: { limit: async () => ({ success: true }) } });
+  assert.equal(included.status, 200);
+  assert.equal((await included.json()).participation.joined, true);
+  assert.equal(database.optedOut, false);
+  assert.equal(database.entry.displayName, "Anonymous");
 });
