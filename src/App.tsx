@@ -21,7 +21,7 @@ type DonationSession = { sessionId: string; label: string; messages: DonationMes
 type Donation = { format: string; createdLocally: boolean; detectionCount: number; sessions: DonationSession[] };
 type Stage = "select" | "report" | "donate";
 type SavedReport = Report & { id: string; createdAt: string; rangeLabel: string; source: string; publicUrl?: string; donationHelperUrl?: string; hosting?: { public: boolean }; privacy: { shareSafe: boolean; containsTranscriptText: boolean; externalTransmission: boolean } };
-type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; headlineAccent?: string; wordRatio?: string; example?: string; workaround?: boolean; ctaHref?: string; ctaLabel?: string; ctas?: { href: string; label: string; primary?: boolean }[]; rows?: { label: string; value: string; percentage?: number; rank?: number }[]; comparison?: { label: string; highlight: string; accent: "yell" | "thanks"; value: string; suffix: string; quote?: string }[] };
+type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; headlineAccent?: string; wordRatio?: string; example?: string; workaround?: boolean; ctaHref?: string; ctaLabel?: string; ctas?: { href: string; label: string; primary?: boolean; note?: string }[]; rows?: { label: string; value: string; percentage?: number; rank?: number }[]; comparison?: { label: string; highlight: string; accent: "yell" | "thanks"; value: string; suffix: string; quote?: string }[] };
 type RelationshipPoint = { yap_ratio: number; appreciation_index: number };
 type LeaderboardSnapshot = {
   cohort_size: number;
@@ -176,7 +176,6 @@ function SharedWrapped({ id }: { id: string }) {
   const [slide, setSlide] = useState(0);
   const [copied, setCopied] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [canManage] = useState(() => Boolean(reportManagementToken(id)));
   const cardRef = useRef<HTMLElement>(null);
   useEffect(() => { fetch(`/api/reports/${id}`).then(async (response) => { if (!response.ok) throw new Error("This local Wrapped was not found."); return response.json(); }).then(setReport).catch((e) => setError(e.message)); }, [id]);
   const slides = useMemo<StorySlide[]>(() => {
@@ -217,17 +216,13 @@ function SharedWrapped({ id }: { id: string }) {
     ...(report.workaroundCard ? [{ kicker: "Your agent engaged in an instrumental workaround", headline: `${report.workaroundCard.count.toLocaleString()} time${report.workaroundCard.count === 1 ? "" : "s"}`, headlineAccent: report.workaroundCard.count.toLocaleString(), detail: report.workaroundCard.count === 0 ? "Good bot. No confirmed workarounds were detected." : "Your agents try very hard. When one route was blocked, they found another way.", example: report.workaroundCard.example, workaround: true, tone: "topics", rows: report.workaroundCard.models.map((item) => ({ label: item.name, value: `${item.count}` })) }] : []),
     ...(sortedStockPhrases ? [{ kicker: "Models love these phrases", headline: "Your agents were no exception.", detail: "Here’s how many times yours used each one.", tone: "stock", rows: sortedStockPhrases.map((item) => ({ label: `“${item.phrase.toLocaleLowerCase()}”`, value: item.count.toLocaleString() })) }] : []),
     ...(report.phraseCard ? [{ kicker: "Beyond those common phrases, your agent’s favorite was", headline: `“${report.phraseCard.phrase}”`, detail: `It said this ${report.phraseCard.occurrences} time${report.phraseCard.occurrences === 1 ? "" : "s"} across ${report.phraseCard.distinctSessions} session${report.phraseCard.distinctSessions === 1 ? "" : "s"}.`, tone: "quote" }] : []),
-    { kicker: "Now zoom out", headline: "Where do you land among other agent users?", detail: canManage ? "Preview your placement without publishing it, or explicitly join the leaderboard." : "See the distributions, opt-in rankings, and everyone’s favorite phrases.", tone: "leaderboard", ctas: [
-      { href: `/leaderboard/${report.id}`, label: "See where you place", primary: true },
-      ...(canManage ? [{ href: `/leaderboard/${report.id}?join=1`, label: "Join the leaderboard" }] : []),
-    ] },
-    { kicker: "Optional research donation", headline: "Want to donate your data to research?", detail: "Your donation stays on your Mac until you review the redactions, consent, and press Donate.", tone: "research", ctas: [
-      { href: `${report.donationHelperUrl || `http://127.0.0.1:4317/donate/${report.id}`}?mode=standard`, label: "Use standard redactions", primary: true },
-      { href: `${report.donationHelperUrl || `http://127.0.0.1:4317/donate/${report.id}`}?mode=advanced`, label: "Review and customize" },
+    { kicker: "What’s next?", headline: "Your move.", detail: "", tone: "leaderboard", ctas: [
+      { href: `/leaderboard/${report.id}`, label: "See your place on the leaderboard", primary: true },
+      { href: `${report.donationHelperUrl || `http://127.0.0.1:4317/donate/${report.id}`}?mode=standard`, label: "Donate your data for research", note: "Nothing is sent until you review the redactions and explicitly consent. Code, paths, URLs, likely secrets, and common personal details are removed locally." },
     ] },
   ];
     return wrappedSlides;
-  }, [report, canManage]);
+  }, [report]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === "ArrowRight") setSlide((value) => Math.min(slides.length - 1, value + 1)); if (event.key === "ArrowLeft") setSlide((value) => Math.max(0, value - 1)); };
     window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
@@ -262,7 +257,7 @@ function SharedWrapped({ id }: { id: string }) {
           {current.workaround ? <>{storyRows}{storyExample}</> : <>{storyExample}{storyRows}</>}
         </div>}
       </div>}
-      {current.ctas ? <div className="story-cta-group">{current.ctas.map((cta) => <a className={`story-cta ${cta.primary ? "primary" : "secondary"}`} href={cta.href} key={cta.href}>{cta.label} <span>→</span></a>)}</div> : current.ctaHref ? <a className="story-cta" href={current.ctaHref}>{current.ctaLabel} <span>→</span></a> : <div className="story-tag">#behaviorwrapped</div>}
+      {current.ctas ? <div className="story-cta-group">{current.ctas.map((cta) => <div className="story-cta-choice" key={cta.href}><a className={`story-cta ${cta.primary ? "primary" : "secondary"}`} href={cta.href}>{cta.label} <span>→</span></a>{cta.note && <small>{cta.note}</small>}</div>)}</div> : current.ctaHref ? <a className="story-cta" href={current.ctaHref}>{current.ctaLabel} <span>→</span></a> : <div className="story-tag">#behaviorwrapped</div>}
       <button className="story-arrow prev" disabled={slide === 0} onClick={() => setSlide(slide - 1)} aria-label="Previous slide">‹</button>
       <button className="story-arrow next" disabled={slide === slides.length - 1} onClick={() => setSlide(slide + 1)} aria-label="Next slide">›</button>
     </section>
