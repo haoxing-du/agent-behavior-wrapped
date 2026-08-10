@@ -431,10 +431,14 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .leader-check.consent { border: 1px solid #ddd6df; background: #f0ebf1; }
 .leader-public-note { margin-top: 72px; border-width: 1px; border-color: #d4cdd6; background: rgba(255,255,255,.68); color: #19151e; }
 .leader-public-note p { color: #69616d; }.leader-public-note code { color: #4e2c8b; }
-.leader-donation { max-width: 900px; margin: 18px auto 0; padding: clamp(24px, 4vw, 38px); border: 1px solid #d4cdd6; border-radius: 20px; background: rgba(255,255,255,.68); color: #19151e; display: flex; align-items: center; justify-content: space-between; gap: 30px; }
+.leader-donation { max-width: 900px; margin: 72px auto 0; padding: clamp(24px, 4vw, 38px); border: 1px solid #d4cdd6; border-radius: 20px; background: rgba(255,255,255,.68); color: #19151e; display: flex; align-items: center; justify-content: space-between; gap: 30px; }
 .leader-donation h2 { margin: 9px 0 8px; font-size: clamp(26px, 3vw, 38px); line-height: 1; letter-spacing: -.045em; }
 .leader-donation p { max-width: 610px; margin: 0; color: #69616d; font-size: 12px; line-height: 1.55; }
 .leader-donation .primary { flex: none; text-decoration: none; white-space: nowrap; }
+.leader-opt-out { max-width: 900px; margin: 14px auto 0; padding: 18px 20px; border: 1px solid #d4cdd6; border-radius: 14px; background: rgba(255,255,255,.48); color: #19151e; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.leader-opt-out p { margin: 0; color: #5f5864; font-size: 13px; }
+.leader-opt-out .error { display: block; margin-top: 6px; }
+.leader-opt-out .leader-remove, .leader-opt-out .primary { flex: none; }
 
 @media (max-width: 700px) {
   .leaderboard-page { padding: 20px 14px 68px; }
@@ -453,6 +457,7 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
   .leader-preview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .leader-donation { align-items: stretch; flex-direction: column; padding: 24px; }
   .leader-donation .primary { text-align: center; white-space: normal; }
+  .leader-opt-out { align-items: stretch; flex-direction: column; }
 }
 
 .donation-mode-links { display:flex; gap:10px; margin-top:24px; flex-wrap:wrap; }
