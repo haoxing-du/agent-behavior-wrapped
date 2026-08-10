@@ -173,6 +173,7 @@ async function downloadSlide(card: HTMLElement, slide: number) {
 
 function SharedWrapped({ id }: { id: string }) {
   const [report, setReport] = useState<SavedReport | null>(null);
+  const [managementToken] = useState(() => reportManagementToken(id));
   const [error, setError] = useState("");
   const [slide, setSlide] = useState(0);
   const [copied, setCopied] = useState(false);
@@ -218,12 +219,12 @@ function SharedWrapped({ id }: { id: string }) {
     ...(sortedStockPhrases ? [{ kicker: "Models love these phrases", headline: "Your agents were no exception.", detail: "Here’s how many times yours used each one.", tone: "stock", rows: sortedStockPhrases.map((item) => ({ label: `“${item.phrase.toLocaleLowerCase()}”`, value: item.count.toLocaleString() })) }] : []),
     ...(report.phraseCard ? [{ kicker: "Beyond those common phrases, your agent’s favorite was", headline: `“${report.phraseCard.phrase}”`, detail: `It said this ${report.phraseCard.occurrences} time${report.phraseCard.occurrences === 1 ? "" : "s"} across ${report.phraseCard.distinctSessions} session${report.phraseCard.distinctSessions === 1 ? "" : "s"}.`, tone: "quote" }] : []),
     { kicker: "What’s next?", headline: "Your move.", detail: "", tone: "leaderboard", ctas: [
-      { href: `/leaderboard/${report.id}`, label: "See your place on the leaderboard", primary: true },
+      { href: `/leaderboard/${report.id}${managementToken ? `#manage=${managementToken}` : ""}`, label: "See your place on the leaderboard", primary: true },
       { href: `${report.donationHelperUrl || `http://127.0.0.1:4317/donate/${report.id}`}?mode=standard`, label: "Donate your data for research", note: "Nothing is sent until you review the redactions and explicitly consent. Code, paths, URLs, likely secrets, and common personal details are removed locally." },
     ] },
   ];
     return wrappedSlides;
-  }, [report]);
+  }, [report, managementToken]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === "ArrowRight") setSlide((value) => Math.min(slides.length - 1, value + 1)); if (event.key === "ArrowLeft") setSlide((value) => Math.max(0, value - 1)); };
     window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
