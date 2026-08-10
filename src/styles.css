@@ -412,7 +412,8 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .leader-grid-line { stroke-dasharray: 4 5; opacity: .6; }
 .leader-tick-label { fill: #746c78; font-size: 10px; }
 .leader-axis-title { fill: #5f5864; font-size: 11px; font-weight: 650; }
-.leader-edge-label { fill: #5f5864; font-size: 11px; font-weight: 750; letter-spacing: .025em; }
+.leader-edge-pill rect { fill: #f7f4ed; stroke: #bcb3c0; stroke-width: 1; }
+.leader-edge-pill text { fill: #514956; font-size: 10px; font-weight: 800; letter-spacing: .025em; text-transform: uppercase; }
 .leader-quadrant { stroke: none; }
 .leader-quadrant-kind { fill: rgba(80,168,127,.08); }
 .leader-quadrant-yap { fill: rgba(147,179,38,.09); }
@@ -454,7 +455,7 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
   .leader-result-pair strong { font-size: 34px; }
   .leader-quadrant-label { font-size: 9px; }
   .leader-axis-title { font-size: 10px; }
-  .leader-edge-label { font-size: 9px; }
+  .leader-edge-pill text { font-size: 9px; }
   .leader-join { margin-top: 54px; padding: 24px; border-width: 1px; }
   .leader-preview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .leader-donation { align-items: stretch; flex-direction: column; padding: 24px; }

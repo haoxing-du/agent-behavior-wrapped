@@ -416,10 +416,12 @@ function RelationshipFigure({ ratio, appreciation, points, participantId }: { ra
         {appreciation !== null && <><circle className="leader-you-ring" cx={xFor(ratio)} cy={yFor(appreciation)} r="10" /><circle className="leader-you-dot" cx={xFor(ratio)} cy={yFor(appreciation)} r="5"><title>You{participantId ? ` · Participant #${participantId}` : ""}: {ratio.toFixed(1)}× Yap Ratio · {appreciation.toFixed(0)}% appreciation</title></circle><text className="leader-you-label" x={Math.min(right - 4, xFor(ratio) + 12)} y={Math.max(top + 14, yFor(appreciation) - 10)} textAnchor={xFor(ratio) > right - 70 ? "end" : "start"}>YOU</text></>}
         {[0, 25, 50, 75, 100].map((tick) => <g key={tick}><line className="leader-tick" x1={left - 6} x2={left} y1={yFor(tick)} y2={yFor(tick)} /><text className="leader-tick-label" x={left - 10} y={yFor(tick) + 4} textAnchor="end">{tick}%</text></g>)}
         {xTicks.map((tick) => <g key={tick}><line className="leader-tick" x1={xFor(tick)} x2={xFor(tick)} y1={bottom} y2={bottom + 6} /><text className="leader-tick-label" x={xFor(tick)} y={bottom + 21} textAnchor="middle">{tick}×</text></g>)}
-        <text className="leader-edge-label" x={(left + right) / 2} y="18" textAnchor="middle">More appreciation</text>
-        <text className="leader-edge-label" x={(left + right) / 2} y={height - 9} textAnchor="middle">More frustration</text>
-        <text className="leader-edge-label" transform={`translate(14 ${(top + bottom) / 2}) rotate(-90)`} textAnchor="middle">You talk more</text>
-        <text className="leader-edge-label" transform={`translate(${width - 8} ${(top + bottom) / 2}) rotate(90)`} textAnchor="middle">Agent talks more</text>
+        <g className="leader-edge-pill" transform={`translate(${(left + right) / 2} ${top})`}><rect x="-71" y="-11" width="142" height="22" rx="11" /><text y="4" textAnchor="middle">More appreciation</text></g>
+        <g className="leader-edge-pill" transform={`translate(${(left + right) / 2} ${bottom})`}><rect x="-67" y="-11" width="134" height="22" rx="11" /><text y="4" textAnchor="middle">More frustration</text></g>
+        <g className="leader-edge-pill" transform={`translate(${left} ${(top + bottom) / 2}) rotate(-90)`}><rect x="-57" y="-11" width="114" height="22" rx="11" /><text y="4" textAnchor="middle">You talk more</text></g>
+        <g className="leader-edge-pill" transform={`translate(${right} ${(top + bottom) / 2}) rotate(90)`}><rect x="-65" y="-11" width="130" height="22" rx="11" /><text y="4" textAnchor="middle">Agent talks more</text></g>
+        <text className="leader-axis-title" x={(left + right) / 2} y={height - 9} textAnchor="middle">Yap Ratio · agent words ÷ your words · log scale</text>
+        <text className="leader-axis-title" transform={`translate(14 ${(top + bottom) / 2}) rotate(-90)`} textAnchor="middle">Agent Appreciation Index · thanks ÷ thanks or scolds</text>
       </svg>
     </div>
     {appreciation === null && <p className="leader-figure-note">Your report had no thank-or-scold moments, so your point cannot be placed vertically yet.</p>}
