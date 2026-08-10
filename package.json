@@ -1,6 +1,6 @@
 {
   "name": "agent-behavior-wrapped",
-  "version": "0.2.9",
+  "version": "0.2.10",
   "description": "A private, local-first Wrapped report for Claude Code and Codex behavior.",
   "license": "Apache-2.0",
   "type": "module",
