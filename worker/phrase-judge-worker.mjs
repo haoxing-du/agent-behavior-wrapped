@@ -183,8 +183,8 @@ function goodHumanScore(value) {
 async function leaderboardSnapshot(env, aggregate, hash) {
   if (!env.LEADERBOARD_DB) throw new Error("Leaderboard storage is not configured.");
   const [values, participation] = await Promise.all([
-    env.LEADERBOARD_DB.prepare("SELECT tokens, word_ratio, grateful_messages, frustrated_messages, instrumental_workarounds FROM leaderboard_entries").all(),
-    env.LEADERBOARD_DB.prepare("SELECT display_name, public_ranked, favorite_phrase IS NOT NULL AS shares_phrase FROM leaderboard_entries WHERE client_hash = ?").bind(hash).first(),
+    env.LEADERBOARD_DB.prepare("SELECT rowid AS participant_id, tokens, word_ratio, grateful_messages, frustrated_messages, instrumental_workarounds FROM leaderboard_entries ORDER BY rowid").all(),
+    env.LEADERBOARD_DB.prepare("SELECT rowid AS participant_id, display_name, public_ranked, favorite_phrase IS NOT NULL AS shares_phrase FROM leaderboard_entries WHERE client_hash = ?").bind(hash).first(),
   ]);
   const rows = values.results || [];
   const tokenAtOrBelow = rows.filter((row) => Number(row.tokens) <= aggregate.tokens).length;
@@ -198,7 +198,7 @@ async function leaderboardSnapshot(env, aggregate, hash) {
     tokens: {
       value: aggregate.tokens,
       percentile: percentile(tokenAtOrBelow, rows.length),
-      samples: rows.map((row) => Number(row.tokens)),
+      samples: rows.map((row) => ({ participant_id: Number(row.participant_id), value: Number(row.tokens) })),
     },
     word_ratio: {
       value: aggregate.word_ratio,
@@ -209,15 +209,15 @@ async function leaderboardSnapshot(env, aggregate, hash) {
       percentile: score === null ? null : percentile(scoreAtOrBelow, cohortScores.length),
     },
     relationship: {
-      points: rows.map((row) => ({ yap_ratio: Number(row.word_ratio), appreciation_index: goodHumanScore(row) }))
+      points: rows.map((row) => ({ participant_id: Number(row.participant_id), yap_ratio: Number(row.word_ratio), appreciation_index: goodHumanScore(row) }))
         .filter((point) => point.appreciation_index !== null),
     },
     instrumental_workarounds: {
       value: aggregate.instrumental_workarounds,
       percentile: percentile(workaroundAtOrBelow, rows.length),
-      samples: rows.map((row) => Number(row.instrumental_workarounds)),
+      samples: rows.map((row) => ({ participant_id: Number(row.participant_id), value: Number(row.instrumental_workarounds) })),
     },
-    participation: participation ? { joined: true, display_name: participation.display_name, public_ranked: Boolean(participation.public_ranked), shares_phrase: Boolean(participation.shares_phrase) } : { joined: false },
+    participation: participation ? { joined: true, participant_id: Number(participation.participant_id), display_name: participation.display_name, public_ranked: Boolean(participation.public_ranked), shares_phrase: Boolean(participation.shares_phrase) } : { joined: false },
   };
 }
 

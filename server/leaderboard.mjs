@@ -41,7 +41,7 @@ export function syntheticLeaderboardSnapshot(aggregate, participation = null) {
     tokens: {
       value: aggregate.tokens,
       percentile: Math.round(demoTokens.filter((value) => value <= aggregate.tokens).length / demoTokens.length * 100),
-      samples: demoTokens,
+      samples: demoTokens.map((value, index) => ({ participant_id: index + 1, value })),
     },
     word_ratio: {
       value: aggregate.word_ratio,
@@ -52,12 +52,12 @@ export function syntheticLeaderboardSnapshot(aggregate, participation = null) {
       percentile: goodHumanScore === null ? null : Math.round(demoGoodHumanScores.filter((value) => value <= goodHumanScore).length / demoGoodHumanScores.length * 100),
     },
     relationship: {
-      points: demoRatios.map((yapRatio, index) => ({ yap_ratio: yapRatio, appreciation_index: demoGoodHumanScores[index] })),
+      points: demoRatios.map((yapRatio, index) => ({ participant_id: index + 1, yap_ratio: yapRatio, appreciation_index: demoGoodHumanScores[index] })),
     },
     instrumental_workarounds: {
       value: aggregate.instrumental_workarounds,
       percentile: Math.round(demoWorkarounds.filter((value) => value <= aggregate.instrumental_workarounds).length / demoWorkarounds.length * 100),
-      samples: demoWorkarounds,
+      samples: demoWorkarounds.map((value, index) => ({ participant_id: index + 1, value })),
     },
     participation: participation || { joined: false },
   };

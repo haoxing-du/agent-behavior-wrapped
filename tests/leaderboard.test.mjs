@@ -42,11 +42,11 @@ function leaderboardDatabase(managementTokenHash) {
           if (sql.includes("FROM public_reports")) return { report_json: JSON.stringify(publicReport), owner_hash: "owner-hash", management_token_hash: managementTokenHash };
           if (sql.includes("FROM leaderboard_opt_outs")) return optedOut ? { client_hash: "owner-hash" } : null;
           if (sql.includes("SUM(phrase_occurrences)")) return null;
-          if (sql.includes("WHERE client_hash = ?")) return entry ? { display_name: entry.displayName, public_ranked: entry.publicRanked, shares_phrase: entry.sharesPhrase } : null;
+          if (sql.includes("WHERE client_hash = ?")) return entry ? { participant_id: 1, display_name: entry.displayName, public_ranked: entry.publicRanked, shares_phrase: entry.sharesPhrase } : null;
           return null;
         },
         async all() {
-          if (sql.startsWith("SELECT tokens, word_ratio, grateful_messages")) return { results: entry ? [{ tokens: entry.tokens, word_ratio: entry.wordRatio, grateful_messages: entry.gratefulMessages, frustrated_messages: entry.frustratedMessages, instrumental_workarounds: entry.workarounds }] : [] };
+          if (sql.includes("tokens, word_ratio, grateful_messages")) return { results: entry ? [{ participant_id: 1, tokens: entry.tokens, word_ratio: entry.wordRatio, grateful_messages: entry.gratefulMessages, frustrated_messages: entry.frustratedMessages, instrumental_workarounds: entry.workarounds }] : [] };
           return { results: [] };
         },
         async run() {
@@ -85,7 +85,7 @@ test("builds a complete synthetic leaderboard without a network request", () => 
   assert.equal(snapshot.cohort_size, 12);
   assert.equal(snapshot.tokens.samples.length, 12);
   assert.equal(snapshot.relationship.points.length, 12);
-  assert.deepEqual(snapshot.relationship.points[0], { yap_ratio: 0.8, appreciation_index: 12.5 });
+  assert.deepEqual(snapshot.relationship.points[0], { participant_id: 1, yap_ratio: 0.8, appreciation_index: 12.5 });
   assert.equal(snapshot.good_human_score.value, 70);
   assert.equal(snapshot.instrumental_workarounds.value, 4);
   assert.equal(snapshot.instrumental_workarounds.samples.length, 12);
@@ -138,7 +138,9 @@ test("the creator can persistently opt out and later add anonymous stats back", 
   assert.equal(snapshot.good_human_score.value, 70);
   assert.equal(snapshot.instrumental_workarounds.value, 4);
   assert.equal(snapshot.tokens.samples.length, 1);
-  assert.deepEqual(snapshot.relationship.points, [{ yap_ratio: 4, appreciation_index: 70 }]);
+  assert.deepEqual(snapshot.relationship.points, [{ participant_id: 1, yap_ratio: 4, appreciation_index: 70 }]);
+  assert.deepEqual(snapshot.tokens.samples, [{ participant_id: 1, value: 12_500_000 }]);
+  assert.deepEqual(snapshot.instrumental_workarounds.samples, [{ participant_id: 1, value: 4 }]);
   assert.equal(database.entry.ownerHash, "owner-hash");
   assert.equal(database.entry.sharesPhrase, false);
 

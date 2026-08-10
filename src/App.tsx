@@ -22,15 +22,16 @@ type Donation = { format: string; createdLocally: boolean; detectionCount: numbe
 type Stage = "select" | "report" | "donate";
 type SavedReport = Report & { id: string; createdAt: string; rangeLabel: string; source: string; publicUrl?: string; donationHelperUrl?: string; hosting?: { public: boolean }; privacy: { shareSafe: boolean; containsTranscriptText: boolean; externalTransmission: boolean } };
 type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; headlineAccent?: string; wordRatio?: string; example?: string; workaround?: boolean; ctaHref?: string; ctaLabel?: string; ctas?: { href: string; label: string; primary?: boolean; note?: string }[]; rows?: { label: string; value: string; percentage?: number; rank?: number }[]; comparison?: { label: string; highlight: string; accent: "yell" | "thanks"; value: string; suffix: string; quote?: string }[] };
-type RelationshipPoint = { yap_ratio: number; appreciation_index: number };
+type ParticipantSample = { participant_id: number; value: number };
+type RelationshipPoint = { participant_id: number; yap_ratio: number; appreciation_index: number };
 type LeaderboardSnapshot = {
   cohort_size: number;
-  tokens: { value: number; percentile: number | null; samples: number[] };
+  tokens: { value: number; percentile: number | null; samples: ParticipantSample[] };
   word_ratio: { value: number; percentile: number | null };
   good_human_score: { value: number | null; percentile: number | null };
   relationship: { points: RelationshipPoint[] };
-  instrumental_workarounds: { value: number; percentile: number | null; samples: number[] };
-  participation: { joined: boolean; display_name?: string; public_ranked?: boolean; shares_phrase?: boolean };
+  instrumental_workarounds: { value: number; percentile: number | null; samples: ParticipantSample[] };
+  participation: { joined: boolean; participant_id?: number; display_name?: string; public_ranked?: boolean; shares_phrase?: boolean };
   can_manage?: boolean;
   opted_out?: boolean;
 };
@@ -61,6 +62,10 @@ function fmtCompact(value: number) {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
   if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
   return String(value);
+}
+
+function fmtAxisCompact(value: number) {
+  return fmtCompact(value).replace(/\.0(?=[KMB]$)/, "");
 }
 
 function hasDisplayablePercentage(value: number) {
@@ -343,12 +348,13 @@ function violinPath(samples: number[], minimum: number, maximum: number, left: n
   return `M${upper.join("L")}L${lower.join("L")}Z`;
 }
 
-function TokenUsageFigure({ metric }: { metric: LeaderboardSnapshot["tokens"] }) {
+function TokenUsageFigure({ metric, participantId }: { metric: LeaderboardSnapshot["tokens"]; participantId?: number }) {
   const { ref, width } = usePlotWidth();
   const height = 292;
   const left = width < 520 ? 38 : 54;
   const right = width - 22;
-  const values = metric.samples.filter((value) => Number.isFinite(value) && value >= 0);
+  const samples = metric.samples.filter((sample) => Number.isFinite(sample.value) && sample.value >= 0);
+  const values = samples.map((sample) => sample.value);
   const positive = [...values, metric.value].map((value) => Math.max(1, value));
   const rawMinimum = Math.min(...positive);
   const rawMaximum = Math.max(...positive);
@@ -366,12 +372,12 @@ function TokenUsageFigure({ metric }: { metric: LeaderboardSnapshot["tokens"] })
         <rect className="leader-chart-frame" x={left} y="38" width={right - left} height="180" />
         {values.length > 0 && <path className="leader-violin" d={violinPath(logSamples, minimum, maximum, left, right, 127, 67)} />}
         {median > 0 && <line className="leader-median" x1={xFor(median)} x2={xFor(median)} y1="48" y2="206"><title>Median: {fmtCompact(median)} tokens</title></line>}
-        {dots.points.map((point) => <circle className="leader-dot" key={point.index} cx={point.x} cy={point.y} r={dots.radius}><title>Participant: {fmtCompact(point.value)} tokens</title></circle>)}
+        {dots.points.map((point) => <circle className="leader-dot" key={samples[point.index].participant_id} cx={point.x} cy={point.y} r={dots.radius}><title>Participant #{samples[point.index].participant_id}: {point.value.toLocaleString()} tokens</title></circle>)}
         <circle className="leader-you-ring" cx={xFor(metric.value)} cy="127" r="9" />
-        <circle className="leader-you-dot" cx={xFor(metric.value)} cy="127" r="5"><title>You: {metric.value.toLocaleString()} tokens</title></circle>
+        <circle className="leader-you-dot" cx={xFor(metric.value)} cy="127" r="5"><title>You{participantId ? ` · Participant #${participantId}` : ""}: {metric.value.toLocaleString()} tokens</title></circle>
         <text className="leader-you-label" x={Math.min(right - 4, xFor(metric.value) + 11)} y="112" textAnchor={xFor(metric.value) > right - 70 ? "end" : "start"}>YOU</text>
         <line className="leader-axis" x1={left} x2={right} y1="230" y2="230" />
-        {ticks.map((tick) => <g key={tick}><line className="leader-tick" x1={xFor(tick)} x2={xFor(tick)} y1="230" y2="236" /><text className="leader-tick-label" x={xFor(tick)} y="252" textAnchor="middle">{fmtCompact(tick)}</text></g>)}
+        {ticks.map((tick) => <g key={tick}><line className="leader-tick" x1={xFor(tick)} x2={xFor(tick)} y1="230" y2="236" /><text className="leader-tick-label" x={xFor(tick)} y="252" textAnchor="middle">{fmtAxisCompact(tick)}</text></g>)}
         <text className="leader-axis-title" x={(left + right) / 2} y="281" textAnchor="middle">Tokens used · log scale</text>
       </svg>
     </div>
@@ -379,7 +385,7 @@ function TokenUsageFigure({ metric }: { metric: LeaderboardSnapshot["tokens"] })
   </section>;
 }
 
-function RelationshipFigure({ ratio, appreciation, points }: { ratio: number; appreciation: number | null; points: RelationshipPoint[] }) {
+function RelationshipFigure({ ratio, appreciation, points, participantId }: { ratio: number; appreciation: number | null; points: RelationshipPoint[]; participantId?: number }) {
   const { ref, width } = usePlotWidth();
   const height = width < 520 ? 370 : 420;
   const left = width < 520 ? 54 : 72;
@@ -406,16 +412,12 @@ function RelationshipFigure({ ratio, appreciation, points }: { ratio: number; ap
         <rect className="leader-chart-frame" x={left} y={top} width={right - left} height={bottom - top} />
         <line className="leader-grid-line" x1={xMiddle} x2={xMiddle} y1={top} y2={bottom} />
         <line className="leader-grid-line" x1={left} x2={right} y1={yMiddle} y2={yMiddle} />
-        <text className="leader-quadrant-label" x={left + 10} y={top + 20}>Kindly concise</text>
-        <text className="leader-quadrant-label" x={right - 10} y={top + 20} textAnchor="end">Golden-retriever monologue</text>
-        <text className="leader-quadrant-label" x={left + 10} y={bottom - 12}>Terse &amp; tense</text>
-        <text className="leader-quadrant-label" x={right - 10} y={bottom - 12} textAnchor="end">Hostile podcast</text>
-        {usable.map((point, index) => <circle className="leader-dot relationship-dot" key={index} cx={xFor(point.yap_ratio)} cy={yFor(point.appreciation_index)} r="3.5"><title>{point.yap_ratio.toFixed(1)}× Yap Ratio · {point.appreciation_index.toFixed(0)}% appreciation</title></circle>)}
-        {appreciation !== null && <><circle className="leader-you-ring" cx={xFor(ratio)} cy={yFor(appreciation)} r="10" /><circle className="leader-you-dot" cx={xFor(ratio)} cy={yFor(appreciation)} r="5"><title>You: {ratio.toFixed(1)}× Yap Ratio · {appreciation.toFixed(0)}% appreciation</title></circle><text className="leader-you-label" x={Math.min(right - 4, xFor(ratio) + 12)} y={Math.max(top + 14, yFor(appreciation) - 10)} textAnchor={xFor(ratio) > right - 70 ? "end" : "start"}>YOU</text></>}
+        {usable.map((point) => <circle className="leader-dot relationship-dot" key={point.participant_id} cx={xFor(point.yap_ratio)} cy={yFor(point.appreciation_index)} r="3.5"><title>Participant #{point.participant_id}: {point.yap_ratio.toFixed(1)}× Yap Ratio · {point.appreciation_index.toFixed(0)}% appreciation</title></circle>)}
+        {appreciation !== null && <><circle className="leader-you-ring" cx={xFor(ratio)} cy={yFor(appreciation)} r="10" /><circle className="leader-you-dot" cx={xFor(ratio)} cy={yFor(appreciation)} r="5"><title>You{participantId ? ` · Participant #${participantId}` : ""}: {ratio.toFixed(1)}× Yap Ratio · {appreciation.toFixed(0)}% appreciation</title></circle><text className="leader-you-label" x={Math.min(right - 4, xFor(ratio) + 12)} y={Math.max(top + 14, yFor(appreciation) - 10)} textAnchor={xFor(ratio) > right - 70 ? "end" : "start"}>YOU</text></>}
         {[0, 25, 50, 75, 100].map((tick) => <g key={tick}><line className="leader-tick" x1={left - 6} x2={left} y1={yFor(tick)} y2={yFor(tick)} /><text className="leader-tick-label" x={left - 10} y={yFor(tick) + 4} textAnchor="end">{tick}%</text></g>)}
         {xTicks.map((tick) => <g key={tick}><line className="leader-tick" x1={xFor(tick)} x2={xFor(tick)} y1={bottom} y2={bottom + 6} /><text className="leader-tick-label" x={xFor(tick)} y={bottom + 21} textAnchor="middle">{tick}×</text></g>)}
-        <text className="leader-axis-title" x={(left + right) / 2} y={height - 9} textAnchor="middle">Yap Ratio · agent words ÷ your words · log scale</text>
-        <text className="leader-axis-title" transform={`translate(14 ${(top + bottom) / 2}) rotate(-90)`} textAnchor="middle">Agent Appreciation Index · thanks ÷ thanks or scolds</text>
+        <text className="leader-axis-title" x={(left + right) / 2} y={height - 9} textAnchor="middle">You talk more ← Yap Ratio · log scale → Agent talks more</text>
+        <text className="leader-axis-title" transform={`translate(14 ${(top + bottom) / 2}) rotate(-90)`} textAnchor="middle">More frustration ← Agent Appreciation Index → More appreciation</text>
       </svg>
     </div>
     {appreciation === null && <p className="leader-figure-note">Your report had no thank-or-scold moments, so your point cannot be placed vertically yet.</p>}
@@ -431,12 +433,13 @@ function niceLinearTicks(maximum: number) {
   return Array.from({ length: Math.round(niceMaximum / step) + 1 }, (_, index) => index * step);
 }
 
-function WorkaroundFigure({ metric }: { metric: LeaderboardSnapshot["instrumental_workarounds"] }) {
+function WorkaroundFigure({ metric, participantId }: { metric: LeaderboardSnapshot["instrumental_workarounds"]; participantId?: number }) {
   const { ref, width } = usePlotWidth();
   const height = 246;
   const left = width < 520 ? 38 : 54;
   const right = width - 22;
-  const values = metric.samples.filter((value) => Number.isFinite(value) && value >= 0);
+  const samples = metric.samples.filter((sample) => Number.isFinite(sample.value) && sample.value >= 0);
+  const values = samples.map((sample) => sample.value);
   const ticks = niceLinearTicks(Math.max(metric.value, ...values));
   const maximum = ticks.at(-1) || 1;
   const xFor = (value: number) => left + value / maximum * (right - left);
@@ -448,9 +451,9 @@ function WorkaroundFigure({ metric }: { metric: LeaderboardSnapshot["instrumenta
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Distribution of instrumental workaround counts for ${values.length} anonymous participants. Your value is ${metric.value}.`}>
         <rect className="leader-chart-frame" x={left} y="30" width={right - left} height="142" />
         {values.length > 0 && <line className="leader-median" x1={xFor(median)} x2={xFor(median)} y1="38" y2="164"><title>Median: {median.toFixed(1)} instrumental workarounds</title></line>}
-        {dots.points.map((point) => <circle className="leader-dot workaround-dot" key={point.index} cx={point.x} cy={point.y} r={dots.radius}><title>Participant: {point.value} instrumental workaround{point.value === 1 ? "" : "s"}</title></circle>)}
+        {dots.points.map((point) => <circle className="leader-dot workaround-dot" key={samples[point.index].participant_id} cx={point.x} cy={point.y} r={dots.radius}><title>Participant #{samples[point.index].participant_id}: {point.value} instrumental workaround{point.value === 1 ? "" : "s"}</title></circle>)}
         <circle className="leader-you-ring" cx={xFor(metric.value)} cy="103" r="9" />
-        <circle className="leader-you-dot" cx={xFor(metric.value)} cy="103" r="5"><title>You: {metric.value} instrumental workaround{metric.value === 1 ? "" : "s"}</title></circle>
+        <circle className="leader-you-dot" cx={xFor(metric.value)} cy="103" r="5"><title>You{participantId ? ` · Participant #${participantId}` : ""}: {metric.value} instrumental workaround{metric.value === 1 ? "" : "s"}</title></circle>
         <text className="leader-you-label" x={Math.min(right - 4, xFor(metric.value) + 11)} y="88" textAnchor={xFor(metric.value) > right - 70 ? "end" : "start"}>YOU</text>
         <line className="leader-axis" x1={left} x2={right} y1="184" y2="184" />
         {ticks.map((tick) => <g key={tick}><line className="leader-tick" x1={xFor(tick)} x2={xFor(tick)} y1="184" y2="190" /><text className="leader-tick-label" x={xFor(tick)} y="207" textAnchor="middle">{tick.toLocaleString()}</text></g>)}
@@ -517,9 +520,9 @@ function LeaderboardView({ id }: { id: string }) {
     <a className="leader-back" href={`/w/${id}`}>← Back to your Wrapped</a>
     <header className="leader-hero"><span className="eyebrow">Behavior Wrapped · Leaderboard</span><h1>How you compare.</h1><p>{snapshot.cohort_size.toLocaleString()} anonymous participant{snapshot.cohort_size === 1 ? "" : "s"} · published Wrapped aggregates are included by default and can be removed at any time.</p></header>
     <div className="leader-figures">
-      <TokenUsageFigure metric={snapshot.tokens} />
-      <RelationshipFigure ratio={ratio} appreciation={snapshot.good_human_score.value} points={snapshot.relationship.points} />
-      <WorkaroundFigure metric={snapshot.instrumental_workarounds} />
+      <TokenUsageFigure metric={snapshot.tokens} participantId={snapshot.participation.participant_id} />
+      <RelationshipFigure ratio={ratio} appreciation={snapshot.good_human_score.value} points={snapshot.relationship.points} participantId={snapshot.participation.participant_id} />
+      <WorkaroundFigure metric={snapshot.instrumental_workarounds} participantId={snapshot.participation.participant_id} />
     </div>
     {snapshot.can_manage ? <section className="leader-join" id="join-leaderboard">
       <div><span className="eyebrow">Anonymous by default</span><h2>{snapshot.participation.joined ? "Your dot is included" : "You opted out"}</h2><p>{snapshot.participation.joined ? "The leaderboard stores only the aggregate values below. Remove them whenever you like." : "Your aggregate stats are not in the cohort. You can add them back anonymously whenever you like."} No transcripts, prompts, project names, dates, code, or tool output are stored here.</p></div>
@@ -527,6 +530,7 @@ function LeaderboardView({ id }: { id: string }) {
       {error && <p className="error" role="alert">{error}</p>}
       <div className="leader-buttons">{snapshot.participation.joined ? <button className="leader-remove" disabled={saving} onClick={leave}>{saving ? "Removing…" : "Remove my data from the leaderboard"}</button> : <button className="primary" disabled={saving} onClick={include}>{saving ? "Adding…" : "Add my anonymous stats back"}<span>→</span></button>}</div>
     </section> : <section className="leader-public-note" id="join-leaderboard"><strong>Anonymous aggregates, not transcripts.</strong><p>Published Wrapped reports are included by default. Only the creator can remove or restore this report’s aggregate stats using their private management link.</p></section>}
+    {snapshot.can_manage && <section className="leader-donation"><div><span className="eyebrow">Optional research donation</span><h2>Will you contribute your data to the research?</h2><p>This is separate from the anonymous leaderboard. You’ll review the redactions and explicitly consent before any transcript data is sent.</p></div><a className="primary" href={`${report.donationHelperUrl || `http://127.0.0.1:4317/donate/${report.id}`}?mode=standard`}>Review and donate your data <span>→</span></a></section>}
   </main>;
 }
 

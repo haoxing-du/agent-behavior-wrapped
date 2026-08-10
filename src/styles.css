@@ -431,6 +431,10 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .leader-check.consent { border: 1px solid #ddd6df; background: #f0ebf1; }
 .leader-public-note { margin-top: 72px; border-width: 1px; border-color: #d4cdd6; background: rgba(255,255,255,.68); color: #19151e; }
 .leader-public-note p { color: #69616d; }.leader-public-note code { color: #4e2c8b; }
+.leader-donation { max-width: 900px; margin: 18px auto 0; padding: clamp(24px, 4vw, 38px); border: 1px solid #d4cdd6; border-radius: 20px; background: rgba(255,255,255,.68); color: #19151e; display: flex; align-items: center; justify-content: space-between; gap: 30px; }
+.leader-donation h2 { margin: 9px 0 8px; font-size: clamp(26px, 3vw, 38px); line-height: 1; letter-spacing: -.045em; }
+.leader-donation p { max-width: 610px; margin: 0; color: #69616d; font-size: 12px; line-height: 1.55; }
+.leader-donation .primary { flex: none; text-decoration: none; white-space: nowrap; }
 
 @media (max-width: 700px) {
   .leaderboard-page { padding: 20px 14px 68px; }
@@ -447,6 +451,8 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
   .leader-axis-title { font-size: 10px; }
   .leader-join { margin-top: 54px; padding: 24px; border-width: 1px; }
   .leader-preview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .leader-donation { align-items: stretch; flex-direction: column; padding: 24px; }
+  .leader-donation .primary { text-align: center; white-space: normal; }
 }
 
 .donation-mode-links { display:flex; gap:10px; margin-top:24px; flex-wrap:wrap; }
