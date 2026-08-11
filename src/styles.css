@@ -410,10 +410,10 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .leader-chart-frame { fill: rgba(255,255,255,.42); stroke: #d4cdd6; stroke-width: 1; }
 .leader-violin { fill: color-mix(in srgb, var(--figure-accent) 18%, transparent); stroke: color-mix(in srgb, var(--figure-accent) 58%, transparent); stroke-width: 1.5; }
 .leader-dot { fill: color-mix(in srgb, var(--figure-accent) 78%, white); stroke: color-mix(in srgb, var(--figure-accent) 62%, white); stroke-width: 1; opacity: .78; }
-.leader-interactive-point { cursor: help; outline: none; }
+.leader-interactive-point { cursor: default; outline: none; }
 .leader-interactive-point:focus .leader-dot, .leader-interactive-point:focus .leader-you-dot { stroke: #19151e; stroke-width: 2; opacity: 1; }
 .leader-point-hit { fill: transparent; stroke: none; pointer-events: all; }
-.leader-hover-tooltip { position: absolute; z-index: 5; max-width: 250px; padding: 8px 10px; border: 1px solid #29232e; border-radius: 8px; background: #19151e; color: #fff; font-size: 11px; font-weight: 700; line-height: 1.35; text-align: center; white-space: nowrap; pointer-events: none; transform: translate(-50%, calc(-100% - 10px)); box-shadow: 0 8px 22px rgba(25,21,30,.2); }
+.leader-hover-tooltip { position: absolute; z-index: 5; width: max-content; max-width: min(300px, calc(100% - 24px)); padding: 8px 11px; border: 1px solid #aa98bc; border-radius: 8px; background: #fffdf8; color: #34283e; font-size: 11px; font-weight: 750; line-height: 1.4; text-align: center; white-space: normal; overflow-wrap: anywhere; pointer-events: none; transform: translate(-50%, calc(-100% - 10px)); box-shadow: 0 8px 22px rgba(67,47,79,.14); }
 .leader-median { stroke: #19151e; stroke-width: 1; stroke-dasharray: 4 4; opacity: .48; }
 .leader-you-ring { fill: color-mix(in srgb, var(--figure-accent) 14%, transparent); stroke: #19151e; stroke-width: 2; }
 .leader-you-dot { fill: var(--figure-accent); stroke: white; stroke-width: 2; }

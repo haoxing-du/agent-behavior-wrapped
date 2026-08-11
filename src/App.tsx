@@ -354,14 +354,16 @@ function usePlotWidth() {
 function pointerTooltip(container: HTMLDivElement | null, clientX: number, clientY: number, text: string): PlotTooltipState {
   const bounds = container?.getBoundingClientRect();
   if (!bounds) return null;
-  return { x: Math.max(86, Math.min(bounds.width - 86, clientX - bounds.left)), y: Math.max(28, clientY - bounds.top), text };
+  const edgeBuffer = Math.min(156, bounds.width / 2);
+  return { x: Math.max(edgeBuffer, Math.min(bounds.width - edgeBuffer, clientX - bounds.left)), y: Math.max(28, clientY - bounds.top), text };
 }
 
 function focusedTooltip(container: HTMLDivElement | null, point: Element, text: string): PlotTooltipState {
   const bounds = container?.getBoundingClientRect();
   const pointBounds = point.getBoundingClientRect();
   if (!bounds) return null;
-  return { x: Math.max(86, Math.min(bounds.width - 86, pointBounds.left + pointBounds.width / 2 - bounds.left)), y: Math.max(28, pointBounds.top - bounds.top), text };
+  const edgeBuffer = Math.min(156, bounds.width / 2);
+  return { x: Math.max(edgeBuffer, Math.min(bounds.width - edgeBuffer, pointBounds.left + pointBounds.width / 2 - bounds.left)), y: Math.max(28, pointBounds.top - bounds.top), text };
 }
 
 function InteractivePlotPoint({ cx, cy, radius, label, className, ring = false, onPointer, onFocus, onLeave }: { cx: number; cy: number; radius: number; label: string; className: string; ring?: boolean; onPointer: (clientX: number, clientY: number, label: string) => void; onFocus: (point: Element, label: string) => void; onLeave: () => void }) {
