@@ -1162,7 +1162,7 @@ function LandingPage() {
     }
   }
 
-  return <main className="landing-page"><div><h1>Behavior Wrapped</h1><div className="landing-command"><code>{command}</code><button type="button" onClick={copyCommand} aria-label="Copy npx command">{copied ? "Copied!" : "Copy"}</button></div></div></main>;
+  return <main className="landing-page"><div><h1>Behavior Wrapped</h1><p className="landing-description">A local-first behavior report for you and your coding agents.</p><div className="landing-command"><code><span aria-hidden="true">$</span>{command}</code><button type="button" onClick={copyCommand} aria-label="Copy npx command">{copied ? "Copied!" : "Copy"}</button></div></div></main>;
 }
 
 export default function App() {

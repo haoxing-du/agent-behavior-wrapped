@@ -559,11 +559,14 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .donation-success { max-width:760px; margin:12vh auto; text-align:center; }
 .landing-page { min-height: 100vh; padding: 24px; display: grid; place-items: center; background: radial-gradient(circle at 72% -12%, #e9ddf5 0, #f2ecf2 24%, #f7f4ed 58%); color: #19151e; text-align: center; }
 .landing-page > div { width: min(860px, 100%); }
-.landing-page h1 { margin: 0 0 clamp(28px, 5vw, 48px); font-size: clamp(58px, 10vw, 132px); line-height: .82; letter-spacing: -.075em; text-wrap: balance; }
-.landing-command { width: min(100%, 470px); margin: 0 auto; padding: 7px; border: 1px solid #d4cdd6; border-radius: 16px; background: rgba(255,255,255,.72); display: flex; align-items: center; gap: 9px; box-shadow: 0 10px 30px rgba(67,47,79,.08); }
-.landing-command code { min-width: 0; flex: 1; padding: 10px 14px; color: #5d358a; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: clamp(13px, 2.4vw, 18px); font-weight: 700; text-align: left; overflow-wrap: anywhere; }
-.landing-command button { flex: none; min-width: 76px; border: 0; border-radius: 10px; padding: 11px 14px; background: #19151e; color: #fff; font-size: 12px; font-weight: 800; }
-.landing-command button:hover { background: #5d358a; }
+.landing-page h1 { margin: 0 0 22px; font-size: clamp(58px, 10vw, 132px); line-height: .82; letter-spacing: -.075em; text-wrap: balance; }
+.landing-description { margin: 0 auto clamp(28px, 4vw, 40px); color: #625b68; font-size: clamp(16px, 2vw, 20px); line-height: 1.45; text-wrap: balance; }
+.landing-command { width: min(100%, 540px); min-height: 46px; margin: 0 auto; border: 0; border-radius: 10px; background: #34322c; display: flex; align-items: stretch; overflow: hidden; }
+.landing-command code { min-width: 0; flex: 1; padding: 12px 18px; color: #f5f2ee; display: flex; align-items: center; gap: 3px; font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 15px; font-weight: 400; line-height: 1.5; text-align: left; white-space: nowrap; }
+.landing-command code span { color: #8a857c; }
+.landing-command button { flex: none; border: 0; border-radius: 0; padding: 0 18px; background: rgba(245,242,238,.06); color: #f5f2ee; font-size: 14px; font-weight: 500; }
+.landing-command button:hover { background: rgba(245,242,238,.12); }
+@media (max-width: 420px) { .landing-command code { padding-inline: 12px; font-size: 12px; }.landing-command button { padding-inline: 13px; } }
 
 /* Donation review, aligned with the cohort leaderboard. */
 .donation-shell { --donation-bg: #f7f4ed; --donation-text: #19151e; --donation-muted: #6f6873; background: var(--donation-bg); color: var(--donation-text); }
