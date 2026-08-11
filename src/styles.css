@@ -420,6 +420,9 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .leader-you-ring { fill: color-mix(in srgb, var(--figure-accent) 14%, transparent); stroke: #19151e; stroke-width: 2; }
 .leader-you-dot { fill: var(--figure-accent); stroke: white; stroke-width: 2; }
 .leader-you-label { fill: #19151e; font-size: 10px; font-weight: 900; letter-spacing: .1em; }
+.leader-interactive-point.is-opted-out .leader-you-ring { fill: rgba(184,102,79,.13); stroke: #a85f4c; stroke-dasharray: 3 2; }
+.leader-interactive-point.is-opted-out .leader-you-dot { fill: #b8664f; }
+.leader-you-label-opted-out { fill: #934f3f; font-size: 9px; letter-spacing: .07em; }
 .leader-axis, .leader-tick, .leader-grid-line { stroke: #8a818e; stroke-width: 1; }
 .leader-grid-line { stroke-dasharray: 4 5; opacity: .6; }
 .leader-tick-label { fill: #746c78; font-size: 10px; }

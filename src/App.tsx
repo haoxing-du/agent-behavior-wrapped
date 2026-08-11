@@ -366,8 +366,8 @@ function focusedTooltip(container: HTMLDivElement | null, point: Element, text: 
   return { x: Math.max(edgeBuffer, Math.min(bounds.width - edgeBuffer, pointBounds.left + pointBounds.width / 2 - bounds.left)), y: Math.max(28, pointBounds.top - bounds.top), text };
 }
 
-function InteractivePlotPoint({ cx, cy, radius, label, className, ring = false, onPointer, onFocus, onLeave }: { cx: number; cy: number; radius: number; label: string; className: string; ring?: boolean; onPointer: (clientX: number, clientY: number, label: string) => void; onFocus: (point: Element, label: string) => void; onLeave: () => void }) {
-  return <g className="leader-interactive-point" tabIndex={0} role="img" aria-label={label} onPointerEnter={(event) => onPointer(event.clientX, event.clientY, label)} onPointerMove={(event) => onPointer(event.clientX, event.clientY, label)} onPointerLeave={onLeave} onFocus={(event) => onFocus(event.currentTarget, label)} onBlur={onLeave}>
+function InteractivePlotPoint({ cx, cy, radius, label, className, ring = false, optedOut = false, onPointer, onFocus, onLeave }: { cx: number; cy: number; radius: number; label: string; className: string; ring?: boolean; optedOut?: boolean; onPointer: (clientX: number, clientY: number, label: string) => void; onFocus: (point: Element, label: string) => void; onLeave: () => void }) {
+  return <g className={`leader-interactive-point${optedOut ? " is-opted-out" : ""}`} tabIndex={0} role="img" aria-label={label} onPointerEnter={(event) => onPointer(event.clientX, event.clientY, label)} onPointerMove={(event) => onPointer(event.clientX, event.clientY, label)} onPointerLeave={onLeave} onFocus={(event) => onFocus(event.currentTarget, label)} onBlur={onLeave}>
     <circle className="leader-point-hit" cx={cx} cy={cy} r={Math.max(10, radius + 5)} />
     {ring && <circle className="leader-you-ring" cx={cx} cy={cy} r={radius + 4} />}
     <circle className={className} cx={cx} cy={cy} r={radius} />
@@ -429,7 +429,7 @@ function violinPath(samples: number[], minimum: number, maximum: number, left: n
   return `M${upper.join("L")}L${lower.join("L")}Z`;
 }
 
-function TokenUsageFigure({ metric, participantId }: { metric: LeaderboardSnapshot["tokens"]; participantId?: number }) {
+function TokenUsageFigure({ metric, participantId, included }: { metric: LeaderboardSnapshot["tokens"]; participantId?: number; included: boolean }) {
   const { ref, width } = usePlotWidth();
   const [tooltip, setTooltip] = useState<PlotTooltipState>(null);
   const height = 292;
@@ -455,8 +455,8 @@ function TokenUsageFigure({ metric, participantId }: { metric: LeaderboardSnapsh
         {values.length > 0 && <path className="leader-violin" d={violinPath(logSamples, minimum, maximum, left, right, 127, 67)} />}
         {median > 0 && <line className="leader-median" x1={xFor(median)} x2={xFor(median)} y1="48" y2="206"><title>Median: {fmtCompact(median)} tokens</title></line>}
         {dots.points.map((point) => { const label = `Participant #${samples[point.index].participant_id}: ${point.value.toLocaleString()} tokens`; return <InteractivePlotPoint key={samples[point.index].participant_id} className="leader-dot" cx={point.x} cy={point.y} radius={dots.radius} label={label} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} />; })}
-        <InteractivePlotPoint className="leader-you-dot" cx={xFor(metric.value)} cy={127} radius={5} ring label={`You${participantId ? ` · Participant #${participantId}` : ""}: ${metric.value.toLocaleString()} tokens`} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} />
-        <text className="leader-you-label" x={Math.min(right - 4, xFor(metric.value) + 11)} y="112" textAnchor={xFor(metric.value) > right - 70 ? "end" : "start"}>YOU</text>
+        <InteractivePlotPoint className="leader-you-dot" cx={xFor(metric.value)} cy={127} radius={5} ring optedOut={!included} label={`${included ? `You${participantId ? ` · Participant #${participantId}` : ""}` : "Your report · not in cohort"}: ${metric.value.toLocaleString()} tokens`} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} />
+        <text className={`leader-you-label${included ? "" : " leader-you-label-opted-out"}`} x={Math.min(right - 4, xFor(metric.value) + 11)} y="112" textAnchor={xFor(metric.value) > right - 70 ? "end" : "start"}>{included ? "YOU" : "YOUR REPORT · NOT IN COHORT"}</text>
         <line className="leader-axis" x1={left} x2={right} y1="230" y2="230" />
         {ticks.map((tick) => <g key={tick}><line className="leader-tick" x1={xFor(tick)} x2={xFor(tick)} y1="230" y2="236" /><text className="leader-tick-label" x={xFor(tick)} y="252" textAnchor="middle">{fmtAxisCompact(tick)}</text></g>)}
         <text className="leader-axis-title" x={(left + right) / 2} y="281" textAnchor="middle">Tokens used · log scale</text>
@@ -467,7 +467,7 @@ function TokenUsageFigure({ metric, participantId }: { metric: LeaderboardSnapsh
   </section>;
 }
 
-function RelationshipFigure({ ratio, appreciation, points, participantId }: { ratio: number; appreciation: number | null; points: RelationshipPoint[]; participantId?: number }) {
+function RelationshipFigure({ ratio, appreciation, points, participantId, included }: { ratio: number; appreciation: number | null; points: RelationshipPoint[]; participantId?: number; included: boolean }) {
   const { ref, width } = usePlotWidth();
   const [tooltip, setTooltip] = useState<PlotTooltipState>(null);
   const height = width < 520 ? 370 : 420;
@@ -496,7 +496,7 @@ function RelationshipFigure({ ratio, appreciation, points, participantId }: { ra
         <line className="leader-grid-line" x1={xMiddle} x2={xMiddle} y1={top} y2={bottom} />
         <line className="leader-grid-line" x1={left} x2={right} y1={yMiddle} y2={yMiddle} />
         {usable.map((point) => { const label = `Participant #${point.participant_id}: ${point.yap_ratio.toFixed(1)}× Yap Ratio · ${point.appreciation_index.toFixed(0)}% appreciation`; return <InteractivePlotPoint key={point.participant_id} className="leader-dot relationship-dot" cx={xFor(point.yap_ratio)} cy={yFor(point.appreciation_index)} radius={3.5} label={label} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} />; })}
-        {appreciation !== null && <><InteractivePlotPoint className="leader-you-dot" cx={xFor(ratio)} cy={yFor(appreciation)} radius={5} ring label={`You${participantId ? ` · Participant #${participantId}` : ""}: ${ratio.toFixed(1)}× Yap Ratio · ${appreciation.toFixed(0)}% appreciation`} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} /><text className="leader-you-label" x={Math.min(right - 4, xFor(ratio) + 12)} y={Math.max(top + 14, yFor(appreciation) - 10)} textAnchor={xFor(ratio) > right - 70 ? "end" : "start"}>YOU</text></>}
+        {appreciation !== null && <><InteractivePlotPoint className="leader-you-dot" cx={xFor(ratio)} cy={yFor(appreciation)} radius={5} ring optedOut={!included} label={`${included ? `You${participantId ? ` · Participant #${participantId}` : ""}` : "Your report · not in cohort"}: ${ratio.toFixed(1)}× Yap Ratio · ${appreciation.toFixed(0)}% appreciation`} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} /><text className={`leader-you-label${included ? "" : " leader-you-label-opted-out"}`} x={Math.min(right - 4, xFor(ratio) + 12)} y={Math.max(top + 14, yFor(appreciation) - 10)} textAnchor={xFor(ratio) > right - 70 ? "end" : "start"}>{included ? "YOU" : "YOUR REPORT · NOT IN COHORT"}</text></>}
         {[0, 25, 50, 75, 100].map((tick) => <g key={tick}><line className="leader-tick" x1={left - 6} x2={left} y1={yFor(tick)} y2={yFor(tick)} /><text className="leader-tick-label" x={left - 10} y={yFor(tick) + 4} textAnchor="end">{tick}%</text></g>)}
         {xTicks.map((tick) => <g key={tick}><line className="leader-tick" x1={xFor(tick)} x2={xFor(tick)} y1={bottom} y2={bottom + 6} /><text className="leader-tick-label" x={xFor(tick)} y={bottom + 21} textAnchor="middle">{tick}×</text></g>)}
         <g className="leader-edge-pill" transform={`translate(${(left + right) / 2} ${top})`}><rect x="-71" y="-11" width="142" height="22" rx="11" /><text y="4" textAnchor="middle">More appreciation</text></g>
@@ -521,7 +521,7 @@ function niceLinearTicks(maximum: number) {
   return Array.from({ length: Math.round(niceMaximum / step) + 1 }, (_, index) => index * step);
 }
 
-function WorkaroundFigure({ metric, participantId }: { metric: LeaderboardSnapshot["instrumental_workarounds"]; participantId?: number }) {
+function WorkaroundFigure({ metric, participantId, included }: { metric: LeaderboardSnapshot["instrumental_workarounds"]; participantId?: number; included: boolean }) {
   const { ref, width } = usePlotWidth();
   const [tooltip, setTooltip] = useState<PlotTooltipState>(null);
   const height = 246;
@@ -541,8 +541,8 @@ function WorkaroundFigure({ metric, participantId }: { metric: LeaderboardSnapsh
         <rect className="leader-chart-frame" x={left} y="30" width={right - left} height="142" />
         {values.length > 0 && <line className="leader-median" x1={xFor(median)} x2={xFor(median)} y1="38" y2="164"><title>Median: {median.toFixed(1)} instrumental workarounds</title></line>}
         {dots.points.map((point) => { const label = `Participant #${samples[point.index].participant_id}: ${point.value} instrumental workaround${point.value === 1 ? "" : "s"}`; return <InteractivePlotPoint key={samples[point.index].participant_id} className="leader-dot workaround-dot" cx={point.x} cy={point.y} radius={dots.radius} label={label} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} />; })}
-        <InteractivePlotPoint className="leader-you-dot" cx={xFor(metric.value)} cy={103} radius={5} ring label={`You${participantId ? ` · Participant #${participantId}` : ""}: ${metric.value} instrumental workaround${metric.value === 1 ? "" : "s"}`} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} />
-        <text className="leader-you-label" x={Math.min(right - 4, xFor(metric.value) + 11)} y="88" textAnchor={xFor(metric.value) > right - 70 ? "end" : "start"}>YOU</text>
+        <InteractivePlotPoint className="leader-you-dot" cx={xFor(metric.value)} cy={103} radius={5} ring optedOut={!included} label={`${included ? `You${participantId ? ` · Participant #${participantId}` : ""}` : "Your report · not in cohort"}: ${metric.value} instrumental workaround${metric.value === 1 ? "" : "s"}`} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} />
+        <text className={`leader-you-label${included ? "" : " leader-you-label-opted-out"}`} x={Math.min(right - 4, xFor(metric.value) + 11)} y="88" textAnchor={xFor(metric.value) > right - 70 ? "end" : "start"}>{included ? "YOU" : "YOUR REPORT · NOT IN COHORT"}</text>
         <line className="leader-axis" x1={left} x2={right} y1="184" y2="184" />
         {ticks.map((tick) => <g key={tick}><line className="leader-tick" x1={xFor(tick)} x2={xFor(tick)} y1="184" y2="190" /><text className="leader-tick-label" x={xFor(tick)} y="207" textAnchor="middle">{tick.toLocaleString()}</text></g>)}
         <text className="leader-axis-title" x={(left + right) / 2} y="237" textAnchor="middle">Instrumental workarounds detected</text>
@@ -609,9 +609,9 @@ function LeaderboardView({ id }: { id: string }) {
     <a className="leader-back" href={`/w/${id}`}>← Back to your Wrapped</a>
     <header className="leader-hero"><span className="eyebrow">Behavior Wrapped · Leaderboard</span><h1>How you compare.</h1><p>{snapshot.cohort_size.toLocaleString()} anonymous participant{snapshot.cohort_size === 1 ? "" : "s"} · published Wrapped aggregates are included by default and can be removed at any time.</p></header>
     <div className="leader-figures">
-      <TokenUsageFigure metric={snapshot.tokens} participantId={snapshot.participation.participant_id} />
-      <RelationshipFigure ratio={ratio} appreciation={snapshot.good_human_score.value} points={snapshot.relationship.points} participantId={snapshot.participation.participant_id} />
-      <WorkaroundFigure metric={snapshot.instrumental_workarounds} participantId={snapshot.participation.participant_id} />
+      <TokenUsageFigure metric={snapshot.tokens} participantId={snapshot.participation.participant_id} included={snapshot.participation.joined} />
+      <RelationshipFigure ratio={ratio} appreciation={snapshot.good_human_score.value} points={snapshot.relationship.points} participantId={snapshot.participation.participant_id} included={snapshot.participation.joined} />
+      <WorkaroundFigure metric={snapshot.instrumental_workarounds} participantId={snapshot.participation.participant_id} included={snapshot.participation.joined} />
     </div>
     {snapshot.can_manage && <section className="leader-donation"><div><span className="eyebrow">Optional research donation</span><h2>Will you contribute your data to the research?</h2><p>This is separate from the anonymous leaderboard. You’ll review the redactions and explicitly consent before any transcript data is sent.</p></div><a className="primary" href={`${report.donationHelperUrl || `http://127.0.0.1:4317/donate/${report.id}`}?mode=standard`}>Review and donate your data <span>→</span></a></section>}
     {snapshot.can_manage ? <section className="leader-opt-out" id="join-leaderboard">
