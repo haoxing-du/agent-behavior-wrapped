@@ -24,6 +24,7 @@ type SavedReport = Report & { id: string; createdAt: string; rangeLabel: string;
 type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; headlineAccent?: string; wordRatio?: string; example?: string; workaround?: boolean; turnDistribution?: { values: number[]; median: number }; ctaHref?: string; ctaLabel?: string; ctas?: { href: string; label: string; primary?: boolean; note?: string }[]; rows?: { label: string; value: string; percentage?: number; rank?: number }[]; comparison?: { label: string; highlight: string; accent: "yell" | "thanks"; value: string; suffix: string; quote?: string }[] };
 type ParticipantSample = { participant_id: number; value: number };
 type RelationshipPoint = { participant_id: number; yap_ratio: number; appreciation_index: number };
+type PlotTooltipState = { x: number; y: number; text: string } | null;
 type LeaderboardSnapshot = {
   cohort_size: number;
   tokens: { value: number; percentile: number | null; samples: ParticipantSample[] };
@@ -350,6 +351,31 @@ function usePlotWidth() {
   return { ref, width };
 }
 
+function pointerTooltip(container: HTMLDivElement | null, clientX: number, clientY: number, text: string): PlotTooltipState {
+  const bounds = container?.getBoundingClientRect();
+  if (!bounds) return null;
+  return { x: Math.max(86, Math.min(bounds.width - 86, clientX - bounds.left)), y: Math.max(28, clientY - bounds.top), text };
+}
+
+function focusedTooltip(container: HTMLDivElement | null, point: Element, text: string): PlotTooltipState {
+  const bounds = container?.getBoundingClientRect();
+  const pointBounds = point.getBoundingClientRect();
+  if (!bounds) return null;
+  return { x: Math.max(86, Math.min(bounds.width - 86, pointBounds.left + pointBounds.width / 2 - bounds.left)), y: Math.max(28, pointBounds.top - bounds.top), text };
+}
+
+function InteractivePlotPoint({ cx, cy, radius, label, className, ring = false, onPointer, onFocus, onLeave }: { cx: number; cy: number; radius: number; label: string; className: string; ring?: boolean; onPointer: (clientX: number, clientY: number, label: string) => void; onFocus: (point: Element, label: string) => void; onLeave: () => void }) {
+  return <g className="leader-interactive-point" tabIndex={0} role="img" aria-label={label} onPointerEnter={(event) => onPointer(event.clientX, event.clientY, label)} onPointerMove={(event) => onPointer(event.clientX, event.clientY, label)} onPointerLeave={onLeave} onFocus={(event) => onFocus(event.currentTarget, label)} onBlur={onLeave}>
+    <circle className="leader-point-hit" cx={cx} cy={cy} r={Math.max(10, radius + 5)} />
+    {ring && <circle className="leader-you-ring" cx={cx} cy={cy} r={radius + 4} />}
+    <circle className={className} cx={cx} cy={cy} r={radius} />
+  </g>;
+}
+
+function PlotTooltip({ value }: { value: PlotTooltipState }) {
+  return value ? <div className="leader-hover-tooltip" role="tooltip" style={{ left: value.x, top: value.y }}>{value.text}</div> : null;
+}
+
 function quantile(values: number[], percentile: number) {
   if (!values.length) return 0;
   const sorted = [...values].sort((left, right) => left - right);
@@ -401,6 +427,7 @@ function violinPath(samples: number[], minimum: number, maximum: number, left: n
 
 function TokenUsageFigure({ metric, participantId }: { metric: LeaderboardSnapshot["tokens"]; participantId?: number }) {
   const { ref, width } = usePlotWidth();
+  const [tooltip, setTooltip] = useState<PlotTooltipState>(null);
   const height = 292;
   const left = width < 520 ? 38 : 54;
   const right = width - 22;
@@ -423,14 +450,14 @@ function TokenUsageFigure({ metric, participantId }: { metric: LeaderboardSnapsh
         <rect className="leader-chart-frame" x={left} y="38" width={right - left} height="180" />
         {values.length > 0 && <path className="leader-violin" d={violinPath(logSamples, minimum, maximum, left, right, 127, 67)} />}
         {median > 0 && <line className="leader-median" x1={xFor(median)} x2={xFor(median)} y1="48" y2="206"><title>Median: {fmtCompact(median)} tokens</title></line>}
-        {dots.points.map((point) => <circle className="leader-dot" key={samples[point.index].participant_id} cx={point.x} cy={point.y} r={dots.radius}><title>Participant #{samples[point.index].participant_id}: {point.value.toLocaleString()} tokens</title></circle>)}
-        <circle className="leader-you-ring" cx={xFor(metric.value)} cy="127" r="9" />
-        <circle className="leader-you-dot" cx={xFor(metric.value)} cy="127" r="5"><title>You{participantId ? ` · Participant #${participantId}` : ""}: {metric.value.toLocaleString()} tokens</title></circle>
+        {dots.points.map((point) => { const label = `Participant #${samples[point.index].participant_id}: ${point.value.toLocaleString()} tokens`; return <InteractivePlotPoint key={samples[point.index].participant_id} className="leader-dot" cx={point.x} cy={point.y} radius={dots.radius} label={label} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} />; })}
+        <InteractivePlotPoint className="leader-you-dot" cx={xFor(metric.value)} cy={127} radius={5} ring label={`You${participantId ? ` · Participant #${participantId}` : ""}: ${metric.value.toLocaleString()} tokens`} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} />
         <text className="leader-you-label" x={Math.min(right - 4, xFor(metric.value) + 11)} y="112" textAnchor={xFor(metric.value) > right - 70 ? "end" : "start"}>YOU</text>
         <line className="leader-axis" x1={left} x2={right} y1="230" y2="230" />
         {ticks.map((tick) => <g key={tick}><line className="leader-tick" x1={xFor(tick)} x2={xFor(tick)} y1="230" y2="236" /><text className="leader-tick-label" x={xFor(tick)} y="252" textAnchor="middle">{fmtAxisCompact(tick)}</text></g>)}
         <text className="leader-axis-title" x={(left + right) / 2} y="281" textAnchor="middle">Tokens used · log scale</text>
       </svg>
+      <PlotTooltip value={tooltip} />
     </div>
     <p className="leader-figure-note">Each dot is one anonymous participant. The silhouette shows where the cohort is concentrated; the line marks the median.</p>
   </section>;
@@ -438,6 +465,7 @@ function TokenUsageFigure({ metric, participantId }: { metric: LeaderboardSnapsh
 
 function RelationshipFigure({ ratio, appreciation, points, participantId }: { ratio: number; appreciation: number | null; points: RelationshipPoint[]; participantId?: number }) {
   const { ref, width } = usePlotWidth();
+  const [tooltip, setTooltip] = useState<PlotTooltipState>(null);
   const height = width < 520 ? 370 : 420;
   const left = width < 520 ? 54 : 72;
   const right = width - 24;
@@ -463,8 +491,8 @@ function RelationshipFigure({ ratio, appreciation, points, participantId }: { ra
         <rect className="leader-chart-frame" x={left} y={top} width={right - left} height={bottom - top} />
         <line className="leader-grid-line" x1={xMiddle} x2={xMiddle} y1={top} y2={bottom} />
         <line className="leader-grid-line" x1={left} x2={right} y1={yMiddle} y2={yMiddle} />
-        {usable.map((point) => <circle className="leader-dot relationship-dot" key={point.participant_id} cx={xFor(point.yap_ratio)} cy={yFor(point.appreciation_index)} r="3.5"><title>Participant #{point.participant_id}: {point.yap_ratio.toFixed(1)}× Yap Ratio · {point.appreciation_index.toFixed(0)}% appreciation</title></circle>)}
-        {appreciation !== null && <><circle className="leader-you-ring" cx={xFor(ratio)} cy={yFor(appreciation)} r="10" /><circle className="leader-you-dot" cx={xFor(ratio)} cy={yFor(appreciation)} r="5"><title>You{participantId ? ` · Participant #${participantId}` : ""}: {ratio.toFixed(1)}× Yap Ratio · {appreciation.toFixed(0)}% appreciation</title></circle><text className="leader-you-label" x={Math.min(right - 4, xFor(ratio) + 12)} y={Math.max(top + 14, yFor(appreciation) - 10)} textAnchor={xFor(ratio) > right - 70 ? "end" : "start"}>YOU</text></>}
+        {usable.map((point) => { const label = `Participant #${point.participant_id}: ${point.yap_ratio.toFixed(1)}× Yap Ratio · ${point.appreciation_index.toFixed(0)}% appreciation`; return <InteractivePlotPoint key={point.participant_id} className="leader-dot relationship-dot" cx={xFor(point.yap_ratio)} cy={yFor(point.appreciation_index)} radius={3.5} label={label} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} />; })}
+        {appreciation !== null && <><InteractivePlotPoint className="leader-you-dot" cx={xFor(ratio)} cy={yFor(appreciation)} radius={5} ring label={`You${participantId ? ` · Participant #${participantId}` : ""}: ${ratio.toFixed(1)}× Yap Ratio · ${appreciation.toFixed(0)}% appreciation`} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} /><text className="leader-you-label" x={Math.min(right - 4, xFor(ratio) + 12)} y={Math.max(top + 14, yFor(appreciation) - 10)} textAnchor={xFor(ratio) > right - 70 ? "end" : "start"}>YOU</text></>}
         {[0, 25, 50, 75, 100].map((tick) => <g key={tick}><line className="leader-tick" x1={left - 6} x2={left} y1={yFor(tick)} y2={yFor(tick)} /><text className="leader-tick-label" x={left - 10} y={yFor(tick) + 4} textAnchor="end">{tick}%</text></g>)}
         {xTicks.map((tick) => <g key={tick}><line className="leader-tick" x1={xFor(tick)} x2={xFor(tick)} y1={bottom} y2={bottom + 6} /><text className="leader-tick-label" x={xFor(tick)} y={bottom + 21} textAnchor="middle">{tick}×</text></g>)}
         <g className="leader-edge-pill" transform={`translate(${(left + right) / 2} ${top})`}><rect x="-71" y="-11" width="142" height="22" rx="11" /><text y="4" textAnchor="middle">More appreciation</text></g>
@@ -474,6 +502,7 @@ function RelationshipFigure({ ratio, appreciation, points, participantId }: { ra
         <text className="leader-axis-title" x={(left + right) / 2} y={height - 9} textAnchor="middle">Yap Ratio · agent words ÷ your words · log scale</text>
         <text className="leader-axis-title" transform={`translate(14 ${(top + bottom) / 2}) rotate(-90)`} textAnchor="middle">Agent Appreciation Index · thanks ÷ thanks or scolds</text>
       </svg>
+      <PlotTooltip value={tooltip} />
     </div>
     {appreciation === null && <p className="leader-figure-note">Your report had no thank-or-scold moments, so your point cannot be placed vertically yet.</p>}
   </section>;
@@ -490,6 +519,7 @@ function niceLinearTicks(maximum: number) {
 
 function WorkaroundFigure({ metric, participantId }: { metric: LeaderboardSnapshot["instrumental_workarounds"]; participantId?: number }) {
   const { ref, width } = usePlotWidth();
+  const [tooltip, setTooltip] = useState<PlotTooltipState>(null);
   const height = 246;
   const left = width < 520 ? 38 : 54;
   const right = width - 22;
@@ -506,14 +536,14 @@ function WorkaroundFigure({ metric, participantId }: { metric: LeaderboardSnapsh
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Distribution of instrumental workaround counts for ${values.length} anonymous participants. Your value is ${metric.value}.`}>
         <rect className="leader-chart-frame" x={left} y="30" width={right - left} height="142" />
         {values.length > 0 && <line className="leader-median" x1={xFor(median)} x2={xFor(median)} y1="38" y2="164"><title>Median: {median.toFixed(1)} instrumental workarounds</title></line>}
-        {dots.points.map((point) => <circle className="leader-dot workaround-dot" key={samples[point.index].participant_id} cx={point.x} cy={point.y} r={dots.radius}><title>Participant #{samples[point.index].participant_id}: {point.value} instrumental workaround{point.value === 1 ? "" : "s"}</title></circle>)}
-        <circle className="leader-you-ring" cx={xFor(metric.value)} cy="103" r="9" />
-        <circle className="leader-you-dot" cx={xFor(metric.value)} cy="103" r="5"><title>You{participantId ? ` · Participant #${participantId}` : ""}: {metric.value} instrumental workaround{metric.value === 1 ? "" : "s"}</title></circle>
+        {dots.points.map((point) => { const label = `Participant #${samples[point.index].participant_id}: ${point.value} instrumental workaround${point.value === 1 ? "" : "s"}`; return <InteractivePlotPoint key={samples[point.index].participant_id} className="leader-dot workaround-dot" cx={point.x} cy={point.y} radius={dots.radius} label={label} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} />; })}
+        <InteractivePlotPoint className="leader-you-dot" cx={xFor(metric.value)} cy={103} radius={5} ring label={`You${participantId ? ` · Participant #${participantId}` : ""}: ${metric.value} instrumental workaround${metric.value === 1 ? "" : "s"}`} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} />
         <text className="leader-you-label" x={Math.min(right - 4, xFor(metric.value) + 11)} y="88" textAnchor={xFor(metric.value) > right - 70 ? "end" : "start"}>YOU</text>
         <line className="leader-axis" x1={left} x2={right} y1="184" y2="184" />
         {ticks.map((tick) => <g key={tick}><line className="leader-tick" x1={xFor(tick)} x2={xFor(tick)} y1="184" y2="190" /><text className="leader-tick-label" x={xFor(tick)} y="207" textAnchor="middle">{tick.toLocaleString()}</text></g>)}
         <text className="leader-axis-title" x={(left + right) / 2} y="237" textAnchor="middle">Instrumental workarounds detected</text>
       </svg>
+      <PlotTooltip value={tooltip} />
     </div>
     <p className="leader-figure-note">Each dot is one participant. Counts stay on a linear scale so zero and small differences remain honest.</p>
   </section>;
