@@ -3,6 +3,7 @@ import { buildOpenRouterFrustrationRequest, isShareSafeFrustrationQuote } from "
 import { buildOpenRouterInteractionToneRequest, extractInteractionToneSelection, interactionToneBatches, INTERACTION_TONE_MAX_CANDIDATES, isShareSafeInteractionText, mergeInteractionToneSelections, restoreInteractionToneIds } from "../server/interaction-tone.mjs";
 import { buildOpenRouterSessionTopicRequest, extractSessionTopicSelection, isShareSafeTopicMessage, SESSION_TOPIC_MAX_CANDIDATES } from "../server/session-topics.mjs";
 import { buildOpenRouterWorkaroundRequest, extractWorkaroundSelection, validateWorkaroundChunks } from "../server/instrumental-workarounds.mjs";
+import { BEHAVIOR_WRAPPED_HOST, BEHAVIOR_WRAPPED_ORIGIN, BEHAVIOR_WRAPPED_WWW_HOST, LEGACY_BEHAVIOR_WRAPPED_HOST } from "../server/origins.mjs";
 import { sanitizePublicReport } from "../server/public-report-schema.mjs";
 import { MAX_ENCRYPTED_DONATION_BYTES, sanitizeEncryptedDonationEnvelope } from "../server/encrypted-donation-schema.mjs";
 export { sanitizePublicReport } from "../server/public-report-schema.mjs";
@@ -534,11 +535,22 @@ async function interactionToneCacheEntry(candidates) {
   const bytes = new TextEncoder().encode(JSON.stringify({ model: OPENROUTER_MODEL, candidates }));
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   const hash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-  return { cache, key: new Request(`https://agent-behavior-wrapped-judge.haoxingdu.workers.dev/.cache/interaction-tone-v3/${hash}`) };
+  return { cache, key: new Request(`${BEHAVIOR_WRAPPED_ORIGIN}/.cache/interaction-tone-v3/${hash}`) };
+}
+
+function isHostedAppPath(pathname) {
+  return pathname === "/" || /^\/(?:w|leaderboard|donate)\/[A-Za-z0-9_-]{8,32}$/.test(pathname);
 }
 
 export async function handleRequest(request, env, fetchImpl = fetch) {
   const url = new URL(request.url);
+  const hostedAppPath = isHostedAppPath(url.pathname);
+  if (hostedAppPath && new Set(["GET", "HEAD"]).has(request.method)
+    && (url.hostname === LEGACY_BEHAVIOR_WRAPPED_HOST || url.hostname === BEHAVIOR_WRAPPED_WWW_HOST)) {
+    url.protocol = "https:";
+    url.host = BEHAVIOR_WRAPPED_HOST;
+    return Response.redirect(url.toString(), 308);
+  }
   if (request.method === "GET" && url.pathname === "/health") return json({ service: "behavior-wrapped-phrase-judge", healthy: true });
   const publicReportMatch = url.pathname.match(/^\/api\/reports\/([A-Za-z0-9_-]{8,32})$/);
   if (request.method === "GET" && publicReportMatch) {
@@ -574,7 +586,10 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
   const interactionToneRoute = url.pathname === "/v1/interaction-tone";
   const sessionTopicRoute = url.pathname === "/v1/session-topics";
   const workaroundRoute = url.pathname === "/v1/instrumental-workarounds";
-  if (url.pathname !== "/v1/phrase-card" && !frustrationRoute && !interactionToneRoute && !sessionTopicRoute && !workaroundRoute) return json({ error: "Not found." }, 404);
+  if (url.pathname !== "/v1/phrase-card" && !frustrationRoute && !interactionToneRoute && !sessionTopicRoute && !workaroundRoute) {
+    if (hostedAppPath && new Set(["GET", "HEAD"]).has(request.method) && env.ASSETS?.fetch) return env.ASSETS.fetch(request);
+    return json({ error: "Not found." }, 404);
+  }
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
   if (request.headers.get("x-behavior-wrapped-protocol") !== "1") return json({ error: "Unsupported client protocol." }, 400);
   const contentLength = Number(request.headers.get("content-length") || 0);

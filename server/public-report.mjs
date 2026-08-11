@@ -1,6 +1,7 @@
-export const PUBLIC_REPORT_ORIGIN = "https://agent-behavior-wrapped-judge.haoxingdu.workers.dev";
 import { randomBytes } from "node:crypto";
 import { sanitizePublicReport } from "./public-report-schema.mjs";
+import { BEHAVIOR_WRAPPED_ORIGIN } from "./origins.mjs";
+export const PUBLIC_REPORT_ORIGIN = BEHAVIOR_WRAPPED_ORIGIN;
 const REQUEST_TIMEOUT_MS = 15_000;
 
 export async function publishPublicReport(report, { clientId, fetchImpl = fetch, origin = PUBLIC_REPORT_ORIGIN, managementToken = randomBytes(32).toString("hex") } = {}) {

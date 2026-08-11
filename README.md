@@ -1,5 +1,7 @@
 # Behavior Wrapped
 
+[behaviorwrapped.com](https://behaviorwrapped.com)
+
 A local-first, macOS prototype that discovers Claude Code history in `~/.claude/projects` and Codex history in `~/.codex/sessions` plus `~/.codex/archived_sessions`, analyzes selected sessions on-device, and publishes a strictly share-safe Wrapped deck. A narrow localhost helper is retained only for optional research-donation review because a hosted page cannot read local transcripts.
 
 ## Run it
@@ -12,7 +14,7 @@ npx behavior-wrapped@latest
 
 Nothing is installed globally. To try it without reading your real session history, add `--demo` to use only the bundled synthetic fixtures.
 
-The command automatically scans both agents, selects sessions from the latest 30-day rolling window, creates a share-safe snapshot, publishes it at an unguessable public `/w/…` URL, starts the donation-only local helper, and opens the hosted Wrapped slideshow. Use `--days=N` to change the CLI window.
+The command automatically scans both agents, selects sessions from the latest 30-day rolling window, creates a share-safe snapshot, publishes it at an unguessable public `https://behaviorwrapped.com/w/…` URL, starts the donation-only local helper, and opens the hosted Wrapped slideshow. Use `--days=N` to change the CLI window.
 
 Long-running phases display an animated spinner, elapsed time, session-read progress, live judge status, and workaround batch progress. When output is redirected or captured, the same updates become stable line-based logs instead of terminal animation.
 

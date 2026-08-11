@@ -1,8 +1,9 @@
 import { redactAggregateText } from "./privacy.mjs";
 import { OPENROUTER_MODEL, OPENROUTER_PROVIDER_PREFERENCES, PHRASE_JUDGE_NAME } from "./phrase-card.mjs";
 import { judgeError, judgeRequestDetails, judgeResponseDetails } from "./judge-debug.mjs";
+import { BEHAVIOR_WRAPPED_ORIGIN } from "./origins.mjs";
 
-export const INTERACTION_TONE_RELAY_URL = "https://agent-behavior-wrapped-judge.haoxingdu.workers.dev/v1/interaction-tone";
+export const INTERACTION_TONE_RELAY_URL = `${BEHAVIOR_WRAPPED_ORIGIN}/v1/interaction-tone`;
 export const INTERACTION_TONE_MAX_CANDIDATES = 120;
 export const INTERACTION_TONE_BATCH_SIZE = 30;
 const MAX_TEXT_LENGTH = 240;

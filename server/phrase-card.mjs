@@ -1,10 +1,11 @@
 import { redactAggregateText } from "./privacy.mjs";
 import { judgeError, judgeRequestDetails, judgeResponseDetails } from "./judge-debug.mjs";
+import { BEHAVIOR_WRAPPED_ORIGIN } from "./origins.mjs";
 
 export const OPENROUTER_MODEL = "openai/gpt-5.6-luna";
 export const PHRASE_JUDGE_NAME = "GPT-5.6 Luna";
 export const OPENROUTER_PROVIDER_PREFERENCES = Object.freeze({ data_collection: "deny", zdr: true });
-export const PHRASE_JUDGE_RELAY_URL = "https://agent-behavior-wrapped-judge.haoxingdu.workers.dev/v1/phrase-card";
+export const PHRASE_JUDGE_RELAY_URL = `${BEHAVIOR_WRAPPED_ORIGIN}/v1/phrase-card`;
 
 const segmenter = new Intl.Segmenter("en", { granularity: "sentence" });
 const stopwords = new Set("a an and are as at be been but by can could did do does for from had has have he her here him his how i if in into is it its just may me more my no not of on or our out please she should so some than that the their them then there these they this those to up us was we were what when where which who why will with would you your".split(" "));

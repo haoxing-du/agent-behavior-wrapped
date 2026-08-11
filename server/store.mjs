@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
+import { canonicalBehaviorWrappedUrl } from "./origins.mjs";
 
 export const storeRoot = process.env.BEHAVIOR_WRAPPED_STORE_ROOT || path.join(os.homedir(), ".agent-behavior-wrapped");
 export const reportsRoot = path.join(storeRoot, "reports");
@@ -61,7 +62,14 @@ export function loadReport(id) {
   if (!/^[A-Za-z0-9_-]{8,32}$/.test(id)) return null;
   const file = path.join(reportsRoot, `${id}.json`);
   if (!fs.existsSync(file)) return null;
-  try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; }
+  try {
+    const report = JSON.parse(fs.readFileSync(file, "utf8"));
+    return {
+      ...report,
+      ...(report.publicUrl ? { publicUrl: canonicalBehaviorWrappedUrl(report.publicUrl) } : {}),
+      ...(report.managementUrl ? { managementUrl: canonicalBehaviorWrappedUrl(report.managementUrl) } : {}),
+    };
+  } catch { return null; }
 }
 
 export function listReports() {

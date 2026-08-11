@@ -1,4 +1,5 @@
-export const LEADERBOARD_RELAY_ORIGIN = "https://agent-behavior-wrapped-judge.haoxingdu.workers.dev";
+import { BEHAVIOR_WRAPPED_ORIGIN } from "./origins.mjs";
+export const LEADERBOARD_RELAY_ORIGIN = BEHAVIOR_WRAPPED_ORIGIN;
 const REQUEST_TIMEOUT_MS = 15_000;
 const demoTokens = [820_000, 2_400_000, 8_900_000, 14_300_000, 31_000_000, 47_500_000, 83_000_000, 126_000_000, 210_000_000, 380_000_000, 620_000_000, 940_000_000];
 const demoRatios = [0.8, 1.2, 1.7, 2.1, 2.8, 3.4, 4.2, 5.1, 6.7, 8.4, 11.2, 14.6];

@@ -3,8 +3,9 @@ import { redactAggregateText } from "./privacy.mjs";
 import { OPENROUTER_MODEL, OPENROUTER_PROVIDER_PREFERENCES } from "./phrase-card.mjs";
 import { judgeError, judgeRequestDetails, judgeResponseDetails } from "./judge-debug.mjs";
 import { semanticActions, semanticMethods, semanticToolUse } from "./tool-semantics.mjs";
+import { BEHAVIOR_WRAPPED_ORIGIN } from "./origins.mjs";
 
-export const WORKAROUND_RELAY_URL = "https://agent-behavior-wrapped-judge.haoxingdu.workers.dev/v1/instrumental-workarounds";
+export const WORKAROUND_RELAY_URL = `${BEHAVIOR_WRAPPED_ORIGIN}/v1/instrumental-workarounds`;
 export const WORKAROUND_MAX_CHUNKS_PER_REQUEST = 12;
 export const WORKAROUND_MAX_EVENTS_PER_CHUNK = 160;
 const WORKAROUND_CHUNK_OVERLAP = 12;
