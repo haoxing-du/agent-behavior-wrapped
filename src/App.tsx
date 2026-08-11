@@ -468,7 +468,7 @@ function TokenUsageFigure({ metric, participantId, included }: { metric: Leaderb
       </svg>
       <PlotTooltip value={tooltip} />
     </div>
-    <p className="leader-figure-note">Each dot is one anonymous participant. The silhouette shows where the cohort is concentrated; the line marks the median.</p>
+    <p className="leader-figure-note">Dashed line = median.</p>
   </section>;
 }
 
@@ -508,8 +508,8 @@ function RelationshipFigure({ ratio, appreciation, points, participantId, includ
         <g className="leader-edge-pill" transform={`translate(${(left + right) / 2} ${bottom})`}><rect x="-67" y="-11" width="134" height="22" rx="11" /><text y="4" textAnchor="middle">More frustration</text></g>
         <g className="leader-edge-pill" transform={`translate(${left} ${(top + bottom) / 2}) rotate(-90)`}><rect x="-57" y="-11" width="114" height="22" rx="11" /><text y="4" textAnchor="middle">You talk more</text></g>
         <g className="leader-edge-pill" transform={`translate(${right} ${(top + bottom) / 2}) rotate(90)`}><rect x="-65" y="-11" width="130" height="22" rx="11" /><text y="4" textAnchor="middle">Agent talks more</text></g>
-        <text className="leader-axis-title" x={(left + right) / 2} y={height - 9} textAnchor="middle">Yap Ratio · agent words ÷ your words · log scale</text>
-        <text className="leader-axis-title" transform={`translate(14 ${(top + bottom) / 2}) rotate(-90)`} textAnchor="middle">Agent Appreciation Index · thanks ÷ thanks or scolds</text>
+        <text className="leader-axis-title" x={(left + right) / 2} y={height - 9} textAnchor="middle">Yap Ratio = agent words / your words</text>
+        <text className="leader-axis-title" transform={`translate(14 ${(top + bottom) / 2}) rotate(-90)`} textAnchor="middle">Agent Appreciation Index = thanks ÷ thanks or scolds</text>
       </svg>
       <PlotTooltip value={tooltip} />
     </div>
@@ -540,7 +540,7 @@ function WorkaroundFigure({ metric, participantId, included }: { metric: Leaderb
   const dots = swarm(values, xFor, 103, 54);
   const median = quantile(values, .5);
   return <section className="leader-figure leader-workaround-figure">
-    <div className="leader-figure-head"><div><span>03 · Agent persistence</span><h2>Instrumental workarounds</h2></div><div className="leader-result"><strong>{metric.value.toLocaleString()}</strong><small>{percentileCopy(metric.percentile)}</small></div></div>
+    <div className="leader-figure-head"><div><span>03 · Instrumental workaround</span><h2>How many times did your agents go around minor blockers?</h2></div><div className="leader-result"><strong>{metric.value.toLocaleString()}</strong><small>{percentileCopy(metric.percentile)}</small></div></div>
     <div className="leader-plot" ref={ref}>
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Distribution of instrumental workaround counts for ${values.length} anonymous participants. Your value is ${metric.value}.`}>
         <rect className="leader-chart-frame" x={left} y="30" width={right - left} height="142" />
@@ -554,7 +554,6 @@ function WorkaroundFigure({ metric, participantId, included }: { metric: Leaderb
       </svg>
       <PlotTooltip value={tooltip} />
     </div>
-    <p className="leader-figure-note">Each dot is one participant. Counts stay on a linear scale so zero and small differences remain honest.</p>
   </section>;
 }
 
@@ -612,13 +611,13 @@ function LeaderboardView({ id }: { id: string }) {
   const ratio = snapshot.word_ratio.value;
   return <main className="leaderboard-page">
     <a className="leader-back" href={`/w/${id}`}>← Back to your Wrapped</a>
-    <header className="leader-hero"><span className="eyebrow">Behavior Wrapped · Leaderboard</span><h1>How you compare.</h1><p>{snapshot.cohort_size.toLocaleString()} anonymous participant{snapshot.cohort_size === 1 ? "" : "s"} · published Wrapped aggregates are included by default and can be removed at any time.</p></header>
+    <header className="leader-hero"><span className="eyebrow">Behavior Wrapped · Leaderboard</span><h1>How you compare</h1><p>{snapshot.cohort_size.toLocaleString()} participant{snapshot.cohort_size === 1 ? "" : "s"}</p></header>
     <div className="leader-figures">
       <TokenUsageFigure metric={snapshot.tokens} participantId={snapshot.participation.participant_id} included={snapshot.participation.joined} />
       <RelationshipFigure ratio={ratio} appreciation={snapshot.good_human_score.value} points={snapshot.relationship.points} participantId={snapshot.participation.participant_id} included={snapshot.participation.joined} />
       <WorkaroundFigure metric={snapshot.instrumental_workarounds} participantId={snapshot.participation.participant_id} included={snapshot.participation.joined} />
     </div>
-    {snapshot.can_manage && <section className="leader-donation"><div><span className="eyebrow">Optional research donation</span><h2>Will you contribute your data to the research?</h2><p>This is separate from the anonymous leaderboard. You’ll review the redactions and explicitly consent before any transcript data is sent.</p></div><a className="primary" href={`${report.donationHelperUrl || `http://localhost:4317/donate/${report.id}`}?mode=standard`}>Review and donate your data <span>→</span></a></section>}
+    {snapshot.can_manage && <section className="leader-donation"><div><span className="eyebrow">Optional research donation</span><h2>Will you contribute your data to the research?</h2><p>Separate from the anonymous leaderboard, you can contribute your agent transcripts to the research corpus. You’ll review the redactions and explicitly consent before any transcript data is sent.</p></div><a className="primary" href={`${report.donationHelperUrl || `http://localhost:4317/donate/${report.id}`}?mode=standard`}>Review and donate your data <span>→</span></a></section>}
     {snapshot.can_manage ? <section className="leader-opt-out" id="join-leaderboard">
       <div><p>{snapshot.participation.joined ? "Don’t want your stats to show up on the leaderboard?" : "Your stats are currently opted out of the leaderboard."}</p>{error && <span className="error" role="alert">{error}</span>}</div>
       {snapshot.participation.joined ? <button className="leader-remove" disabled={saving} onClick={leave}>{saving ? "Opting out…" : "Click here to opt out"}</button> : <button className="primary" disabled={saving} onClick={include}>{saving ? "Adding…" : "Add my anonymous stats back"}<span>→</span></button>}
