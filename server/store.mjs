@@ -16,7 +16,7 @@ function ensureStore() {
 export function saveDonationReceipt(value) {
   if (!/^[0-9a-f-]{36}$/.test(value?.donation_id || "") || !/^[A-Za-z0-9_-]{43}$/.test(value?.deletion_token || "")) throw new Error("The donation service returned an invalid deletion receipt.");
   ensureStore();
-  const receipt = { donationId: value.donation_id, deletionToken: value.deletion_token, retentionDays: value.retention_days, savedAt: new Date().toISOString() };
+  const receipt = { donationId: value.donation_id, deletionToken: value.deletion_token, savedAt: new Date().toISOString() };
   fs.writeFileSync(path.join(donationReceiptsRoot, `${receipt.donationId}.json`), `${JSON.stringify(receipt)}\n`, { mode: 0o600, flag: "wx" });
   return receipt;
 }

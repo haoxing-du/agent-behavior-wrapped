@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { DONATION_RETENTION_DAYS, sanitizeEncryptedDonationEnvelope } from "../server/encrypted-donation-schema.mjs";
+import { sanitizeEncryptedDonationEnvelope } from "../server/encrypted-donation-schema.mjs";
 import { decryptResearchDonation, encryptResearchDonation } from "../server/research-donation-crypto.mjs";
 import { sanitizeResearchDonation } from "../server/research-donation-schema.mjs";
 import { submitResearchDonation } from "../server/research-donation.mjs";
-import { expireResearchDonations, handleRequest } from "../worker/phrase-judge-worker.mjs";
+import { handleRequest } from "../worker/phrase-judge-worker.mjs";
 
 function fixture(overrides = {}) {
   return {
@@ -102,7 +102,7 @@ test("worker stores ciphertext in R2 and consent metadata in a separate D1 datab
   assert.equal(response.status, 201);
   const body = await response.json();
   assert.equal(body.encrypted, true);
-  assert.equal(body.retention_days, DONATION_RETENTION_DAYS);
+  assert.equal("retention_days" in body, false);
   assert.match(body.deletion_token, /^[A-Za-z0-9_-]{43}$/);
   assert.match(storedObject.key, /^donations\/2026-08\//);
   assert.equal(storedObject.value.includes("Reviewed text"), false);
@@ -154,17 +154,4 @@ test("a deletion token removes both encrypted content and metadata", async () =>
   assert.equal(response.status, 200);
   assert.equal(deleted[0].key, "donations/2026-08/example.json");
   assert.match(deleted[1].sql, /^DELETE FROM research_donations/);
-});
-
-test("scheduled retention cleanup removes expired ciphertext before metadata", async () => {
-  const operations = [];
-  const database = {
-    prepare(sql) {
-      if (sql.startsWith("SELECT")) return { async all() { return { results: [{ id: "expired", object_key: "donations/expired.json" }] }; } };
-      return { bind(id) { return { async run() { operations.push(`metadata:${id}`); } }; } };
-    },
-  };
-  const bucket = { async delete(key) { operations.push(`object:${key}`); } };
-  await expireResearchDonations({ RESEARCH_DB: database, RESEARCH_DONATIONS: bucket });
-  assert.deepEqual(operations, ["object:donations/expired.json", "metadata:expired"]);
 });

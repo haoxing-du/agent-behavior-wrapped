@@ -942,7 +942,6 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [acceptedId, setAcceptedId] = useState("");
-  const [retentionDays, setRetentionDays] = useState(365);
   const [deletionStatus, setDeletionStatus] = useState("");
 
   async function preview(ids = [...chosen], disabledRedactions = [...disabledAutomatic], disabledMatches = [...disabledAutomaticMatches]) {
@@ -1081,7 +1080,6 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Donation failed");
       setAcceptedId(result.donation_id || "accepted");
-      setRetentionDays(Number(result.retention_days) || 365);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Donation failed"); }
     finally { setLoading(false); }
   }
@@ -1100,7 +1098,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
   const messageCount = bundle?.sessions.reduce((sum, session) => sum + session.messages.length, 0) || 0;
   const detailedReview = mode !== "standard";
   const unredacted = mode === "unredacted";
-  if (acceptedId) return <main className="donation-page"><section className="donation-hero donation-success"><span className="eyebrow">Donation received</span><h1>Thank you for contributing.</h1><p>Your reviewed {unredacted ? "unredacted " : ""}data was encrypted on this Mac before transmission. Only ciphertext is stored for up to {retentionDays} days. Donation reference: {acceptedId}</p>{/^[0-9a-f-]{36}$/.test(acceptedId) && !deletionStatus && <button className="leader-remove" disabled={loading} onClick={deleteAcceptedDonation}>{loading ? "Deleting…" : "Delete my donation"}</button>}{deletionStatus && <p>{deletionStatus}</p>}<button className="primary" onClick={onBack}>Back to your Wrapped</button></section></main>;
+  if (acceptedId) return <main className="donation-page"><section className="donation-hero donation-success"><span className="eyebrow">Donation received</span><h1>Thank you for contributing.</h1><p>Your reviewed {unredacted ? "unredacted " : ""}data was encrypted on this Mac before transmission. Only ciphertext is stored. Donation reference: {acceptedId}</p>{/^[0-9a-f-]{36}$/.test(acceptedId) && !deletionStatus && <button className="leader-remove" disabled={loading} onClick={deleteAcceptedDonation}>{loading ? "Deleting…" : "Delete my donation"}</button>}{deletionStatus && <p>{deletionStatus}</p>}<button className="primary" onClick={onBack}>Back to your Wrapped</button></section></main>;
 
   return <main className="donation-page">
     <button className="back-link" onClick={onBack}>← Back to Wrapped</button>
@@ -1142,7 +1140,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
               </div>;
             })}</div>
           </>}
-          <div className="donation-step consent-step"><span>3</span><div><h2>Consent separately</h2><p>This consent applies only to the reviewed bundle above. It is protected with authenticated AES-256-GCM encryption before leaving localhost and automatically expires from active research storage after 365 days.</p></div></div>
+          <div className="donation-step consent-step"><span>3</span><div><h2>Consent separately</h2><p>This consent applies only to the reviewed bundle above. It is protected with authenticated AES-256-GCM encryption before leaving localhost.</p></div></div>
           <label className={`consent ${unredacted ? "unredacted-consent" : ""}`}><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /><span>{unredacted ? "I understand this donation is not automatically redacted and may contain credentials, personal details, private code, URLs, and file paths. I consent to transmit it for research." : "I consent for this reviewed data to be transmitted and used for research."}</span></label>
           <button className={`export-button ${unredacted ? "unredacted" : ""}`} disabled={!consent || loading || !messageCount} onClick={donate}>{loading ? "Transmitting…" : unredacted ? "Donate unredacted data" : "Donate reviewed data"} <span>→</span></button>
         </>}

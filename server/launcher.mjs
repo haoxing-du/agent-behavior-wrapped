@@ -134,7 +134,7 @@ const server = http.createServer(async (request, response) => {
         endpoint: process.env.BEHAVIOR_WRAPPED_DONATION_URL || RESEARCH_DONATION_URL,
       });
       saveDonationReceipt(result);
-      return json(response, 201, { accepted: true, donation_id: result.donation_id, encrypted: true, retention_days: result.retention_days });
+      return json(response, 201, { accepted: true, donation_id: result.donation_id, encrypted: true });
     }
     const donationMatch = url.pathname.match(/^\/api\/research-donations\/([0-9a-f-]{36})$/);
     if (request.method === "DELETE" && donationMatch) {

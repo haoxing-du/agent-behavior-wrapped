@@ -15,9 +15,7 @@ CREATE TABLE IF NOT EXISTS research_donations (
   message_count INTEGER NOT NULL,
   consent_version INTEGER NOT NULL,
   consented_at TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  delete_after TEXT NOT NULL
+  created_at TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS research_donations_report ON research_donations (report_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS research_donations_retention ON research_donations (delete_after);

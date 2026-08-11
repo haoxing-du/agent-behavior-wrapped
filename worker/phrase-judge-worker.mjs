@@ -4,7 +4,7 @@ import { buildOpenRouterInteractionToneRequest, extractInteractionToneSelection,
 import { buildOpenRouterSessionTopicRequest, extractSessionTopicSelection, isShareSafeTopicMessage, SESSION_TOPIC_MAX_CANDIDATES } from "../server/session-topics.mjs";
 import { buildOpenRouterWorkaroundRequest, extractWorkaroundSelection, validateWorkaroundChunks } from "../server/instrumental-workarounds.mjs";
 import { sanitizePublicReport } from "../server/public-report-schema.mjs";
-import { DONATION_RETENTION_DAYS, MAX_ENCRYPTED_DONATION_BYTES, sanitizeEncryptedDonationEnvelope } from "../server/encrypted-donation-schema.mjs";
+import { MAX_ENCRYPTED_DONATION_BYTES, sanitizeEncryptedDonationEnvelope } from "../server/encrypted-donation-schema.mjs";
 export { sanitizePublicReport } from "../server/public-report-schema.mjs";
 
 const MAX_BODY_BYTES = 256_000;
@@ -394,7 +394,6 @@ async function handleResearchDonation(request, env) {
   const objectBytes = new TextEncoder().encode(serialized).byteLength;
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(donation.ciphertext));
   const ciphertextSha256 = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-  const deleteAfter = new Date(new Date(donation.metadata.consentedAt).getTime() + DONATION_RETENTION_DAYS * 86_400_000).toISOString();
   try {
     await env.RESEARCH_DONATIONS.put(objectKey, serialized, {
       httpMetadata: { contentType: "application/json" },
@@ -405,18 +404,18 @@ async function handleResearchDonation(request, env) {
     await env.RESEARCH_DB.prepare(`INSERT INTO research_donations
       (id, owner_hash, deletion_token_hash, report_id, object_key, encryption_key_id, encryption_algorithm, ciphertext_sha256,
        object_bytes, redaction_mode, unredacted_data, automated_detections, session_count, message_count,
-       consent_version, consented_at, created_at, delete_after)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+       consent_version, consented_at, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
         id, ownerHash, deletionTokenHash, donation.metadata.reportId, objectKey, donation.encryption.keyId, donation.encryption.algorithm,
         ciphertextSha256, objectBytes, donation.metadata.redactionMode, donation.metadata.unredactedData ? 1 : 0,
         donation.metadata.automatedDetections, donation.metadata.sessions, donation.metadata.messages,
-        donation.metadata.consentVersion, donation.metadata.consentedAt, donation.metadata.createdAt, deleteAfter,
+        donation.metadata.consentVersion, donation.metadata.consentedAt, donation.metadata.createdAt,
       ).run();
   } catch {
     await env.RESEARCH_DONATIONS.delete(objectKey).catch(() => {});
     return json({ error: "Research donation metadata storage is temporarily unavailable." }, 503);
   }
-  return json({ accepted: true, donation_id: id, deletion_token: deletionToken, encrypted: true, retention_days: DONATION_RETENTION_DAYS }, 201);
+  return json({ accepted: true, donation_id: id, deletion_token: deletionToken, encrypted: true }, 201);
 }
 
 async function sha256Hex(value) {
@@ -436,15 +435,6 @@ async function deleteResearchDonation(request, env, id) {
   catch { return json({ error: "Encrypted research storage is temporarily unavailable." }, 503); }
   await env.RESEARCH_DB.prepare("DELETE FROM research_donations WHERE id = ?").bind(id).run();
   return json({ deleted: true });
-}
-
-export async function expireResearchDonations(env) {
-  if (!env.RESEARCH_DB || !env.RESEARCH_DONATIONS) return;
-  const result = await env.RESEARCH_DB.prepare("SELECT id, object_key FROM research_donations WHERE datetime(delete_after) <= datetime('now') ORDER BY delete_after LIMIT 100").all();
-  for (const record of result.results || []) {
-    await env.RESEARCH_DONATIONS.delete(record.object_key);
-    await env.RESEARCH_DB.prepare("DELETE FROM research_donations WHERE id = ?").bind(record.id).run();
-  }
 }
 
 async function applyRateLimit(binding, key) {
@@ -660,8 +650,5 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
 export default {
   fetch(request, env) {
     return handleRequest(request, env);
-  },
-  scheduled(_controller, env, context) {
-    context.waitUntil(expireResearchDonations(env));
   },
 };

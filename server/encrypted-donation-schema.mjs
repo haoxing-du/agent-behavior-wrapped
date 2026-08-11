@@ -3,7 +3,6 @@ import { MAX_DONATION_BYTES } from "./research-donation-schema.mjs";
 export const DONATION_ENVELOPE_FORMAT = "behavior-wrapped-encrypted-donation-v1";
 export const DONATION_ENCRYPTION_ALGORITHM = "RSA-OAEP-256+A256GCM";
 export const DONATION_KEY_ID = "research-donation-rsa-2026-08";
-export const DONATION_RETENTION_DAYS = 365;
 export const MAX_ENCRYPTED_DONATION_BYTES = 2_500_000;
 
 const base64url = /^[A-Za-z0-9_-]+$/;
