@@ -277,6 +277,22 @@ test("retries the judge once when the relay reports an empty completion", async 
   assert.equal(result.card.count, 0);
 });
 
+test("retries the judge once for a structurally invalid relay review", async () => {
+  const bundle = buildWorkaroundTrajectories(sessions);
+  let calls = 0;
+  const result = await judgeWorkaroundsViaRelay(bundle, {
+    endpoint: "https://relay.example/v1/instrumental-workarounds",
+    clientId: "0123456789abcdef0123456789abcdef",
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls === 1) return new Response(JSON.stringify({ error: "invalid review", diagnostic: { code: "missing_arrays" } }), { status: 502, headers: { "content-type": "application/json" } });
+      return new Response(JSON.stringify({ confirmed: [], borderline: [], model: "judge-model" }), { status: 200, headers: { "content-type": "application/json" } });
+    },
+  });
+  assert.equal(calls, 2);
+  assert.equal(result.card.count, 0);
+});
+
 test("requires every trajectory batch to succeed before returning a review", async () => {
   const manySessions = Array.from({ length: 13 }, (_, index) => ({
     sessionId: `session-${index + 1}`,

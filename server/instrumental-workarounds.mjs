@@ -496,7 +496,7 @@ function addBatchDetails(error, index, total) {
 }
 
 function retryableEmptyRelayResponse(response, body) {
-  return response?.status === 502 && new Set(["empty_content", "invalid_json", "missing_keys"]).has(body?.diagnostic?.code);
+  return response?.status === 502 && new Set(["empty_content", "invalid_json", "missing_keys", "missing_arrays", "invalid_items"]).has(body?.diagnostic?.code);
 }
 
 export async function judgeWorkarounds(bundle, apiKey, { fetchImpl = fetch, model = OPENROUTER_MODEL, timeoutMs = JUDGE_TIMEOUT_MS, reasoningEffort = "none", onProgress } = {}) {

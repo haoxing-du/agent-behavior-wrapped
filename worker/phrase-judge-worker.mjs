@@ -10,6 +10,7 @@ export { sanitizePublicReport } from "../server/public-report-schema.mjs";
 
 const MAX_BODY_BYTES = 256_000;
 const MAX_CANDIDATES = 100;
+const JUDGE_ATTEMPTS = 2;
 const candidateKeys = ["candidate_id", "distinct_sessions", "end_boundary_rate", "occurrences", "opening_rate", "phrase", "start_boundary_rate"];
 const leaderboardAggregateKeys = ["agent_words", "favorite_phrase", "frustrated_messages", "grateful_messages", "instrumental_workarounds", "phrase_occurrences", "phrase_sessions", "tokens", "user_words", "word_ratio"];
 
@@ -516,17 +517,41 @@ function mergedUsage(bodies) {
 
 async function judgeInteractionToneBatch(env, fetchImpl, batch) {
   let lastBody = {};
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < JUDGE_ATTEMPTS; attempt++) {
     const result = await requestOpenRouter(env, fetchImpl, buildOpenRouterInteractionToneRequest(batch.local));
     if (result.errorResponse) {
-      if (attempt === 0 && result.retryable) continue;
+      if (attempt + 1 < JUDGE_ATTEMPTS && result.retryable) continue;
       return result;
     }
     lastBody = result.body;
     const selection = extractInteractionToneSelection(result.body, batch.local);
     if (selection) return { body: result.body, selection: restoreInteractionToneIds(selection, batch) };
+    console.error(JSON.stringify({
+      event: "openrouter_invalid_response",
+      judge: "interaction-tone",
+      attempt: attempt + 1,
+      diagnostic: judgeResponseDiagnostic(result.body, ["classifications"]),
+    }));
   }
   return { body: lastBody, selection: null };
+}
+
+function judgeSelection(judgeKind, body, candidates) {
+  if (judgeKind === "instrumental-workarounds") return extractWorkaroundSelection(body, candidates);
+  if (judgeKind === "session-topics") return extractSessionTopicSelection(body, candidates);
+  return extractCandidateId(body, candidates);
+}
+
+function judgeDiagnostic(judgeKind, body) {
+  if (judgeKind === "instrumental-workarounds") return judgeResponseDiagnostic(body, ["verdicts"]);
+  if (judgeKind === "session-topics") return judgeResponseDiagnostic(body, ["classifications"]);
+  return judgeResponseDiagnostic(body, []);
+}
+
+function invalidJudgeError(judgeKind) {
+  if (judgeKind === "instrumental-workarounds") return "Instrumental-workaround judge returned an invalid review.";
+  if (judgeKind === "session-topics") return "Session-topic judge returned an invalid classification.";
+  return "Card judge returned an invalid selection.";
 }
 
 async function interactionToneCacheEntry(candidates) {
@@ -635,28 +660,39 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
     return json(responseBody);
   }
 
-  const upstreamResult = await requestOpenRouter(env, fetchImpl, workaroundRoute ? buildOpenRouterWorkaroundRequest(candidates) : sessionTopicRoute ? buildOpenRouterSessionTopicRequest(candidates) : frustrationRoute ? buildOpenRouterFrustrationRequest(candidates) : buildOpenRouterJudgeRequest(candidates));
-  if (upstreamResult.errorResponse) return upstreamResult.errorResponse;
-  const upstreamBody = upstreamResult.body;
+  const requestBody = workaroundRoute ? buildOpenRouterWorkaroundRequest(candidates) : sessionTopicRoute ? buildOpenRouterSessionTopicRequest(candidates) : frustrationRoute ? buildOpenRouterFrustrationRequest(candidates) : buildOpenRouterJudgeRequest(candidates);
+  let upstreamBody = {};
+  let selection = null;
+  for (let attempt = 0; attempt < JUDGE_ATTEMPTS; attempt++) {
+    const upstreamResult = await requestOpenRouter(env, fetchImpl, requestBody);
+    if (upstreamResult.errorResponse) {
+      if (attempt + 1 < JUDGE_ATTEMPTS && upstreamResult.retryable) continue;
+      return upstreamResult.errorResponse;
+    }
+    upstreamBody = upstreamResult.body;
+    selection = judgeSelection(judgeKind, upstreamBody, candidates);
+    if (selection) break;
+    console.error(JSON.stringify({
+      event: "openrouter_invalid_response",
+      judge: judgeKind,
+      attempt: attempt + 1,
+      diagnostic: judgeDiagnostic(judgeKind, upstreamBody),
+    }));
+  }
+  if (!selection) return json({ error: invalidJudgeError(judgeKind), diagnostic: judgeDiagnostic(judgeKind, upstreamBody) }, 502);
   const usage = upstreamBody.usage ? {
     prompt_tokens: upstreamBody.usage.prompt_tokens || 0,
     completion_tokens: upstreamBody.usage.completion_tokens || 0,
     total_tokens: upstreamBody.usage.total_tokens || 0,
   } : null;
   if (workaroundRoute) {
-    const selection = extractWorkaroundSelection(upstreamBody, candidates);
-    if (!selection) return json({ error: "Instrumental-workaround judge returned an invalid review.", diagnostic: judgeResponseDiagnostic(upstreamBody, ["verdicts"]) }, 502);
     return json({ ...selection, model: upstreamBody.model || OPENROUTER_MODEL, usage });
   }
   if (sessionTopicRoute) {
-    const selection = extractSessionTopicSelection(upstreamBody, candidates);
-    if (!selection) return json({ error: "Session-topic judge returned an invalid classification." }, 502);
     return json({ ...selection, model: upstreamBody.model || OPENROUTER_MODEL, usage });
   }
-  const candidateId = extractCandidateId(upstreamBody, candidates);
-  if (!candidateId) return json({ error: "Card judge returned an invalid selection." }, 502);
   return json({
-    candidate_id: candidateId,
+    candidate_id: selection,
     model: upstreamBody.model || OPENROUTER_MODEL,
     usage,
   });
