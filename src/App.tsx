@@ -14,15 +14,14 @@ type LanguageStat = { language: string; words: number; percentage: number };
 type LanguageAnomaly = { language: string; words: number; occurrences: number; languages?: { language: string; words: number; occurrences: number }[] };
 type TopicStat = { topic: string; tokens: number; percentage: number };
 type StockPhraseStat = { phrase: string; count: number };
-type SessionTurnBucket = { label: string; sessions: number; percentage: number };
 type WorkaroundCard = { count: number; models: { name: string; count: number }[]; example?: string };
-type Report = { stats: { sessions: number; activeDays: number; durationMinutes: number; prompts: number; toolCalls: number; interruptions: number; tokens: number; agentWords?: number; userWords?: number; agentUserWordRatio?: number | null; averageAgentResponseWords?: number; averageUserInputWords?: number; longestSessionTurns?: number; sessionTurnDistribution?: SessionTurnBucket[]; interactionTone?: InteractionTone; stockPhrases?: StockPhraseStat[]; outputLanguages?: LanguageStat[]; languageAnomaly?: LanguageAnomaly | null; topics?: TopicStat[]; tools: { name: string; count: number }[]; agents: AgentStat[]; models: ModelStat[]; estimatedCostUsd: number; costEstimateMethod: string }; findings: Finding[]; phraseCard?: PhraseCard | null; interactionCard?: InteractionCard | null; workaroundCard?: WorkaroundCard | null };
+type Report = { stats: { sessions: number; activeDays: number; durationMinutes: number; prompts: number; toolCalls: number; interruptions: number; tokens: number; agentWords?: number; userWords?: number; agentUserWordRatio?: number | null; averageAgentResponseWords?: number; averageUserInputWords?: number; longestSessionTurns?: number; sessionTurnCounts?: number[]; interactionTone?: InteractionTone; stockPhrases?: StockPhraseStat[]; outputLanguages?: LanguageStat[]; languageAnomaly?: LanguageAnomaly | null; topics?: TopicStat[]; tools: { name: string; count: number }[]; agents: AgentStat[]; models: ModelStat[]; estimatedCostUsd: number; costEstimateMethod: string }; findings: Finding[]; phraseCard?: PhraseCard | null; interactionCard?: InteractionCard | null; workaroundCard?: WorkaroundCard | null };
 type DonationMessage = { role: string; timestamp: string | null; text: string };
 type DonationSession = { sessionId: string; label: string; messages: DonationMessage[] };
 type Donation = { format: string; createdLocally: boolean; detectionCount: number; sessions: DonationSession[] };
 type Stage = "select" | "report" | "donate";
 type SavedReport = Report & { id: string; createdAt: string; rangeLabel: string; source: string; publicUrl?: string; donationHelperUrl?: string; hosting?: { public: boolean }; privacy: { shareSafe: boolean; containsTranscriptText: boolean; externalTransmission: boolean } };
-type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; headlineAccent?: string; wordRatio?: string; example?: string; workaround?: boolean; ctaHref?: string; ctaLabel?: string; ctas?: { href: string; label: string; primary?: boolean; note?: string }[]; rows?: { label: string; value: string; percentage?: number; rank?: number }[]; comparison?: { label: string; highlight: string; accent: "yell" | "thanks"; value: string; suffix: string; quote?: string }[] };
+type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; headlineAccent?: string; wordRatio?: string; example?: string; workaround?: boolean; turnDistribution?: { values: number[]; median: number }; ctaHref?: string; ctaLabel?: string; ctas?: { href: string; label: string; primary?: boolean; note?: string }[]; rows?: { label: string; value: string; percentage?: number; rank?: number }[]; comparison?: { label: string; highlight: string; accent: "yell" | "thanks"; value: string; suffix: string; quote?: string }[] };
 type ParticipantSample = { participant_id: number; value: number };
 type RelationshipPoint = { participant_id: number; yap_ratio: number; appreciation_index: number };
 type LeaderboardSnapshot = {
@@ -164,6 +163,54 @@ function GiftbotMark() {
   </svg>;
 }
 
+function SessionTurnChart({ values, median }: { values: number[]; median: number }) {
+  const turns = values.filter((value) => Number.isFinite(value) && value >= 0).sort((left, right) => left - right);
+  const longest = Math.max(0, ...turns);
+  const left = 18;
+  const right = 542;
+  const top = 30;
+  const baseline = 137;
+  const axis = 192;
+  const maximumLog = Math.max(1, Math.log1p(longest));
+  const xFor = (value: number) => left + Math.log1p(value) / maximumLog * (right - left);
+  const logs = turns.map((value) => Math.log1p(value));
+  const bandwidth = Math.max(.18, maximumLog / 11);
+  const density = Array.from({ length: 73 }, (_, index) => {
+    const logValue = maximumLog * index / 72;
+    const value = logs.reduce((sum, point) => sum + Math.exp(-.5 * ((logValue - point) / bandwidth) ** 2), 0);
+    return { x: left + (right - left) * index / 72, value };
+  });
+  const maximumDensity = Math.max(1, ...density.map((point) => point.value));
+  const densityPoints = density.map((point) => ({ x: point.x, y: baseline - point.value / maximumDensity * (baseline - top) }));
+  const areaPath = `M ${left} ${baseline} ${densityPoints.map((point) => `L ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(" ")} L ${right} ${baseline} Z`;
+  const linePath = `M ${densityPoints.map((point) => `${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(" L ")}`;
+  const candidates = [0, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1_000, 2_000, 5_000, 10_000].filter((value) => value <= longest);
+  if (!candidates.includes(longest)) candidates.push(longest);
+  const ticks: number[] = [];
+  candidates.sort((leftValue, rightValue) => leftValue - rightValue).forEach((value) => {
+    if (!ticks.length || xFor(value) - xFor(ticks[ticks.length - 1]) >= 38 || value === longest) {
+      if (value === longest && ticks.length > 1 && xFor(value) - xFor(ticks[ticks.length - 1]) < 38) ticks.pop();
+      ticks.push(value);
+    }
+  });
+  const dotLimit = 240;
+  const dots = turns.length <= dotLimit ? turns : Array.from({ length: dotLimit }, (_, index) => turns[Math.floor(index * turns.length / dotLimit)]);
+  const medianLabel = median.toLocaleString(undefined, { maximumFractionDigits: 1 });
+  return <figure className="session-turn-chart">
+    <figcaption><span>{turns.length.toLocaleString()} sessions</span><strong>Median <b>{medianLabel}</b> turns</strong></figcaption>
+    <svg viewBox="0 0 560 222" role="img" aria-label={`Session lengths range from ${turns[0] || 0} to ${longest} turns, with a median of ${medianLabel} turns.`}>
+      <defs><linearGradient id="turn-density-fill" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stopColor="#f3c5b8" /><stop offset=".58" stopColor="#c86e57" /><stop offset="1" stopColor="#8f3f31" /></linearGradient></defs>
+      <path className="turn-density-area" d={areaPath} />
+      <path className="turn-density-line" d={linePath} />
+      <line className="turn-median-line" x1={xFor(median)} x2={xFor(median)} y1={top + 1} y2={axis - 7} />
+      {dots.map((value, index) => <circle className="turn-session-dot" key={`${value}-${index}`} cx={xFor(value)} cy={154 + index % 4 * 7.5} r="2.5" />)}
+      <line className="turn-axis" x1={left} x2={right} y1={axis} y2={axis} />
+      {ticks.map((value) => <g className="turn-tick" key={value}><line x1={xFor(value)} x2={xFor(value)} y1={axis - 4} y2={axis + 4} /><text x={xFor(value)} y={211} textAnchor={value === 0 ? "start" : value === longest ? "end" : "middle"}>{fmtAxisCompact(value)}</text></g>)}
+    </svg>
+    <small>Log scale · {turns.length > dotLimit ? `${dotLimit} sampled session dots` : "each dot is one session"}</small>
+  </figure>;
+}
+
 async function downloadSlide(card: HTMLElement, slide: number) {
   await document.fonts.ready;
   const dataUrl = await toPng(card, {
@@ -198,7 +245,8 @@ function SharedWrapped({ id }: { id: string }) {
     const agentWordRatio = Number.isFinite(report.stats.agentUserWordRatio) && report.stats.agentUserWordRatio! > 0
       ? report.stats.agentUserWordRatio!
       : null;
-    const turnDistribution = (report.stats.sessionTurnDistribution || []).filter((bucket) => bucket.sessions > 0 && hasDisplayablePercentage(bucket.percentage));
+    const sessionTurnCounts = (report.stats.sessionTurnCounts || []).filter((value) => Number.isFinite(value) && value >= 0);
+    const longestSessionTurns = Math.max(0, ...sessionTurnCounts);
     const harryPotterSeriesCount = fmtSeriesEquivalent(report.stats.tokens || 0, 1_450_000);
     const interactionTone = report.stats.interactionTone;
     const stockPhrases = report.stats.stockPhrases;
@@ -215,7 +263,7 @@ function SharedWrapped({ id }: { id: string }) {
     ...(leader ? [{ kicker: "Your most-used agent was", headline: leader.name, detail: `${leader.count} of ${report.stats.sessions} selected sessions.`, tone: "agents", rows: activeAgents.map((agent) => ({ label: agent.name, value: `${agent.percentage.toFixed(1)}%`, percentage: agent.percentage })) }] : []),
     ...(topModel ? [{ kicker: "Your top models", headline: `${topModel.percentage.toFixed(1)}%`, detail: `went to your #1 · ${topModel.name}`, tone: "models", rows: activeModels.slice(0, 4).map((model, index) => ({ label: model.name, value: `${model.percentage.toFixed(1)}%`, percentage: model.percentage, rank: index + 1 })) }] : []),
     ...(Number.isFinite(report.stats.averageAgentResponseWords) ? [{ kicker: "On average, your agent responded with", headline: `${report.stats.averageAgentResponseWords!.toLocaleString()} words`, detail: `Your average input was ${report.stats.averageUserInputWords!.toLocaleString()} words.`, wordRatio: agentWordRatio?.toLocaleString(undefined, { maximumFractionDigits: 2 }), tone: "violet" }] : []),
-    ...(Number.isFinite(report.stats.longestSessionTurns) && turnDistribution.length ? [{ kicker: "Your longest session lasted", headline: `${report.stats.longestSessionTurns!.toLocaleString()} turns`, detail: `One turn is one message you sent. Here’s how all ${report.stats.sessions.toLocaleString()} selected sessions were distributed.`, tone: "turns", rows: turnDistribution.map((bucket) => ({ label: bucket.label, value: `${bucket.percentage.toFixed(1)}%`, percentage: bucket.percentage })) }] : []),
+    ...(sessionTurnCounts.length ? [{ kicker: "Your longest session lasted", headline: `${longestSessionTurns.toLocaleString()} turns`, detail: "One turn is one message you sent.", tone: "turns", turnDistribution: { values: sessionTurnCounts, median: quantile(sessionTurnCounts, .5) } }] : []),
     ...(interactionTone && interactionTone.frustratedMessages + interactionTone.gratefulMessages > 0 ? [{ kicker: "Your relationship with your agent", headline: "", detail: "", tone: "social", comparison: [
       { label: "You yelled at your agent", highlight: "yelled at", accent: "yell" as const, value: interactionTone.frustratedMessages.toLocaleString(), suffix: `time${interactionTone.frustratedMessages === 1 ? "" : "s"}`, quote: report.interactionCard?.frustrationQuote || report.interactionCard?.quote },
       { label: "You thanked your agent", highlight: "thanked", accent: "thanks" as const, value: interactionTone.gratefulMessages.toLocaleString(), suffix: `time${interactionTone.gratefulMessages === 1 ? "" : "s"}` },
@@ -248,7 +296,7 @@ function SharedWrapped({ id }: { id: string }) {
     try { await downloadSlide(cardRef.current, slide); }
     finally { setDownloading(false); }
   }
-  const layoutClass = current.comparison ? " story-comparison-card" : current.ctas ? " story-cta-card" : current.rows || current.example ? " story-split-card" : current.wordRatio ? " story-ratio-card" : current.metric ? " story-metric-card" : " story-hero-card";
+  const layoutClass = current.comparison ? " story-comparison-card" : current.ctas ? " story-cta-card" : current.turnDistribution ? " story-turn-card" : current.rows || current.example ? " story-split-card" : current.wordRatio ? " story-ratio-card" : current.metric ? " story-metric-card" : " story-hero-card";
   const storyExample = current.example ? <blockquote className="story-example"><span>One example</span><p>{renderInlineCode(current.example)}</p></blockquote> : null;
   const storyRows = current.rows ? <div className="story-data-rows">{current.workaround && <span className="story-data-label">By model</span>}{current.rows.map((row) => <div className="story-data-row" key={row.label}>
     <div><strong>{row.rank && <em>{row.rank}</em>}{row.label}</strong><b>{row.value}</b></div>
@@ -261,10 +309,10 @@ function SharedWrapped({ id }: { id: string }) {
       {current.comparison ? <div className="story-comparison-wrap"><span className="story-comparison-kicker">{current.kicker}</span><div className="story-comparison">{current.comparison.map((item) => {
         const [beforeHighlight, afterHighlight = ""] = item.label.split(item.highlight);
         return <div className={`story-comparison-item is-${item.accent}`} key={item.label}><span>{beforeHighlight}<em>{item.highlight}</em>{afterHighlight}</span><p><strong>{item.value}</strong><b>{item.suffix}</b></p>{item.quote && <blockquote><b>You said:</b> “{item.quote}”</blockquote>}</div>;
-      })}</div></div> : <div className={`story-copy ${current.rows || current.example ? "with-rows" : ""}`}>
+      })}</div></div> : <div className={`story-copy ${current.rows || current.example || current.turnDistribution ? "with-rows" : ""}`}>
         <div><span>{current.kicker}</span><h1 className={current.metric ? "giant" : ""}>{current.headlineAccent ? <><span className="story-headline-accent">{current.headlineAccent}</span>{current.headline.slice(current.headlineAccent.length)}</> : current.headline}</h1>{current.detail && <p>{current.detail}</p>}{current.wordRatio && <p className="story-word-ratio">For every word you said, your agent said <strong>{current.wordRatio}</strong> words.</p>}</div>
-        {(current.rows || current.example) && <div className="story-side">
-          {current.workaround ? <>{storyRows}{storyExample}</> : <>{storyExample}{storyRows}</>}
+        {(current.rows || current.example || current.turnDistribution) && <div className="story-side">
+          {current.turnDistribution ? <SessionTurnChart {...current.turnDistribution} /> : current.workaround ? <>{storyRows}{storyExample}</> : <>{storyExample}{storyRows}</>}
         </div>}
       </div>}
       {current.ctas ? <div className="story-cta-group">{current.ctas.map((cta) => <div className="story-cta-choice" key={cta.href}><a className={`story-cta ${cta.primary ? "primary" : "secondary"}`} href={cta.href}>{cta.label} <span>→</span></a>{cta.note && <small>{cta.note}</small>}</div>)}</div> : current.ctaHref ? <a className="story-cta" href={current.ctaHref}>{current.ctaLabel} <span>→</span></a> : <div className="story-tag">#behaviorwrapped</div>}

@@ -30,22 +30,6 @@ const topicRules = [
   ["Data & analysis", /\b(?:analyze|analysis|data|dataset|spreadsheet|csv|metrics?|chart|statistics?|trend|distribution|correlation|survey|dashboard|visualization)\b/gi],
 ];
 
-const sessionTurnBuckets = [
-  { label: "0–1 turns", minimum: 0, maximum: 1 },
-  { label: "2–5 turns", minimum: 2, maximum: 5 },
-  { label: "6–10 turns", minimum: 6, maximum: 10 },
-  { label: "11–20 turns", minimum: 11, maximum: 20 },
-  { label: "21–50 turns", minimum: 21, maximum: 50 },
-  { label: "51+ turns", minimum: 51, maximum: null },
-];
-
-function sessionTurnDistribution(values) {
-  return sessionTurnBuckets.map(({ label, minimum, maximum }) => {
-    const sessions = values.filter((value) => value >= minimum && (maximum === null || value <= maximum)).length;
-    return { label, sessions, percentage: values.length ? Number((sessions / values.length * 100).toFixed(1)) : 0 };
-  });
-}
-
 function contentBlocks(record) {
   const content = record?.message?.content ?? record?.content;
   if (Array.isArray(content)) return content;
@@ -443,7 +427,7 @@ export function analyzeSessions(sessionRecords) {
     averageAgentResponseWords: agentResponseCount ? Math.round(agentResponseWords / agentResponseCount) : 0,
     averageUserInputWords: userInputCount ? Math.round(userInputWords / userInputCount) : 0,
     longestSessionTurns: Math.max(0, ...sessionTurnCounts),
-    sessionTurnDistribution: sessionTurnDistribution(sessionTurnCounts),
+    sessionTurnCounts: [...sessionTurnCounts].sort((left, right) => left - right),
     sessionTurnMethod: "Counts each visible, non-meta user message as one turn.",
     interactionTone: {
       frustratedMessages,
