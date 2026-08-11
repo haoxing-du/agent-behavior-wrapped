@@ -49,7 +49,7 @@ export function sanitizeResearchDonation(value) {
       consentedAt: /^\d{4}-\d{2}-\d{2}T/.test(value.consent.consentedAt || "") ? value.consent.consentedAt : new Date().toISOString(),
     },
   };
-  return JSON.stringify(donation).length <= MAX_DONATION_BYTES ? donation : null;
+  return new TextEncoder().encode(JSON.stringify(donation)).byteLength <= MAX_DONATION_BYTES ? donation : null;
 }
 
 export { MAX_DONATION_BYTES };

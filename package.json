@@ -1,6 +1,6 @@
 {
   "name": "behavior-wrapped",
-  "version": "0.2.14",
+  "version": "0.2.15",
   "description": "A private, local-first Wrapped report for Claude Code and Codex behavior.",
   "license": "Apache-2.0",
   "type": "module",
@@ -44,6 +44,7 @@
     "analyze:phrases": "node scripts/mine-phrase-families.mjs",
     "review:interactions": "node scripts/review-interaction-tone.mjs",
     "review:workarounds": "node scripts/review-workaround-judge.mjs",
+    "research:decrypt": "node scripts/decrypt-research-donation.mjs",
     "worker:dev": "npx --yes wrangler@4.86.0 dev",
     "worker:deploy": "npx --yes wrangler@4.86.0 deploy",
     "test": "node --test tests/*.test.mjs",

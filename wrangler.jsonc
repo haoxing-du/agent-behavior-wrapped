@@ -15,11 +15,25 @@
       "binding": "LEADERBOARD_DB",
       "database_name": "agent-behavior-wrapped-leaderboard",
       "database_id": "f76276d2-1749-4d27-9aa3-da58949e66cb"
+    },
+    {
+      "binding": "RESEARCH_DB",
+      "database_name": "behavior-wrapped-research-metadata",
+      "database_id": "7b299e86-fa0f-4ff9-909e-70783e7d872a"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "RESEARCH_DONATIONS",
+      "bucket_name": "behavior-wrapped-research-donations"
     }
   ],
   "observability": {
     "enabled": true,
     "head_sampling_rate": 0.1
+  },
+  "triggers": {
+    "crons": ["17 * * * *"]
   },
   "ratelimits": [
     {

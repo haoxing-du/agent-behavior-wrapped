@@ -4,7 +4,7 @@ import { buildOpenRouterInteractionToneRequest, extractInteractionToneSelection,
 import { buildOpenRouterSessionTopicRequest, extractSessionTopicSelection, isShareSafeTopicMessage, SESSION_TOPIC_MAX_CANDIDATES } from "../server/session-topics.mjs";
 import { buildOpenRouterWorkaroundRequest, extractWorkaroundSelection, validateWorkaroundChunks } from "../server/instrumental-workarounds.mjs";
 import { sanitizePublicReport } from "../server/public-report-schema.mjs";
-import { MAX_DONATION_BYTES, sanitizeResearchDonation } from "../server/research-donation-schema.mjs";
+import { DONATION_RETENTION_DAYS, MAX_ENCRYPTED_DONATION_BYTES, sanitizeEncryptedDonationEnvelope } from "../server/encrypted-donation-schema.mjs";
 export { sanitizePublicReport } from "../server/public-report-schema.mjs";
 
 const MAX_BODY_BYTES = 256_000;
@@ -375,26 +375,76 @@ async function handlePublicLeaderboard(request, env, id) {
 
 async function handleResearchDonation(request, env) {
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
-  if (!env.LEADERBOARD_DB) return json({ error: "Research donation storage is not configured." }, 503);
+  if (!env.RESEARCH_DB || !env.RESEARCH_DONATIONS) return json({ error: "Research donation storage is not configured." }, 503);
   const clientId = request.headers.get("x-behavior-wrapped-client") || "";
   if (!/^[a-f0-9]{32}$/.test(clientId)) return json({ error: "A valid local client ID is required." }, 400);
   if (!await applyRateLimit(env.CORPUS_RATE_LIMITER || env.CLIENT_RATE_LIMITER, `research-donation:${clientId}`)) return json({ error: "Too many donation requests. Try again shortly." }, 429);
-  const raw = await readLimitedBody(request, MAX_DONATION_BYTES + 20_000);
+  const raw = await readLimitedBody(request, MAX_ENCRYPTED_DONATION_BYTES);
   if (raw === null) return json({ error: "Research donation is too large." }, 413);
   let body;
   try { body = JSON.parse(raw); } catch { return json({ error: "Invalid JSON." }, 400); }
-  const donation = sanitizeResearchDonation(body?.donation);
-  if (!donation) return json({ error: "Invalid or unconsented research donation." }, 400);
+  const donation = sanitizeEncryptedDonationEnvelope(body?.encryptedDonation);
+  if (!donation) return json({ error: "Invalid encrypted research donation." }, 400);
   const id = crypto.randomUUID();
   const ownerHash = await clientHash(clientId);
+  const deletionToken = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  const deletionTokenHash = await sha256Hex(deletionToken);
+  const objectKey = `donations/${donation.metadata.createdAt.slice(0, 7)}/${id}.json`;
+  const serialized = JSON.stringify(donation);
+  const objectBytes = new TextEncoder().encode(serialized).byteLength;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(donation.ciphertext));
+  const ciphertextSha256 = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  const deleteAfter = new Date(new Date(donation.metadata.consentedAt).getTime() + DONATION_RETENTION_DAYS * 86_400_000).toISOString();
   try {
-    await env.LEADERBOARD_DB.prepare(`INSERT INTO research_donations
-      (id, owner_hash, report_id, donation_json, consented_at, created_at)
-      VALUES (?, ?, ?, ?, ?, datetime('now'))`).bind(
-        id, ownerHash, donation.reportId, JSON.stringify(donation), donation.consent.consentedAt,
+    await env.RESEARCH_DONATIONS.put(objectKey, serialized, {
+      httpMetadata: { contentType: "application/json" },
+      customMetadata: { donationId: id, encryptionKeyId: donation.encryption.keyId },
+    });
+  } catch { return json({ error: "Encrypted research storage is temporarily unavailable." }, 503); }
+  try {
+    await env.RESEARCH_DB.prepare(`INSERT INTO research_donations
+      (id, owner_hash, deletion_token_hash, report_id, object_key, encryption_key_id, encryption_algorithm, ciphertext_sha256,
+       object_bytes, redaction_mode, unredacted_data, automated_detections, session_count, message_count,
+       consent_version, consented_at, created_at, delete_after)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+        id, ownerHash, deletionTokenHash, donation.metadata.reportId, objectKey, donation.encryption.keyId, donation.encryption.algorithm,
+        ciphertextSha256, objectBytes, donation.metadata.redactionMode, donation.metadata.unredactedData ? 1 : 0,
+        donation.metadata.automatedDetections, donation.metadata.sessions, donation.metadata.messages,
+        donation.metadata.consentVersion, donation.metadata.consentedAt, donation.metadata.createdAt, deleteAfter,
       ).run();
-  } catch { return json({ error: "Research donation storage is not configured." }, 503); }
-  return json({ accepted: true, donation_id: id }, 201);
+  } catch {
+    await env.RESEARCH_DONATIONS.delete(objectKey).catch(() => {});
+    return json({ error: "Research donation metadata storage is temporarily unavailable." }, 503);
+  }
+  return json({ accepted: true, donation_id: id, deletion_token: deletionToken, encrypted: true, retention_days: DONATION_RETENTION_DAYS }, 201);
+}
+
+async function sha256Hex(value) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function deleteResearchDonation(request, env, id) {
+  if (!env.RESEARCH_DB || !env.RESEARCH_DONATIONS) return json({ error: "Research donation storage is not configured." }, 503);
+  const networkId = request.headers.get("cf-connecting-ip") || "unknown";
+  if (!await applyRateLimit(env.CLIENT_RATE_LIMITER, `research-deletion:${networkId}`)) return json({ error: "Too many deletion requests. Try again shortly." }, 429);
+  const token = request.headers.get("x-behavior-wrapped-deletion-token") || "";
+  if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return json({ error: "A valid deletion token is required." }, 400);
+  const record = await env.RESEARCH_DB.prepare("SELECT object_key FROM research_donations WHERE id = ? AND deletion_token_hash = ?").bind(id, await sha256Hex(token)).first();
+  if (!record?.object_key) return json({ error: "Donation not found." }, 404);
+  try { await env.RESEARCH_DONATIONS.delete(record.object_key); }
+  catch { return json({ error: "Encrypted research storage is temporarily unavailable." }, 503); }
+  await env.RESEARCH_DB.prepare("DELETE FROM research_donations WHERE id = ?").bind(id).run();
+  return json({ deleted: true });
+}
+
+export async function expireResearchDonations(env) {
+  if (!env.RESEARCH_DB || !env.RESEARCH_DONATIONS) return;
+  const result = await env.RESEARCH_DB.prepare("SELECT id, object_key FROM research_donations WHERE datetime(delete_after) <= datetime('now') ORDER BY delete_after LIMIT 100").all();
+  for (const record of result.results || []) {
+    await env.RESEARCH_DONATIONS.delete(record.object_key);
+    await env.RESEARCH_DB.prepare("DELETE FROM research_donations WHERE id = ?").bind(record.id).run();
+  }
 }
 
 async function applyRateLimit(binding, key) {
@@ -506,8 +556,13 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
     return report ? json(report) : json({ error: "Public Wrapped not found." }, 404);
   }
   if (url.pathname === "/v1/research-donations") {
-    if (request.headers.get("x-behavior-wrapped-protocol") !== "1") return json({ error: "Unsupported client protocol." }, 400);
+    if (request.headers.get("x-behavior-wrapped-protocol") !== "2") return json({ error: "Update Behavior Wrapped before donating; encrypted donation protocol 2 is required." }, 426);
     return handleResearchDonation(request, env);
+  }
+  const researchDonationMatch = url.pathname.match(/^\/v1\/research-donations\/([0-9a-f-]{36})$/);
+  if (researchDonationMatch && request.method === "DELETE") {
+    if (request.headers.get("x-behavior-wrapped-protocol") !== "2") return json({ error: "Unsupported client protocol." }, 400);
+    return deleteResearchDonation(request, env, researchDonationMatch[1]);
   }
   const publicLeaderboardMatch = url.pathname.match(/^\/api\/reports\/([A-Za-z0-9_-]{8,32})\/leaderboard$/);
   if (publicLeaderboardMatch && new Set(["POST", "DELETE"]).has(request.method)) {
@@ -605,5 +660,8 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
 export default {
   fetch(request, env) {
     return handleRequest(request, env);
+  },
+  scheduled(_controller, env, context) {
+    context.waitUntil(expireResearchDonations(env));
   },
 };

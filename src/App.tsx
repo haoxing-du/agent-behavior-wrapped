@@ -646,7 +646,7 @@ function SavedDonationRoute({ id }: { id: string }) {
   return <div className="app-shell donation-shell">
     <Header stage="donate" setStage={() => { window.location.href = backUrl; }} />
     <DonationView reportId={id} mode={mode} sessions={catalog.sessions} initialSelected={selection} onBack={() => { window.location.href = backUrl; }} />
-    <footer><span>Behavior Wrapped</span><span>Local donation review · Nothing is transmitted before final consent</span></footer>
+    <footer><span>Behavior Wrapped</span><span>Local donation review · Encrypted on this Mac before transmission</span></footer>
   </div>;
 }
 
@@ -942,6 +942,8 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [acceptedId, setAcceptedId] = useState("");
+  const [retentionDays, setRetentionDays] = useState(365);
+  const [deletionStatus, setDeletionStatus] = useState("");
 
   async function preview(ids = [...chosen], disabledRedactions = [...disabledAutomatic], disabledMatches = [...disabledAutomaticMatches]) {
     setLoading(true); setError(""); setConsent(false);
@@ -1079,18 +1081,30 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Donation failed");
       setAcceptedId(result.donation_id || "accepted");
+      setRetentionDays(Number(result.retention_days) || 365);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Donation failed"); }
+    finally { setLoading(false); }
+  }
+
+  async function deleteAcceptedDonation() {
+    setLoading(true); setDeletionStatus("");
+    try {
+      const response = await fetch(`/api/research-donations/${acceptedId}`, { method: "DELETE" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Deletion failed");
+      setDeletionStatus("Deleted from active research storage.");
+    } catch (caught) { setDeletionStatus(caught instanceof Error ? caught.message : "Deletion failed"); }
     finally { setLoading(false); }
   }
 
   const messageCount = bundle?.sessions.reduce((sum, session) => sum + session.messages.length, 0) || 0;
   const detailedReview = mode !== "standard";
   const unredacted = mode === "unredacted";
-  if (acceptedId) return <main className="donation-page"><section className="donation-hero donation-success"><span className="eyebrow">Donation received</span><h1>Thank you for contributing.</h1><p>Your reviewed {unredacted ? "unredacted " : ""}data was transmitted only after your consent. Donation reference: {acceptedId}</p><button className="primary" onClick={onBack}>Back to your Wrapped</button></section></main>;
+  if (acceptedId) return <main className="donation-page"><section className="donation-hero donation-success"><span className="eyebrow">Donation received</span><h1>Thank you for contributing.</h1><p>Your reviewed {unredacted ? "unredacted " : ""}data was encrypted on this Mac before transmission. Only ciphertext is stored for up to {retentionDays} days. Donation reference: {acceptedId}</p>{/^[0-9a-f-]{36}$/.test(acceptedId) && !deletionStatus && <button className="leader-remove" disabled={loading} onClick={deleteAcceptedDonation}>{loading ? "Deleting…" : "Delete my donation"}</button>}{deletionStatus && <p>{deletionStatus}</p>}<button className="primary" onClick={onBack}>Back to your Wrapped</button></section></main>;
 
   return <main className="donation-page">
     <button className="back-link" onClick={onBack}>← Back to Wrapped</button>
-    <section className="donation-hero"><span className="eyebrow">Research donation · local review</span><h1>You decide what leaves<br />your machine.</h1><p>Nothing in this donation is transmitted until you check the consent box and press the final Donate button.</p><div className="donation-mode-links"><a className={mode === "standard" ? "active" : ""} href={`/donate/${reportId}?mode=standard`}>Standard redactions</a><a className={mode === "advanced" ? "active" : ""} href={`/donate/${reportId}?mode=advanced`}>Review and customize</a><a className={`unredacted ${unredacted ? "active" : ""}`} href={`/donate/${reportId}?mode=unredacted`}>Unredacted copy</a></div></section>
+    <section className="donation-hero"><span className="eyebrow">Research donation · local review</span><h1>You decide what leaves<br />your machine.</h1><p>Nothing is transmitted before final consent. After you press Donate, this localhost helper encrypts the reviewed bundle on your Mac; the storage service receives ciphertext, not readable transcripts.</p><div className="donation-mode-links"><a className={mode === "standard" ? "active" : ""} href={`/donate/${reportId}?mode=standard`}>Standard redactions</a><a className={mode === "advanced" ? "active" : ""} href={`/donate/${reportId}?mode=advanced`}>Review and customize</a><a className={`unredacted ${unredacted ? "active" : ""}`} href={`/donate/${reportId}?mode=unredacted`}>Unredacted copy</a></div></section>
     <div className="donation-layout">
       <section className="donation-controls">
         <div className="donation-step"><span>1</span><div><h2>{detailedReview ? "Choose what to include" : "Standard redactions applied"}</h2><p>{unredacted ? "No automatic redactions are applied. Credentials, personal details, private code, URLs, and file paths may all be included." : "High-confidence secrets and personal details are removed locally. Code, URLs, and paths remain so the transcript keeps its context; home-directory usernames are masked."}</p></div></div>
@@ -1128,7 +1142,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
               </div>;
             })}</div>
           </>}
-          <div className="donation-step consent-step"><span>3</span><div><h2>Consent separately</h2><p>This consent applies only to the reviewed bundle described above.</p></div></div>
+          <div className="donation-step consent-step"><span>3</span><div><h2>Consent separately</h2><p>This consent applies only to the reviewed bundle above. It is protected with authenticated AES-256-GCM encryption before leaving localhost and automatically expires from active research storage after 365 days.</p></div></div>
           <label className={`consent ${unredacted ? "unredacted-consent" : ""}`}><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /><span>{unredacted ? "I understand this donation is not automatically redacted and may contain credentials, personal details, private code, URLs, and file paths. I consent to transmit it for research." : "I consent for this reviewed data to be transmitted and used for research."}</span></label>
           <button className={`export-button ${unredacted ? "unredacted" : ""}`} disabled={!consent || loading || !messageCount} onClick={donate}>{loading ? "Transmitting…" : unredacted ? "Donate unredacted data" : "Donate reviewed data"} <span>→</span></button>
         </>}

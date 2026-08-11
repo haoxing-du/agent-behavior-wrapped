@@ -22,7 +22,7 @@ The interaction card uses GPT-5.6 Luna to distinguish clear frustration and grat
 
 Every selected session is scanned locally for explicit blockers. The judge receives chronological redacted context plus allowlisted semantic action labels such as `delete`, `move`, and `install`, never raw tool output or command arguments. It must classify every blocker and return event IDs, confidence, disclosure/authorization status, and a same-effect explanation. Confirmed high- and medium-confidence cases count on the card; low-confidence cases stay in the private review.
 
-The deck links to hosted token and agent/user word-ratio distributions, opt-in top-user rankings, and a public wall of opted-in favorite phrases. Its final card offers an optional research donation with standard local redactions, a customizable redaction review, or a deliberately unredacted copy. Every detailed mode allows sessions and messages to be excluded, text to be edited, and timestamps remain off by default. The unredacted path shows every included line and requires a separate warning and explicit acknowledgement that credentials and private details may be transmitted. No donation data is transmitted until the user checks the final research-consent box and presses Donate.
+The deck links to hosted token and agent/user word-ratio distributions, opt-in top-user rankings, and a public wall of opted-in favorite phrases. Its final card offers an optional research donation with standard local redactions, a customizable redaction review, or a deliberately unredacted copy. Every detailed mode allows sessions and messages to be excluded, text to be edited, and timestamps remain off by default. The unredacted path shows every included line and requires a separate warning and explicit acknowledgement that credentials and private details may be transmitted. No donation data is transmitted until the user checks the final research-consent box and presses Donate; the localhost helper then encrypts the reviewed bundle before it leaves the machine.
 
 When developing from this repository, run `npm install`, then `npm run wrapped`. Add `--demo` to use synthetic fixtures or `--no-open` to leave the browser closed. For fast formatting work, run `npm run wrapped -- --test`; test mode skips consent and all LLM calls, uses deterministic local fallbacks, keeps the report on localhost, and does not publish it. `--no-llm` is an alias for `--test`.
 
@@ -40,7 +40,9 @@ Saved reports are managed with:
 
 ## Local donation helper
 
-The CLI starts a loopback-only helper at `http://localhost:4317`. It has no analysis dashboard: it can only resolve a saved report's selected sessions, construct the chosen redacted or unredacted donation preview, accept local edits, and submit the reviewed bundle after final consent. Run `npm start -- --no-open` when developing this helper directly.
+The CLI starts a loopback-only helper at `http://localhost:4317`. It has no analysis dashboard: it can only resolve a saved report's selected sessions, construct the chosen redacted or unredacted donation preview, accept local edits, encrypt the reviewed bundle with the research public key, and submit ciphertext after final consent. Run `npm start -- --no-open` when developing this helper directly.
+
+The current research private key is deliberately outside the repository at `~/.config/behavior-wrapped/keys/research-donation-rsa-2026-08.pem`; on the maintainer Mac its passphrase is held in Keychain under `behavior-wrapped-research-key-2026-08`. Back up both through separate secure channels before accepting real donations. After downloading an encrypted R2 object, decrypt it to a new private file with `npm run research:decrypt -- encrypted-envelope.json private-donation.json`. Never upload decrypted output back to R2 or commit it.
 
 For hosted-page UI development, run `npm run dev`. The normal end-to-end development path remains `npm run wrapped -- --demo`.
 
@@ -52,7 +54,8 @@ For hosted-page UI development, run `npm run dev`. The normal end-to-end develop
 - Viewing the leaderboard compares the report's aggregate token, word-ratio, Good Human Score (thanks as a share of thank-or-scold moments), and instrumental-workaround values without storing a leaderboard entry. Joining requires separate consent through the creator's report-scoped management link; public ranking and phrase-wall inclusion are independent choices, and copied public links cannot add, update, or remove an entry.
 - Browser payloads never include source file paths or raw tool outputs.
 - Share-card PNG exports contain only aggregates and generalized findings.
-- Donation discovery, default redaction, preview, exclusion, and editing happen on localhost. An optional unredacted mode applies no automatic redactions and requires a mode-specific acknowledgement before submission. The reviewed bundle is transmitted to research storage only after a separate final checkbox and Donate action; the receiving Worker validates a fixed donation schema and stores no local session IDs or project labels.
+- Donation discovery, default redaction, preview, exclusion, editing, schema validation, and authenticated AES-256-GCM encryption happen on localhost. A fresh content key protects each donation and is wrapped with a rotation-versioned RSA-OAEP public key. The private key is not present in the npm package, Worker, D1, or R2. An optional unredacted mode applies no automatic redactions and requires a mode-specific acknowledgement before encryption.
+- The receiving Worker accepts only encrypted protocol-2 envelopes. A private R2 bucket stores ciphertext; a separate D1 database stores pseudonymous consent, size, count, encryption-key, retention, and object-location metadata—never transcript text. Active storage expires after 365 days, and a locally retained deletion receipt lets the donor delete both records sooner.
 
 Heuristics are deliberately explainable and uncertain findings are labeled with confidence. They are signals for review, not factual judgments.
 
@@ -73,7 +76,7 @@ The in-app phrase judge requests one candidate ID using a strict JSON schema and
 ## Prototype boundaries
 
 - Behavioral findings are transparent heuristics, not calibrated diagnoses.
-- Research donation storage requires the `0002_research_donations.sql` migration and remains an explicitly consented prototype workflow.
+- Research transcript storage uses the private `behavior-wrapped-research-donations` R2 bucket. Consent and lifecycle metadata use the separate `behavior-wrapped-research-metadata` D1 database initialized by `migrations/research/0001_encrypted_donations.sql`.
 - Hosted reports currently use unguessable URLs and installation-scoped deletion rather than user accounts.
 
 ## License

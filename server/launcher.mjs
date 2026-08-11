@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { discoverAllSessionsAsync, readRecordsAsync, defaultDateRange, DEFAULT_WINDOW_DAYS } from "./discovery.mjs";
 import { makeDonationPreview } from "./analysis.mjs";
-import { getOrCreateClientId, loadReport } from "./store.mjs";
-import { RESEARCH_DONATION_URL, submitResearchDonation } from "./research-donation.mjs";
+import { deleteDonationReceipt, getOrCreateClientId, loadDonationReceipt, loadReport, saveDonationReceipt } from "./store.mjs";
+import { deleteResearchDonation, RESEARCH_DONATION_URL, submitResearchDonation } from "./research-donation.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.dirname(here);
@@ -133,7 +133,17 @@ const server = http.createServer(async (request, response) => {
         clientId: getOrCreateClientId(),
         endpoint: process.env.BEHAVIOR_WRAPPED_DONATION_URL || RESEARCH_DONATION_URL,
       });
-      return json(response, 201, result);
+      saveDonationReceipt(result);
+      return json(response, 201, { accepted: true, donation_id: result.donation_id, encrypted: true, retention_days: result.retention_days });
+    }
+    const donationMatch = url.pathname.match(/^\/api\/research-donations\/([0-9a-f-]{36})$/);
+    if (request.method === "DELETE" && donationMatch) {
+      const receipt = loadDonationReceipt(donationMatch[1]);
+      if (!receipt) return json(response, 404, { error: "Local deletion receipt not found." });
+      if (demo) { deleteDonationReceipt(donationMatch[1]); return json(response, 200, { deleted: true, demo: true }); }
+      const result = await deleteResearchDonation(receipt.donationId, receipt.deletionToken, { endpoint: process.env.BEHAVIOR_WRAPPED_DONATION_URL || RESEARCH_DONATION_URL });
+      deleteDonationReceipt(donationMatch[1]);
+      return json(response, 200, result);
     }
     if (request.method !== "GET" && request.method !== "HEAD") return json(response, 405, { error: "Method not allowed" });
     const requested = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
