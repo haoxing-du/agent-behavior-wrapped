@@ -566,6 +566,7 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .landing-command code span { color: #8a857c; }
 .landing-command button { flex: none; border: 0; border-radius: 0; padding: 0 18px; background: rgba(245,242,238,.06); color: #f5f2ee; font-size: 14px; font-weight: 500; }
 .landing-command button:hover { background: rgba(245,242,238,.12); }
+.landing-command button:focus-visible { outline: 2px solid #f5f2ee; outline-offset: -3px; }
 @media (max-width: 420px) { .landing-command code { padding-inline: 12px; font-size: 12px; }.landing-command button { padding-inline: 13px; } }
 
 /* Donation review, aligned with the cohort leaderboard. */
