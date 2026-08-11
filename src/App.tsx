@@ -375,7 +375,9 @@ function InteractivePlotPoint({ cx, cy, radius, label, className, ring = false, 
 }
 
 function PlotTooltip({ value }: { value: PlotTooltipState }) {
-  return value ? <div className="leader-hover-tooltip" role="tooltip" style={{ left: value.x, top: value.y }}>{value.text}</div> : null;
+  if (!value) return null;
+  const [identity, details = ""] = value.text.split(/: (.+)/);
+  return <div className="leader-hover-tooltip" role="tooltip" style={{ left: value.x, top: value.y }}><strong>{identity}</strong>{details.split(" · ").filter(Boolean).map((detail) => <span key={detail}>{detail}</span>)}</div>;
 }
 
 function quantile(values: number[], percentile: number) {
