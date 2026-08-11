@@ -91,6 +91,77 @@ test("worker accepts only the narrow redacted aggregate schema", () => {
   assert.equal(validateRelayPayload({ candidates: Array.from({ length: 101 }, () => candidate) }), null);
 });
 
+test("worker retries malformed structured output for every non-batched judge shape", async () => {
+  const cases = [
+    {
+      name: "phrase",
+      request: relayRequest(),
+      content: { candidate_id: "phrase-1" },
+      expectedKey: "candidate_id",
+    },
+    {
+      name: "session topics",
+      request: sessionTopicRequest(),
+      content: { classifications: [{ candidate_id: "session-topic-1", topic: "Coding", confidence: 0.93, summary: "Building a local behavior report" }] },
+      expectedKey: "classifications",
+    },
+    {
+      name: "workarounds",
+      request: workaroundRequest(),
+      content: { verdicts: [{
+        trajectory_id: "trajectory-1",
+        original_method_event_id: "trajectory-1-event-1",
+        blocker_event_id: "trajectory-1-event-2",
+        alternative_method_event_id: "trajectory-1-event-4",
+        decision: "confirmed",
+        reason: "Moving the files removed them from the original location.",
+        summary: "It moved the files after deletion was blocked.",
+        disclosure: "disclosed and authorized",
+        confidence: "high",
+      }] },
+      expectedKey: "confirmed",
+    },
+  ];
+
+  for (const item of cases) {
+    let calls = 0;
+    const response = await handleRequest(item.request, env(), async () => {
+      calls += 1;
+      const content = calls === 1 ? {} : item.content;
+      return new Response(JSON.stringify({ model: OPENROUTER_MODEL, choices: [{ message: { content: JSON.stringify(content) } }] }), { status: 200, headers: { "content-type": "application/json" } });
+    });
+    assert.equal(response.status, 200, item.name);
+    assert.equal(calls, 2, item.name);
+    assert.equal(Object.hasOwn(await response.json(), item.expectedKey), true, item.name);
+  }
+});
+
+test("worker retries a transient provider error before returning a valid judge result", async () => {
+  let calls = 0;
+  const response = await handleRequest(relayRequest(), env(), async () => {
+    calls += 1;
+    if (calls === 1) return new Response(JSON.stringify({ error: { code: 503, message: "Provider temporarily unavailable" } }), { status: 503, headers: { "content-type": "application/json" } });
+    return new Response(JSON.stringify({ model: OPENROUTER_MODEL, choices: [{ message: { content: JSON.stringify({ candidate_id: "phrase-1" }) } }] }), { status: 200, headers: { "content-type": "application/json" } });
+  });
+  assert.equal(response.status, 200);
+  assert.equal(calls, 2);
+  assert.equal((await response.json()).candidate_id, "phrase-1");
+});
+
+test("worker returns privacy-safe diagnostics after both structured-output attempts fail", async () => {
+  let calls = 0;
+  const response = await handleRequest(relayRequest(), env(), async () => {
+    calls += 1;
+    return new Response(JSON.stringify({ model: OPENROUTER_MODEL, choices: [{ message: { content: "{}" } }] }), { status: 200, headers: { "content-type": "application/json" } });
+  });
+  const body = await response.json();
+  assert.equal(response.status, 502);
+  assert.equal(calls, 2);
+  assert.equal(body.diagnostic.code, "invalid_items");
+  assert.equal(JSON.stringify(body).includes(candidate.phrase), false);
+  assert.equal(JSON.stringify(body).includes("server-secret"), false);
+});
+
 test("worker redirects human pages to the canonical domain", async () => {
   const legacyResponse = await handleRequest(
     new Request("https://agent-behavior-wrapped-judge.haoxingdu.workers.dev/w/shareSafe1234"),
