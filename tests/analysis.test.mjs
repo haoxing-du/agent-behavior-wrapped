@@ -324,3 +324,37 @@ test("donation preview can keep an unchecked automatic redaction category", () =
   assert.equal(customized.redactions.find((item) => item.kind === email.kind).enabled, false);
   assert.equal(customized.detectionCount, initial.detectionCount - 1);
 });
+
+test("donation preview can keep one exact match while redacting others in its category", () => {
+  const records = [{ sessionId: "review-session", records: [
+    { type: "user", message: { content: "Email first@example.com or second@example.com; repeat first@example.com." } },
+  ] }];
+  const labels = new Map([["review-session", { label: "Session 1" }]]);
+  const initial = makeDonationPreview(records, labels);
+  const email = initial.redactions.find((item) => item.replacement === "[REDACTED EMAIL]");
+  const first = email.matches.find((match) => match.value === "first@example.com");
+
+  const customized = makeDonationPreview(records, labels, { disabledMatches: [first.id] });
+  const text = customized.sessions[0].messages[0].text;
+  const customizedEmail = customized.redactions.find((item) => item.kind === email.kind);
+  assert.equal(text, "Email first@example.com or [REDACTED EMAIL]; repeat first@example.com.");
+  assert.equal(customizedEmail.enabled, false);
+  assert.equal(customizedEmail.enabledCount, 1);
+  assert.equal(customizedEmail.matches.find((match) => match.value === "first@example.com").enabled, false);
+  assert.equal(customizedEmail.matches.find((match) => match.value === "second@example.com").enabled, true);
+  assert.equal(customized.detectionCount, initial.detectionCount - 2);
+});
+
+test("keeping an exact credential does not re-redact a secret nested inside it", () => {
+  const records = [{ sessionId: "review-session", records: [
+    { type: "user", message: { content: "Use token=sk-test_12345678901234567890 here." } },
+  ] }];
+  const labels = new Map([["review-session", { label: "Session 1" }]]);
+  const initial = makeDonationPreview(records, labels);
+  const credential = initial.redactions.find((item) => item.kind === "credential");
+  const customized = makeDonationPreview(records, labels, { disabledMatches: [credential.matches[0].id] });
+
+  assert.equal(customized.sessions[0].messages[0].text, "Use token=sk-test_12345678901234567890 here.");
+  assert.equal(customized.detectionCount, 0);
+  assert.deepEqual(customized.redactions.map((item) => item.kind), ["credential"]);
+});

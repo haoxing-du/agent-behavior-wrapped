@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 const SECRET_PATTERNS = [
   [/\bsk[-_][a-z0-9_-]{16,}\b/gi, "[REDACTED SECRET]"],
   [/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, "[REDACTED AWS KEY]"],
@@ -41,9 +43,14 @@ function normalizedRedactionKind(value) {
   return String(value).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
+function redactionMatchId(kind, value) {
+  return createHash("sha256").update(`${normalizedRedactionKind(kind)}\0${value}`).digest("hex").slice(0, 24);
+}
+
 function detectionDetails({ kind, label, value, replacement, offset, source, enabled = true }) {
   return {
     kind,
+    matchId: redactionMatchId(kind, value),
     label,
     value,
     replacement,
@@ -78,21 +85,29 @@ function replaceLikelyPersonNames(value) {
       (match, action, word) => NON_PERSON_WORDS.has(word.toLowerCase()) ? match : `${action}person`);
 }
 
-export function redactText(input, manualTerms = [], { disabledKinds = [], includeHeuristicSecrets = true } = {}) {
+export function redactText(input, manualTerms = [], { disabledKinds = [], disabledMatches = [], includeHeuristicSecrets = true } = {}) {
   let text = String(input ?? "");
   const detections = [];
   const disabled = new Set(disabledKinds.map(normalizedRedactionKind));
+  const disabledMatchIds = new Set(disabledMatches);
+  const isEnabled = (kind, value) => !disabled.has(normalizedRedactionKind(kind)) && !disabledMatchIds.has(redactionMatchId(kind, value));
+  const protectedMatches = [];
+  const protect = (value) => {
+    const marker = `\uE000:${protectedMatches.length}:\uE001`;
+    protectedMatches.push([marker, value]);
+    return marker;
+  };
   text = text.replace(LABELED_CREDENTIAL_PATTERN, (match, offset, source) => {
     if (!labeledCredentialValue(match)) return match;
     const replacement = "[REDACTED CREDENTIAL]";
-    const enabled = !disabled.has("credential");
+    const enabled = isEnabled("credential", match);
     detections.push(detectionDetails({ kind: "credential", label: "Credential", value: match, replacement, offset, source, enabled }));
-    return enabled ? replacement : match;
+    return enabled ? replacement : protect(match);
   });
   for (const [pattern, replacement] of [...SECRET_PATTERNS, ...(includeHeuristicSecrets ? HEURISTIC_SECRET_PATTERNS : []), ...PII_PATTERNS]) {
     text = text.replace(pattern, (match, offset, source) => {
       const kind = normalizedRedactionKind(replacement);
-      const enabled = !disabled.has(kind);
+      const enabled = isEnabled(kind, match);
       detections.push(detectionDetails({
         kind,
         label: replacement.slice(1, -1).toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()),
@@ -102,23 +117,24 @@ export function redactText(input, manualTerms = [], { disabledKinds = [], includ
         source,
         enabled,
       }));
-      return enabled ? replacement : match;
+      return enabled ? replacement : protect(match);
     });
   }
   text = text.replace(EMAIL_PATTERN, (match, offset, source) => {
     if (isSshIdentity(match, offset, source)) return match;
     const replacement = "[REDACTED EMAIL]";
     const kind = "redacted-email";
-    const enabled = !disabled.has(kind);
+    const enabled = isEnabled(kind, match);
     detections.push(detectionDetails({ kind, label: "Email", value: match, replacement, offset, source, enabled }));
-    return enabled ? replacement : match;
+    return enabled ? replacement : protect(match);
   });
   text = text.replace(HOME_DIRECTORY_USER_PATTERN, (match, prefix, user, offset, source) => {
     const replacement = `${prefix}[REDACTED USER]`;
-    const enabled = !disabled.has("home-directory-user");
+    const enabled = isEnabled("home-directory-user", match);
     detections.push(detectionDetails({ kind: "home-directory-user", label: "Home-directory username", value: match, replacement, offset, source, enabled }));
-    return enabled ? replacement : match;
+    return enabled ? replacement : protect(match);
   });
+  for (const [marker, value] of protectedMatches) text = text.replaceAll(marker, value);
   for (const term of manualTerms.filter(Boolean)) {
     const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     text = text.replace(new RegExp(escaped, "gi"), "[REMOVED BY USER]");

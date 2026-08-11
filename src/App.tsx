@@ -19,8 +19,8 @@ type Report = { stats: { sessions: number; activeDays: number; durationMinutes: 
 type DonationMessage = { role: string; timestamp: string | null; text: string };
 type DonationSession = { sessionId: string; label: string; messages: DonationMessage[] };
 type RedactionContext = { before: string; match: string; after: string };
-type RedactionMatch = { value: string; truncated?: boolean; length: number; count: number; contexts: RedactionContext[] };
-type AutomaticRedaction = { kind: string; label: string; replacement: string; enabled: boolean; count: number; matches: RedactionMatch[] };
+type RedactionMatch = { id: string; value: string; truncated?: boolean; length: number; enabled: boolean; count: number; contexts: RedactionContext[] };
+type AutomaticRedaction = { kind: string; label: string; replacement: string; enabled: boolean; enabledCount: number; count: number; matches: RedactionMatch[] };
 type CustomRedactionRule = { id: string; label?: string; mode: "text" | "regex"; pattern: string; flags: string; replacement: string; count: number; contexts: RedactionContext[] };
 type Donation = { format: string; createdLocally: boolean; detectionCount: number; redactions?: AutomaticRedaction[]; sessions: DonationSession[] };
 type Stage = "select" | "report" | "donate";
@@ -641,7 +641,7 @@ function SavedDonationRoute({ id }: { id: string }) {
   if (error) return <main className="shared-error"><h1>Donation review unavailable</h1><p>{error}</p><a href={`/w/${id}`}>Back to Wrapped</a></main>;
   if (!catalog || !selection || !report) return <main className="shared-loading"><div className="orb" /><p>Preparing the private redaction review…</p></main>;
   const backUrl = report.publicUrl || `/w/${id}`;
-  return <div className="app-shell">
+  return <div className="app-shell donation-shell">
     <Header stage="donate" setStage={() => { window.location.href = backUrl; }} />
     <DonationView reportId={id} mode={mode} sessions={catalog.sessions} initialSelected={selection} onBack={() => { window.location.href = backUrl; }} />
     <footer><span>Behavior Wrapped</span><span>Local donation review · Nothing is transmitted before final consent</span></footer>
@@ -882,16 +882,16 @@ function renderDonationText(value: string, rules: CustomRedactionRule[]) {
     : part);
 }
 
-function AutomaticRedactionReview({ redactions, onToggle, loading = false }: { redactions: AutomaticRedaction[]; onToggle?: (redaction: AutomaticRedaction) => void; loading?: boolean }) {
+function AutomaticRedactionReview({ redactions, onToggle, onToggleMatch, loading = false }: { redactions: AutomaticRedaction[]; onToggle?: (redaction: AutomaticRedaction) => void; onToggleMatch?: (redaction: AutomaticRedaction, match: RedactionMatch) => void; loading?: boolean }) {
   if (!redactions.length) return <div className="automatic-redactions empty"><strong>No automatic matches</strong><span>You can still add your own redaction rules.</span></div>;
-  const enabledCount = redactions.reduce((sum, item) => sum + (item.enabled ? item.count : 0), 0);
+  const enabledCount = redactions.reduce((sum, item) => sum + item.enabledCount, 0);
   return <div className="automatic-redactions">
     <div className="redaction-list-heading"><strong>Automatic redactions</strong><span>{enabledCount.toLocaleString()} enabled replacement{enabledCount === 1 ? "" : "s"}</span></div>
-    {onToggle && <p className="automatic-redaction-help">Uncheck a category to keep those values in the donation.</p>}
-    {redactions.map((item) => <details className={`automatic-redaction-row ${item.enabled ? "" : "disabled"}`} key={item.replacement}>
-      <summary>{onToggle && <input aria-label={`Redact ${item.label}`} type="checkbox" checked={item.enabled} disabled={loading} onClick={(event) => event.stopPropagation()} onChange={() => onToggle(item)} />}<span><strong>{item.label}</strong><code>{item.matches.length.toLocaleString()} exact value{item.matches.length === 1 ? "" : "s"} · {item.enabled ? `replaced with ${item.replacement}` : "kept in donation"}</code></span><b>{item.count.toLocaleString()}×</b></summary>
+    {onToggle && <p className="automatic-redaction-help">Uncheck a category or expand it to keep individual exact values.</p>}
+    {redactions.map((item) => <details className={`automatic-redaction-row ${item.enabledCount === 0 ? "disabled" : item.enabled ? "" : "mixed"}`} key={item.kind}>
+      <summary>{onToggle && <input aria-label={`Redact all ${item.label} matches`} type="checkbox" checked={item.enabled} disabled={loading} onClick={(event) => event.stopPropagation()} onChange={() => onToggle(item)} />}<span><strong>{item.label}</strong><code>{item.matches.length.toLocaleString()} exact value{item.matches.length === 1 ? "" : "s"} · {item.enabled ? `replaced with ${item.replacement}` : item.enabledCount ? `${item.enabledCount} of ${item.count} matches redacted` : "kept in donation"}</code></span><b>{item.count.toLocaleString()}×</b></summary>
       <div className="automatic-match-list">{item.matches.map((match, matchIndex) => <details className="automatic-match" key={`${match.value}-${matchIndex}`}>
-        <summary><code>{match.value}</code><span>{match.truncated ? `${match.length.toLocaleString()} characters · ` : ""}{match.count.toLocaleString()}×</span></summary>
+        <summary>{onToggleMatch && <input aria-label={`Redact exact value ${match.value}`} type="checkbox" checked={match.enabled} disabled={loading} onClick={(event) => event.stopPropagation()} onChange={() => onToggleMatch(item, match)} />}<code>{match.value}</code><span>{match.truncated ? `${match.length.toLocaleString()} characters · ` : ""}{match.count.toLocaleString()}×</span></summary>
         <div className="redaction-contexts">{match.contexts.map((context, index) => <p key={index}>…{context.before}<mark>{context.match}</mark>{context.after}…</p>)}</div>
       </details>)}</div>
     </details>)}
@@ -926,6 +926,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
   const [chosen, setChosen] = useState(new Set(initialSelected));
   const [bundle, setBundle] = useState<Donation | null>(null);
   const [disabledAutomatic, setDisabledAutomatic] = useState(new Set<string>());
+  const [disabledAutomaticMatches, setDisabledAutomaticMatches] = useState(new Set<string>());
   const [customRules, setCustomRules] = useState<CustomRedactionRule[]>([]);
   const [customMode, setCustomMode] = useState<"text" | "regex">("text");
   const [customPattern, setCustomPattern] = useState("");
@@ -939,13 +940,14 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
   const [error, setError] = useState("");
   const [acceptedId, setAcceptedId] = useState("");
 
-  async function preview(ids = [...chosen], disabledRedactions = [...disabledAutomatic]) {
+  async function preview(ids = [...chosen], disabledRedactions = [...disabledAutomatic], disabledMatches = [...disabledAutomaticMatches]) {
     setLoading(true); setError(""); setConsent(false);
     try {
-      const response = await fetch("/api/donation-preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reportId, sessionIds: ids, disabledRedactions }) });
+      const response = await fetch("/api/donation-preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reportId, sessionIds: ids, disabledRedactions, disabledMatches }) });
       if (!response.ok) throw new Error((await response.json()).error || "Preview failed");
       setBundle(await response.json());
       setDisabledAutomatic(new Set(disabledRedactions));
+      setDisabledAutomaticMatches(new Set(disabledMatches));
       setCustomRules([]); setCustomStatus("");
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Preview failed"); }
     finally { setLoading(false); }
@@ -954,9 +956,23 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
   useEffect(() => { void preview([...initialSelected]); }, []);
 
   function toggleAutomaticRedaction(redaction: AutomaticRedaction) {
-    const next = new Set(disabledAutomatic);
-    redaction.enabled ? next.add(redaction.kind) : next.delete(redaction.kind);
-    void preview([...chosen], [...next]);
+    const nextKinds = new Set(disabledAutomatic);
+    const nextMatches = new Set(disabledAutomaticMatches);
+    if (redaction.enabled) nextKinds.add(redaction.kind);
+    else nextKinds.delete(redaction.kind);
+    for (const match of redaction.matches) nextMatches.delete(match.id);
+    void preview([...chosen], [...nextKinds], [...nextMatches]);
+  }
+
+  function toggleAutomaticMatch(redaction: AutomaticRedaction, match: RedactionMatch) {
+    const nextKinds = new Set(disabledAutomatic);
+    const nextMatches = new Set(disabledAutomaticMatches);
+    if (match.enabled) nextMatches.add(match.id);
+    else {
+      if (nextKinds.delete(redaction.kind)) for (const other of redaction.matches) if (other.id !== match.id) nextMatches.add(other.id);
+      nextMatches.delete(match.id);
+    }
+    void preview([...chosen], [...nextKinds], [...nextMatches]);
   }
 
   function buildCustomRule({ id, label, mode: ruleMode, pattern, flags, replacement }: Pick<CustomRedactionRule, "id" | "label" | "mode" | "pattern" | "flags" | "replacement">) {
@@ -1055,7 +1071,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
     <div className="donation-layout">
       <section className="donation-controls">
         <div className="donation-step"><span>1</span><div><h2>{mode === "advanced" ? "Choose what to include" : "Standard redactions applied"}</h2><p>High-confidence secrets and personal details are removed locally. Code, URLs, and paths remain so the transcript keeps its context; home-directory usernames are masked.</p></div></div>
-        {mode === "advanced" && <><div className="donation-sessions">{sessions.filter((session) => initialSelected.has(session.id)).map((session) => <label key={session.id}><input type="checkbox" checked={chosen.has(session.id)} onChange={() => { const next = new Set(chosen); next.has(session.id) ? next.delete(session.id) : next.add(session.id); setChosen(next); setBundle(null); setConsent(false); }} /><span>{session.label}<small>{session.projectName} · {fmtDate(session.startedAt)}</small></span></label>)}</div><button className="primary full" disabled={!chosen.size || loading} onClick={() => preview()}>{loading ? "Building preview…" : bundle ? "Rebuild redacted preview" : "Build redacted preview"}</button></>}
+        {mode === "advanced" && <><div className="donation-sessions">{sessions.filter((session) => initialSelected.has(session.id)).map((session) => <label key={session.id}><input type="checkbox" checked={chosen.has(session.id)} onChange={() => { const next = new Set(chosen); next.has(session.id) ? next.delete(session.id) : next.add(session.id); setChosen(next); setBundle(null); setDisabledAutomatic(new Set()); setDisabledAutomaticMatches(new Set()); setConsent(false); }} /><span>{session.label}<small>{session.projectName} · {fmtDate(session.startedAt)}</small></span></label>)}</div><button className="primary full" disabled={!chosen.size || loading} onClick={() => preview()}>{loading ? "Building preview…" : bundle ? "Rebuild redacted preview" : "Build redacted preview"}</button></>}
         {mode === "standard" && <div className="donation-summary"><strong>{bundle ? `${bundle.sessions.length} sessions · ${messageCount} messages` : "Preparing your redacted donation…"}</strong><span>{bundle?.detectionCount || 0} sensitive items automatically removed</span><a href={`/donate/${reportId}?mode=advanced`}>Want more control? Review every message.</a></div>}
         {error && <p className="error">{error}</p>}
       </section>
@@ -1063,7 +1079,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
         <div className="donation-step"><span>2</span><div><h2>{mode === "advanced" ? "Review every line" : "Review the summary"}</h2><p>{mode === "advanced" ? "Automated detection is imperfect. Edit or remove any message directly." : "The standard bundle contains redacted user and assistant prose from the selected sessions."}</p></div></div>
         {!bundle ? <div className="preview-placeholder"><span>⌁</span><p>Your redacted donation is being prepared locally.</p></div> : <>
           <div className="redaction-banner"><strong>{bundle.detectionCount} likely sensitive item{bundle.detectionCount === 1 ? "" : "s"} removed</strong><span>High-confidence secrets and personal details</span></div>
-          <AutomaticRedactionReview redactions={bundle.redactions || []} onToggle={mode === "advanced" ? toggleAutomaticRedaction : undefined} loading={loading} />
+          <AutomaticRedactionReview redactions={bundle.redactions || []} onToggle={mode === "advanced" ? toggleAutomaticRedaction : undefined} onToggleMatch={mode === "advanced" ? toggleAutomaticMatch : undefined} loading={loading} />
           {mode === "advanced" && <>
             <section className="broad-redaction-options">
               <div><strong>Optional broad redactions</strong><span>These can remove useful context, so they stay off unless you choose them.</span></div>

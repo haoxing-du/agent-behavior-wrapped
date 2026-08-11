@@ -454,11 +454,11 @@ function donationRedactionInventory(detections) {
   const categories = new Map();
   for (const detection of detections) {
     const kind = String(detection.kind || detection.replacement).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-    const item = categories.get(detection.replacement) || { kind, label: detection.label, replacement: detection.replacement, enabled: detection.enabled !== false, count: 0, matches: new Map() };
+    const item = categories.get(kind) || { kind, label: detection.label, replacement: detection.replacement, count: 0, matches: new Map() };
     item.count++;
     const value = String(detection.value || "");
     const displayValue = value.length > 500 ? `${value.slice(0, 500)}…` : value;
-    const match = item.matches.get(value) || { value: displayValue, truncated: displayValue !== value, length: detection.length || value.length, count: 0, contexts: [] };
+    const match = item.matches.get(value) || { id: detection.matchId, value: displayValue, truncated: displayValue !== value, length: detection.length || value.length, enabled: detection.enabled !== false, count: 0, contexts: [] };
     match.count++;
     if (match.contexts.length < 6 && detection.context) match.contexts.push({
       before: String(detection.context.before || "").replace(/\s+/g, " "),
@@ -466,19 +466,23 @@ function donationRedactionInventory(detections) {
       after: String(detection.context.after || "").replace(/\s+/g, " "),
     });
     item.matches.set(value, match);
-    categories.set(detection.replacement, item);
+    categories.set(kind, item);
   }
-  return [...categories.values()].map((item) => ({ ...item, matches: [...item.matches.values()].sort((left, right) => right.count - left.count || left.value.localeCompare(right.value)) })).sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
+  return [...categories.values()].map((item) => {
+    const matches = [...item.matches.values()].sort((left, right) => right.count - left.count || left.value.localeCompare(right.value));
+    const enabledCount = matches.reduce((sum, match) => sum + (match.enabled ? match.count : 0), 0);
+    return { ...item, enabled: enabledCount === item.count, enabledCount, matches };
+  }).sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
 }
 
-export function makeDonationPreview(sessionRecords, metadataById, { disabledRedactions = [] } = {}) {
+export function makeDonationPreview(sessionRecords, metadataById, { disabledRedactions = [], disabledMatches = [] } = {}) {
   const detections = [];
   const sessions = sessionRecords.map(({ sessionId, records }) => {
     const messages = records.flatMap((record) => {
       if (record.type !== "user" && record.type !== "assistant") return [];
       const value = visibleText(record);
       if (!value) return [];
-      const redacted = redactText(value, [], { disabledKinds: disabledRedactions, includeHeuristicSecrets: false });
+      const redacted = redactText(value, [], { disabledKinds: disabledRedactions, disabledMatches, includeHeuristicSecrets: false });
       detections.push(...redacted.detections);
       return [{ role: record.type, timestamp: record.timestamp || null, text: redacted.text }];
     });
