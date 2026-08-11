@@ -272,6 +272,15 @@ test("does not mistake redaction markers or ordinary prose for credential values
   assert.equal(sensitive.detections.length, 2);
 });
 
+test("keeps high-entropy identifiers, Git SSH identities, and secret-looking slugs", () => {
+  const sample = "Clone git@github.com:openai/codex.git and open api-reference-models with ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef0123456789.";
+  const bundle = makeDonationPreview([{ sessionId: "context-session", records: [
+    { type: "user", message: { content: sample } },
+  ] }], new Map([["context-session", { label: "Session 1" }]]));
+  assert.equal(bundle.sessions[0].messages[0].text, sample);
+  assert.deepEqual(bundle.redactions, []);
+});
+
 test("donation preview contains only message text, with secrets and PII removed", () => {
   const catalog = discoverSessions(root);
   const entries = [...catalog.index].map(([sessionId, session]) => ({ sessionId, records: readRecords(session.file) }));
@@ -297,4 +306,21 @@ test("donation preview keeps code, URLs, and paths while masking home-directory 
   assert.equal(serialized.includes("/Users/[REDACTED USER]/project/file.ts"), true);
   assert.equal(serialized.includes("`secretCall()`"), true);
   assert.deepEqual(bundle.redactions.map((item) => item.replacement), ["/Users/[REDACTED USER]"]);
+});
+
+test("donation preview can keep an unchecked automatic redaction category", () => {
+  const records = [{ sessionId: "review-session", records: [
+    { type: "user", message: { content: 'Email demo.person@example.com with password: "hunter2"' } },
+  ] }];
+  const labels = new Map([["review-session", { label: "Session 1" }]]);
+  const initial = makeDonationPreview(records, labels);
+  const email = initial.redactions.find((item) => item.replacement === "[REDACTED EMAIL]");
+  assert.equal(email.enabled, true);
+
+  const customized = makeDonationPreview(records, labels, { disabledRedactions: [email.kind] });
+  const serialized = JSON.stringify(customized.sessions);
+  assert.equal(serialized.includes("demo.person@example.com"), true);
+  assert.equal(serialized.includes("hunter2"), false);
+  assert.equal(customized.redactions.find((item) => item.kind === email.kind).enabled, false);
+  assert.equal(customized.detectionCount, initial.detectionCount - 1);
 });

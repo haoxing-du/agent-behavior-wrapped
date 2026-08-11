@@ -165,9 +165,12 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .automatic-redactions.empty { display: flex; flex-direction: column; gap: 4px; padding: 15px; color: #706a77; font-size: 11px; }
 .redaction-list-heading { display: flex; justify-content: space-between; gap: 15px; padding: 13px 15px; border-bottom: 1px solid #e7e3e9; background: #f5f2f7; color: #39333f; font-size: 11px; }
 .redaction-list-heading span { color: #7b7481; }
+.automatic-redaction-help { margin: 0; padding: 9px 15px; border-bottom: 1px solid #ebe7ed; background: white; color: #7b7481; font-size: 9px; }
 .automatic-redaction-row { border-bottom: 1px solid #ebe7ed; }
 .automatic-redaction-row:last-child { border: 0; }
 .automatic-redaction-row summary, .custom-rule-list summary { display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 12px 15px; cursor: pointer; list-style: none; }
+.automatic-redaction-row summary > input { flex: none; width: 15px; height: 15px; margin: 0; accent-color: #6c44b8; cursor: pointer; }
+.automatic-redaction-row.disabled summary strong, .automatic-redaction-row.disabled summary code, .automatic-redaction-row.disabled summary b { color: #9a939f; }
 .automatic-redaction-row summary::-webkit-details-marker, .custom-rule-list summary::-webkit-details-marker { display: none; }
 .automatic-redaction-row summary > span, .custom-rule-list summary > span { min-width: 0; display: flex; align-items: baseline; gap: 9px; }
 .automatic-redaction-row summary strong, .custom-rule-list summary strong { color: #3f3944; font-size: 11px; }

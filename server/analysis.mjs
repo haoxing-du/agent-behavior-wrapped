@@ -454,7 +454,7 @@ function donationRedactionInventory(detections) {
   const categories = new Map();
   for (const detection of detections) {
     const kind = String(detection.kind || detection.replacement).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-    const item = categories.get(detection.replacement) || { kind, label: detection.label, replacement: detection.replacement, count: 0, matches: new Map() };
+    const item = categories.get(detection.replacement) || { kind, label: detection.label, replacement: detection.replacement, enabled: detection.enabled !== false, count: 0, matches: new Map() };
     item.count++;
     const value = String(detection.value || "");
     const displayValue = value.length > 500 ? `${value.slice(0, 500)}…` : value;
@@ -471,20 +471,20 @@ function donationRedactionInventory(detections) {
   return [...categories.values()].map((item) => ({ ...item, matches: [...item.matches.values()].sort((left, right) => right.count - left.count || left.value.localeCompare(right.value)) })).sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
 }
 
-export function makeDonationPreview(sessionRecords, metadataById) {
+export function makeDonationPreview(sessionRecords, metadataById, { disabledRedactions = [] } = {}) {
   const detections = [];
   const sessions = sessionRecords.map(({ sessionId, records }) => {
     const messages = records.flatMap((record) => {
       if (record.type !== "user" && record.type !== "assistant") return [];
       const value = visibleText(record);
       if (!value) return [];
-      const redacted = redactText(value);
+      const redacted = redactText(value, [], { disabledKinds: disabledRedactions, includeHeuristicSecrets: false });
       detections.push(...redacted.detections);
       return [{ role: record.type, timestamp: record.timestamp || null, text: redacted.text }];
     });
     return { sessionId, label: metadataById.get(sessionId)?.label || `Session ${sessionId.slice(0, 6)}`, messages };
   });
   const redactions = donationRedactionInventory(detections);
-  const detectionCount = detections.length;
+  const detectionCount = detections.filter((detection) => detection.enabled !== false).length;
   return { format: "behavior-wrapped-donation-preview-v1", createdLocally: true, detectionCount, redactions, sessions };
 }

@@ -118,7 +118,8 @@ const server = http.createServer(async (request, response) => {
       const records = await chosenRecords(ids);
       if (!records.length) return json(response, 400, { error: "Choose at least one available session." });
       const labels = new Map(publicCatalog().sessions.map((session) => [session.id, session]));
-      return json(response, 200, makeDonationPreview(records, labels));
+      const disabledRedactions = Array.isArray(body.disabledRedactions) ? body.disabledRedactions.filter((kind) => typeof kind === "string" && /^[a-z0-9-]{1,64}$/.test(kind)).slice(0, 20) : [];
+      return json(response, 200, makeDonationPreview(records, labels, { disabledRedactions }));
     }
     if (request.method === "POST" && url.pathname === "/api/research-donations") {
       const body = await readBody(request, 4_200_000);
