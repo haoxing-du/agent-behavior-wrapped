@@ -76,7 +76,7 @@ test("caps the judge payload at 100 phrase candidates", () => {
   assert.equal(candidates.length, 100);
 });
 
-test("resolves Nemotron's candidate ID locally instead of accepting invented wording or counts", async () => {
+test("resolves the judge's candidate ID locally instead of accepting invented wording or counts", async () => {
   const candidate = buildPhraseCandidates(fixtureRecords())[0];
   let outbound;
   let requestUrl;
@@ -99,6 +99,8 @@ test("resolves Nemotron's candidate ID locally instead of accepting invented wor
   assert.equal(requestUrl, "https://openrouter.ai/api/v1/chat/completions");
   assert.equal(authorization, "Bearer test-key-never-serialized");
   assert.equal(outbound.model, OPENROUTER_MODEL);
+  assert.equal(outbound.model, "openai/gpt-5.6-luna");
+  assert.deepEqual(outbound.provider, { data_collection: "deny", zdr: true });
   assert.equal(outbound.tools, undefined);
   assert.equal(outbound.max_tokens, 32);
   assert.deepEqual(outbound.reasoning, { effort: "none", exclude: true });

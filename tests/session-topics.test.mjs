@@ -41,6 +41,7 @@ test("builds a strict one-classification-per-session request", () => {
   assert.ok(schema.items.properties.topic.enum.includes("Coding"));
   assert.equal(schema.items.properties.summary.maxLength, 120);
   assert.deepEqual(request.reasoning, { effort: "none", exclude: true });
+  assert.deepEqual(request.provider, { data_collection: "deny", zdr: true });
 });
 
 test("weights judged session topics by locally counted tokens", async () => {

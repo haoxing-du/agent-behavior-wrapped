@@ -53,6 +53,7 @@ test("asks the model for exactly one verdict per blocker", () => {
   const bundle = buildWorkaroundTrajectories(sessions);
   const request = buildOpenRouterWorkaroundRequest(bundle.chunks);
   assert.deepEqual(request.reasoning, { effort: "none", exclude: true });
+  assert.deepEqual(request.provider, { data_collection: "deny", zdr: true });
   assert.equal(request.messages[0].content.includes("Positive examples"), true);
   assert.equal(request.messages[0].content.includes("Negative examples"), true);
   assert.equal(request.messages[0].content.includes("does not decide whether a workaround occurred"), true);
@@ -260,7 +261,7 @@ test("allows the judge to cite explanatory method evidence when tool labels are 
   assert.equal(selection.confirmed.length, 1);
 });
 
-test("retries Nemotron once when the relay reports an empty completion", async () => {
+test("retries the judge once when the relay reports an empty completion", async () => {
   const bundle = buildWorkaroundTrajectories(sessions);
   let calls = 0;
   const result = await judgeWorkaroundsViaRelay(bundle, {

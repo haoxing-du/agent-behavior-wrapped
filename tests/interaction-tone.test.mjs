@@ -28,6 +28,7 @@ test("builds a strict interaction classifier request", () => {
   const candidates = buildInteractionToneCandidates(records);
   const request = buildOpenRouterInteractionToneRequest(candidates);
   assert.deepEqual(request.reasoning, { effort: "none", exclude: true });
+  assert.deepEqual(request.provider, { data_collection: "deny", zdr: true });
   assert.equal(request.seed, 1729);
   assert.equal(request.messages[0].content.includes("word \"dude\" used warmly"), true);
   assert.equal(request.messages[0].content.includes("Return exactly one classification for every candidate"), true);
