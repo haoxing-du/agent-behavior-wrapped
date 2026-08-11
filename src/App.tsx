@@ -1155,5 +1155,5 @@ export default function App() {
   if (donationId) return <SavedDonationRoute id={donationId} />;
   const sharedId = window.location.pathname.match(/^\/w\/([A-Za-z0-9_-]{8,32})$/)?.[1];
   if (sharedId) return <SharedWrapped id={sharedId} />;
-  return <main className="shared-error landing-page"><GiftbotMark /><h1>Make your Behavior Wrapped</h1><p>Run the one-command experience on your Mac. It analyzes your selected agent history locally, publishes an unguessable share-safe report, and opens it here.</p><code>npx behavior-wrapped@latest</code><p className="landing-note">Full transcripts, code, paths, and raw tool output are not published.</p></main>;
+  return <main className="landing-page"><div><h1>Behavior Wrapped</h1><code>npx behavior-wrapped@latest</code></div></main>;
 }
