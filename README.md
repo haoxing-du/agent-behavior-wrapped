@@ -40,7 +40,7 @@ Saved reports are managed with:
 
 ## Local donation helper
 
-The CLI starts a loopback-only helper at `http://127.0.0.1:4317`. It has no analysis dashboard: it can only resolve a saved report's selected sessions, construct a redacted donation preview, accept local edits, and submit the reviewed bundle after final consent. Run `npm start -- --no-open` when developing this helper directly.
+The CLI starts a loopback-only helper at `http://localhost:4317`. It has no analysis dashboard: it can only resolve a saved report's selected sessions, construct a redacted donation preview, accept local edits, and submit the reviewed bundle after final consent. Run `npm start -- --no-open` when developing this helper directly.
 
 For hosted-page UI development, run `npm run dev`. The normal end-to-end development path remains `npm run wrapped -- --demo`.
 

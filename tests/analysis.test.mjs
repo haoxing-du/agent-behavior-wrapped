@@ -266,9 +266,11 @@ test("donation preview contains only message text, with code and secrets removed
   const entries = [...catalog.index].map(([sessionId, session]) => ({ sessionId, records: readRecords(session.file) }));
   const labels = new Map(catalog.sessions.map((s, index) => [s.id, { label: `Session ${index + 1}` }]));
   const bundle = makeDonationPreview(entries, labels);
-  const serialized = JSON.stringify(bundle);
+  const serialized = JSON.stringify(bundle.sessions);
   assert.equal(bundle.createdLocally, true);
   assert.ok(bundle.detectionCount >= 2);
+  assert.ok(bundle.redactions.some((item) => item.replacement === "[REDACTED EMAIL]" && item.matches.some((match) => match.value === "demo.person@example.com")));
+  assert.equal(bundle.redactions.reduce((sum, item) => sum + item.count, 0), bundle.detectionCount);
   assert.ok(!serialized.includes("demo.person@example.com"));
   assert.ok(!serialized.includes("sk-test_demo"));
   assert.ok(!serialized.includes("tool_result"));
@@ -278,8 +280,9 @@ test("donation preview removes code, URLs, and full paths before review", () => 
   const bundle = makeDonationPreview([{ sessionId: "private-session", records: [
     { type: "user", message: { content: "See https://example.com/private and /Users/ada/project/file.ts with `secretCall()`" } },
   ] }], new Map([["private-session", { label: "Session 1" }]]));
-  const serialized = JSON.stringify(bundle);
+  const serialized = JSON.stringify(bundle.sessions);
   assert.equal(serialized.includes("example.com"), false);
   assert.equal(serialized.includes("/Users/ada"), false);
   assert.equal(serialized.includes("secretCall"), false);
+  assert.deepEqual(bundle.redactions.map((item) => item.replacement).sort(), ["[INLINE CODE REMOVED]", "[PATH REMOVED]", "[URL REMOVED]"]);
 });

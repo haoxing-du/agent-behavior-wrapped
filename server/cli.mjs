@@ -20,7 +20,8 @@ const root = path.dirname(here);
 const fixtureRoot = path.join(root, "fixtures", "projects");
 const codexFixtureRoot = path.join(root, "fixtures", "codex-sessions");
 const port = Number(process.env.BEHAVIOR_WRAPPED_PORT || 4317);
-const baseUrl = `http://127.0.0.1:${port}`;
+const baseUrl = `http://localhost:${port}`;
+const loopbackUrl = `http://127.0.0.1:${port}`;
 const command = process.argv[2];
 const verbose = process.argv.includes("--verbose") || process.argv.includes("--debug") || process.env.BEHAVIOR_WRAPPED_DEBUG === "1";
 const muted = "\x1b[2m"; const bright = "\x1b[1m"; const lime = "\x1b[38;2;201;242;75m"; const purple = "\x1b[38;2;141;92;255m"; const reset = "\x1b[0m";
@@ -68,7 +69,7 @@ function printJudgeDebug(label, error) {
 
 async function serverReady(expectedDemo = false) {
   try {
-    const response = await fetch(`${baseUrl}/api/health`);
+    const response = await fetch(`${loopbackUrl}/api/health`);
     const body = await response.json();
     return response.ok && body.app === "behavior-wrapped" && Boolean(body.demo) === expectedDemo;
   } catch { return false; }
@@ -241,7 +242,7 @@ async function createWrapped() {
     }
   }
   saveReport(report);
-  progress.start("Starting local donation helper", `127.0.0.1:${port}`);
+  progress.start("Starting local donation helper", `localhost:${port}`);
   await ensureServer(demo);
   progress.succeed("Local donation helper ready");
   const localUrl = `${baseUrl}/w/${id}`;

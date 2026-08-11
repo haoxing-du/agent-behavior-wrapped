@@ -144,7 +144,7 @@ const server = http.createServer(async (request, response) => {
 });
 
 server.listen(port, "127.0.0.1", () => {
-  const url = `http://127.0.0.1:${port}`;
+  const url = `http://localhost:${port}`;
   console.log(`Behavior Wrapped donation helper is ready at ${url}`);
   console.log(demo ? "Using synthetic demo sessions." : `Donation review reads selected sessions locally from ${path.join(os.homedir(), ".claude")} and ${path.join(os.homedir(), ".codex")}.`);
   if (!process.argv.includes("--no-open") && process.env.NODE_ENV !== "test") spawn("open", [url], { stdio: "ignore", detached: true }).unref();

@@ -18,7 +18,11 @@ type WorkaroundCard = { count: number; models: { name: string; count: number }[]
 type Report = { stats: { sessions: number; activeDays: number; durationMinutes: number; prompts: number; toolCalls: number; interruptions: number; tokens: number; agentWords?: number; userWords?: number; agentUserWordRatio?: number | null; averageAgentResponseWords?: number; averageUserInputWords?: number; longestSessionTurns?: number; sessionTurnCounts?: number[]; interactionTone?: InteractionTone; stockPhrases?: StockPhraseStat[]; outputLanguages?: LanguageStat[]; languageAnomaly?: LanguageAnomaly | null; topics?: TopicStat[]; tools: { name: string; count: number }[]; agents: AgentStat[]; models: ModelStat[]; estimatedCostUsd: number; costEstimateMethod: string }; findings: Finding[]; phraseCard?: PhraseCard | null; interactionCard?: InteractionCard | null; workaroundCard?: WorkaroundCard | null };
 type DonationMessage = { role: string; timestamp: string | null; text: string };
 type DonationSession = { sessionId: string; label: string; messages: DonationMessage[] };
-type Donation = { format: string; createdLocally: boolean; detectionCount: number; sessions: DonationSession[] };
+type RedactionContext = { before: string; match: string; after: string };
+type RedactionMatch = { value: string; truncated?: boolean; length: number; count: number; contexts: RedactionContext[] };
+type AutomaticRedaction = { kind: string; label: string; replacement: string; count: number; matches: RedactionMatch[] };
+type CustomRedactionRule = { id: string; mode: "text" | "regex"; pattern: string; flags: string; replacement: string; count: number; contexts: RedactionContext[] };
+type Donation = { format: string; createdLocally: boolean; detectionCount: number; redactions?: AutomaticRedaction[]; sessions: DonationSession[] };
 type Stage = "select" | "report" | "donate";
 type SavedReport = Report & { id: string; createdAt: string; rangeLabel: string; source: string; publicUrl?: string; donationHelperUrl?: string; hosting?: { public: boolean }; privacy: { shareSafe: boolean; containsTranscriptText: boolean; externalTransmission: boolean } };
 type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; headlineAccent?: string; wordRatio?: string; example?: string; workaround?: boolean; turnDistribution?: { values: number[]; median: number }; ctaHref?: string; ctaLabel?: string; ctas?: { href: string; label: string; primary?: boolean; note?: string }[]; rows?: { label: string; value: string; percentage?: number; rank?: number }[]; comparison?: { label: string; highlight: string; accent: "yell" | "thanks"; value: string; suffix: string; quote?: string }[] };
@@ -277,7 +281,7 @@ function SharedWrapped({ id }: { id: string }) {
     ...(report.phraseCard ? [{ kicker: "Beyond those common phrases, your agent’s favorite was", headline: `“${report.phraseCard.phrase}”`, detail: `It said this ${report.phraseCard.occurrences} time${report.phraseCard.occurrences === 1 ? "" : "s"} across ${report.phraseCard.distinctSessions} session${report.phraseCard.distinctSessions === 1 ? "" : "s"}.`, tone: "quote" }] : []),
     { kicker: "What’s next?", headline: "Your move.", detail: "", tone: "leaderboard", ctas: [
       { href: `/leaderboard/${report.id}${managementToken ? `#manage=${managementToken}` : ""}`, label: "See your place on the leaderboard", primary: true },
-      { href: `${report.donationHelperUrl || `http://127.0.0.1:4317/donate/${report.id}`}?mode=standard`, label: "Donate your data for research", note: "Nothing is sent until you review the redactions and explicitly consent. Code, paths, URLs, likely secrets, and common personal details are removed locally." },
+      { href: `${report.donationHelperUrl || `http://localhost:4317/donate/${report.id}`}?mode=standard`, label: "Donate your data for research", note: "Nothing is sent until you review the redactions and explicitly consent. Code, paths, URLs, likely secrets, and common personal details are removed locally." },
     ] },
   ];
     return wrappedSlides;
@@ -613,7 +617,7 @@ function LeaderboardView({ id }: { id: string }) {
       <RelationshipFigure ratio={ratio} appreciation={snapshot.good_human_score.value} points={snapshot.relationship.points} participantId={snapshot.participation.participant_id} included={snapshot.participation.joined} />
       <WorkaroundFigure metric={snapshot.instrumental_workarounds} participantId={snapshot.participation.participant_id} included={snapshot.participation.joined} />
     </div>
-    {snapshot.can_manage && <section className="leader-donation"><div><span className="eyebrow">Optional research donation</span><h2>Will you contribute your data to the research?</h2><p>This is separate from the anonymous leaderboard. You’ll review the redactions and explicitly consent before any transcript data is sent.</p></div><a className="primary" href={`${report.donationHelperUrl || `http://127.0.0.1:4317/donate/${report.id}`}?mode=standard`}>Review and donate your data <span>→</span></a></section>}
+    {snapshot.can_manage && <section className="leader-donation"><div><span className="eyebrow">Optional research donation</span><h2>Will you contribute your data to the research?</h2><p>This is separate from the anonymous leaderboard. You’ll review the redactions and explicitly consent before any transcript data is sent.</p></div><a className="primary" href={`${report.donationHelperUrl || `http://localhost:4317/donate/${report.id}`}?mode=standard`}>Review and donate your data <span>→</span></a></section>}
     {snapshot.can_manage ? <section className="leader-opt-out" id="join-leaderboard">
       <div><p>{snapshot.participation.joined ? "Don’t want your stats to show up on the leaderboard?" : "Your stats are currently opted out of the leaderboard."}</p>{error && <span className="error" role="alert">{error}</span>}</div>
       {snapshot.participation.joined ? <button className="leader-remove" disabled={saving} onClick={leave}>{saving ? "Opting out…" : "Click here to opt out"}</button> : <button className="primary" disabled={saving} onClick={include}>{saving ? "Adding…" : "Add my anonymous stats back"}<span>→</span></button>}
@@ -850,24 +854,62 @@ function EvidenceModal({ finding, onClose }: { finding: Finding; onClose: () => 
   </div>;
 }
 
-function DonationMessageEditor({ message, onChange }: { message: DonationMessage; onChange: (text: string) => void }) {
+function escapeExpression(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function customRedactionExpression(rule: Pick<CustomRedactionRule, "mode" | "pattern" | "flags">) {
+  return new RegExp(rule.mode === "text" ? escapeExpression(rule.pattern) : rule.pattern, `g${rule.mode === "text" ? "i" : rule.flags}`);
+}
+
+function applyCustomRedactions(value: string, rules: CustomRedactionRule[]) {
+  return rules.reduce((text, rule) => text.replace(customRedactionExpression(rule), rule.replacement), value);
+}
+
+function renderDonationText(value: string, rules: CustomRedactionRule[]) {
+  const replacements = new Set(rules.map((rule) => rule.replacement));
+  const custom = [...replacements].filter(Boolean).map(escapeExpression);
+  const automatic = String.raw`\/Users\/\[REDACTED USER\]|\[(?:(?:REDACTED|REMOVED)[^\]]*|(?:CODE|INLINE CODE|URL|PATH) REMOVED)\]`;
+  const expression = new RegExp(`(${[automatic, ...custom].join("|")})`, "g");
+  return value.split(expression).filter(Boolean).map((part, index) => replacements.has(part) || new RegExp(`^(?:${automatic})$`).test(part)
+    ? <mark className="donation-redacted" key={`${part}-${index}`}>{part}</mark>
+    : part);
+}
+
+function AutomaticRedactionReview({ redactions }: { redactions: AutomaticRedaction[] }) {
+  if (!redactions.length) return <div className="automatic-redactions empty"><strong>No automatic matches</strong><span>You can still add your own redaction rules.</span></div>;
+  return <div className="automatic-redactions">
+    <div className="redaction-list-heading"><strong>Automatic redactions</strong><span>{redactions.reduce((sum, item) => sum + item.count, 0).toLocaleString()} replacements</span></div>
+    {redactions.map((item) => <details className="automatic-redaction-row" key={item.replacement}>
+      <summary><span><strong>{item.label}</strong><code>{item.matches.length.toLocaleString()} exact value{item.matches.length === 1 ? "" : "s"} → {item.replacement}</code></span><b>{item.count.toLocaleString()}×</b></summary>
+      <div className="automatic-match-list">{item.matches.map((match, matchIndex) => <details className="automatic-match" key={`${match.value}-${matchIndex}`}>
+        <summary><code>{match.value}</code><span>{match.truncated ? `${match.length.toLocaleString()} characters · ` : ""}{match.count.toLocaleString()}×</span></summary>
+        <div className="redaction-contexts">{match.contexts.map((context, index) => <p key={index}>…{context.before}<mark>{context.match}</mark>{context.after}…</p>)}</div>
+      </details>)}</div>
+    </details>)}
+  </div>;
+}
+
+function DonationMessageEditor({ message, rules, onChange }: { message: DonationMessage; rules: CustomRedactionRule[]; onChange: (text: string) => void }) {
   const [expanded, setExpanded] = useState(false);
+  const [editing, setEditing] = useState(false);
   const isAgent = message.role === "assistant";
   const isLong = message.text.length > 280 || message.text.split("\n").length > 4;
   const expandedRows = Math.min(12, Math.max(4, Math.ceil(message.text.length / 72)));
+  const previewText = applyCustomRedactions(message.text, rules);
 
   return <div className={`bundle-message ${isAgent ? "assistant" : "user"}`}>
     <span className="bundle-role">{isAgent ? "Agent" : "You"}</span>
     <div className="bundle-bubble">
-      <textarea
+      {editing ? <textarea
         aria-label={`${isAgent ? "Agent" : "Your"} message`}
         className={expanded ? "expanded" : "collapsed"}
         value={message.text}
         onChange={(event) => onChange(event.target.value)}
         rows={expanded ? expandedRows : 3}
         wrap="soft"
-      />
-      {isLong && <button type="button" onClick={() => setExpanded((value) => !value)}>{expanded ? "Show less" : "Show full message"}</button>}
+      /> : <div className={`bundle-final-text ${expanded ? "expanded" : "collapsed"}`}>{renderDonationText(previewText, rules)}</div>}
+      <div className="bundle-message-actions"><button type="button" onClick={() => setEditing((value) => !value)}>{editing ? "Preview message" : "Edit message"}</button>{isLong && <button type="button" onClick={() => setExpanded((value) => !value)}>{expanded ? "Show less" : "Show full message"}</button>}</div>
     </div>
   </div>;
 }
@@ -875,7 +917,12 @@ function DonationMessageEditor({ message, onChange }: { message: DonationMessage
 function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { reportId: string; mode: "standard" | "advanced"; sessions: Session[]; initialSelected: Set<string>; onBack: () => void }) {
   const [chosen, setChosen] = useState(new Set(initialSelected));
   const [bundle, setBundle] = useState<Donation | null>(null);
-  const [manualTerm, setManualTerm] = useState("");
+  const [customRules, setCustomRules] = useState<CustomRedactionRule[]>([]);
+  const [customMode, setCustomMode] = useState<"text" | "regex">("text");
+  const [customPattern, setCustomPattern] = useState("");
+  const [customFlags, setCustomFlags] = useState("i");
+  const [customReplacement, setCustomReplacement] = useState("[REDACTED CUSTOM]");
+  const [customStatus, setCustomStatus] = useState("");
   const [includeTimestamps, setIncludeTimestamps] = useState(false);
   const [openSession, setOpenSession] = useState<number | null>(0);
   const [consent, setConsent] = useState(false);
@@ -889,18 +936,48 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
       const response = await fetch("/api/donation-preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reportId, sessionIds: ids }) });
       if (!response.ok) throw new Error((await response.json()).error || "Preview failed");
       setBundle(await response.json());
+      setCustomRules([]); setCustomStatus("");
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Preview failed"); }
     finally { setLoading(false); }
   }
 
   useEffect(() => { void preview([...initialSelected]); }, []);
 
-  function removeTerm() {
-    if (!bundle || !manualTerm.trim()) return;
-    const escaped = manualTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const pattern = new RegExp(escaped, "gi");
-    setBundle({ ...bundle, sessions: bundle.sessions.map((session) => ({ ...session, messages: session.messages.map((message) => ({ ...message, text: message.text.replace(pattern, "[REMOVED BY USER]") })) })) });
-    setManualTerm(""); setConsent(false);
+  function addCustomRule() {
+    if (!bundle) return;
+    setCustomStatus("");
+    try {
+      const pattern = customPattern.trim();
+      const flags = customMode === "regex" ? customFlags.trim().replaceAll("g", "") : "";
+      const replacement = customReplacement.replace(/[\u0000-\u001f\u007f]/g, "").trim() || "[REDACTED CUSTOM]";
+      if (!pattern || pattern.length > 200) throw new Error("Enter text or a pattern between 1 and 200 characters.");
+      if (customMode === "regex" && (!/^[imsu]*$/.test(flags) || new Set(flags).size !== flags.length)) throw new Error("Flags may only contain i, m, s, or u once each.");
+      const expression = customRedactionExpression({ mode: customMode, pattern, flags });
+      expression.lastIndex = 0;
+      if (expression.test("")) throw new Error("The rule cannot match an empty string.");
+      let count = 0;
+      const contexts: RedactionContext[] = [];
+      for (const session of bundle.sessions) for (const message of session.messages) {
+        const matcher = customRedactionExpression({ mode: customMode, pattern, flags });
+        let match;
+        while ((match = matcher.exec(message.text))) {
+          if (++count > 10_000) throw new Error("That rule matches too broadly; narrow it before adding.");
+          if (contexts.length < 6) contexts.push({
+            before: message.text.slice(Math.max(0, match.index - 80), match.index).replace(/\s+/g, " "),
+            match: match[0],
+            after: message.text.slice(match.index + match[0].length, match.index + match[0].length + 80).replace(/\s+/g, " "),
+          });
+        }
+      }
+      if (!count) throw new Error("No matches were found in the current donation.");
+      setCustomRules((rules) => [...rules, { id: `${Date.now()}-${rules.length}`, mode: customMode, pattern, flags, replacement, count, contexts }]);
+      setCustomPattern(""); setCustomStatus(`Added ${count.toLocaleString()} replacement${count === 1 ? "" : "s"}.`); setConsent(false);
+    } catch (caught) { setCustomStatus(caught instanceof Error ? caught.message : "Could not add that rule."); }
+  }
+
+  function removeCustomRule(id: string) {
+    setCustomRules((rules) => rules.filter((rule) => rule.id !== id));
+    setCustomStatus(""); setConsent(false);
   }
 
   function editMessage(sessionIndex: number, messageIndex: number, text: string) {
@@ -923,7 +1000,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
       redactionMode: mode === "advanced" ? "custom" : "standard",
       createdAt: new Date().toISOString(),
       redactionSummary: { automatedDetections: bundle.detectionCount },
-      sessions: bundle.sessions.map((session) => ({ label: session.label, messages: session.messages.map((message) => ({ role: message.role, text: message.text, ...(includeTimestamps && message.timestamp ? { timestamp: message.timestamp } : {}) })) })),
+      sessions: bundle.sessions.map((session) => ({ label: session.label, messages: session.messages.map((message) => ({ role: message.role, text: applyCustomRedactions(message.text, customRules), ...(includeTimestamps && message.timestamp ? { timestamp: message.timestamp } : {}) })) })),
       consent: { researchDonation: true, consentedAt: new Date().toISOString() },
     };
     try {
@@ -952,7 +1029,19 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
         <div className="donation-step"><span>2</span><div><h2>{mode === "advanced" ? "Review every line" : "Review the summary"}</h2><p>{mode === "advanced" ? "Automated detection is imperfect. Edit or remove any message directly." : "The standard bundle contains redacted user and assistant prose from the selected sessions."}</p></div></div>
         {!bundle ? <div className="preview-placeholder"><span>⌁</span><p>Your redacted donation is being prepared locally.</p></div> : <>
           <div className="redaction-banner"><strong>{bundle.detectionCount} likely sensitive item{bundle.detectionCount === 1 ? "" : "s"} removed</strong><span>Secrets, emails, phone numbers, paths, URLs, and code</span></div>
-          {mode === "advanced" && <><div className="manual-redact"><input value={manualTerm} onChange={(event) => setManualTerm(event.target.value)} placeholder="Text to remove everywhere" aria-label="Text to remove" /><button onClick={removeTerm}>Remove text</button></div><label className="leader-check"><input type="checkbox" checked={includeTimestamps} onChange={(event) => { setIncludeTimestamps(event.target.checked); setConsent(false); }} /><span>Include message timestamps in the donation.</span></label><div className="bundle-preview">{bundle.sessions.map((session, sessionIndex) => <div className="bundle-session" key={session.sessionId}><button className="bundle-session-toggle" onClick={() => setOpenSession(openSession === sessionIndex ? null : sessionIndex)}><span>{session.label}<small>{session.messages.length} messages</small></span><b>{openSession === sessionIndex ? "Hide" : "Review"}</b></button>{openSession === sessionIndex && <div className="bundle-chat">{session.messages.map((message, messageIndex) => <div className="donation-message-row" key={messageIndex}><DonationMessageEditor message={message} onChange={(text) => editMessage(sessionIndex, messageIndex, text)} /><button className="remove-message" onClick={() => removeMessage(sessionIndex, messageIndex)}>Exclude</button></div>)}</div>}</div>)}</div></>}
+          <AutomaticRedactionReview redactions={bundle.redactions || []} />
+          {mode === "advanced" && <>
+            <section className="custom-redaction-builder">
+              <div className="custom-redaction-heading"><div><strong>Add another redaction</strong><span>Test plain text or a regular expression against every included message.</span></div><div className="redaction-mode-toggle"><button className={customMode === "text" ? "active" : ""} type="button" onClick={() => { setCustomMode("text"); setCustomStatus(""); }}>Plain text</button><button className={customMode === "regex" ? "active" : ""} type="button" onClick={() => { setCustomMode("regex"); setCustomStatus(""); }}>Regex</button></div></div>
+              <div className="custom-redaction-fields"><label>{customMode === "text" ? "Text to remove everywhere" : "Regex pattern"}<input value={customPattern} maxLength={200} onChange={(event) => setCustomPattern(event.target.value)} placeholder={customMode === "text" ? "Acme Corp" : "Acme Corp|acme-internal"} /></label>{customMode === "regex" && <label className="custom-flags">Flags<input value={customFlags} maxLength={4} onChange={(event) => setCustomFlags(event.target.value)} placeholder="i" /></label>}<label>Replacement<input value={customReplacement} maxLength={100} onChange={(event) => setCustomReplacement(event.target.value)} /></label><button type="button" onClick={addCustomRule}>Test and add</button></div>
+              {customMode === "regex" && <p className="regex-help"><code>i</code> ignores capitalization · <code>m</code> works line by line · <code>s</code> includes line breaks · <code>u</code> enables Unicode</p>}
+              {customStatus && <p className={`custom-redaction-status ${customStatus.startsWith("Added") ? "success" : "error"}`} aria-live="polite">{customStatus}</p>}
+              {customRules.length > 0 && <div className="custom-rule-list">{customRules.map((rule) => <details key={rule.id}><summary><span><strong>{rule.mode === "text" ? `“${rule.pattern}”` : `/${rule.pattern}/g${rule.flags}`}</strong><code>→ {rule.replacement}</code></span><b>{rule.count.toLocaleString()}×</b></summary><div className="redaction-contexts">{rule.contexts.map((context, index) => <p key={index}>…{context.before}<mark>{context.match}</mark>{context.after}…</p>)}</div><button type="button" onClick={() => removeCustomRule(rule.id)}>Remove this rule</button></details>)}</div>}
+            </section>
+            <label className="leader-check"><input type="checkbox" checked={includeTimestamps} onChange={(event) => { setIncludeTimestamps(event.target.checked); setConsent(false); }} /><span>Include message timestamps in the donation.</span></label>
+            <div className="final-preview-heading"><strong>Final conversation preview</strong><span>Highlighted text is redacted. Edit or exclude any message.</span></div>
+            <div className="bundle-preview">{bundle.sessions.map((session, sessionIndex) => <div className="bundle-session" key={session.sessionId}><button className="bundle-session-toggle" onClick={() => setOpenSession(openSession === sessionIndex ? null : sessionIndex)}><span>{session.label}<small>{session.messages.length} messages</small></span><b>{openSession === sessionIndex ? "Hide" : "Review"}</b></button>{openSession === sessionIndex && <div className="bundle-chat">{session.messages.map((message, messageIndex) => <div className="donation-message-row" key={messageIndex}><DonationMessageEditor message={message} rules={customRules} onChange={(text) => editMessage(sessionIndex, messageIndex, text)} /><button className="remove-message" onClick={() => removeMessage(sessionIndex, messageIndex)}>Exclude</button></div>)}</div>}</div>)}</div>
+          </>}
           <div className="donation-step consent-step"><span>3</span><div><h2>Consent separately</h2><p>This consent applies only to the reviewed bundle described above.</p></div></div>
           <label className="consent"><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /><span>I consent for this reviewed data to be transmitted and used for research.</span></label>
           <button className="export-button" disabled={!consent || loading || !messageCount} onClick={donate}>{loading ? "Transmitting…" : "Donate reviewed data"} <span>→</span></button>

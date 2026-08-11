@@ -37,8 +37,15 @@ export function redactText(input, manualTerms = []) {
   let text = String(input ?? "");
   const detections = [];
   for (const [pattern, replacement] of [...SECRET_PATTERNS, ...PII_PATTERNS]) {
-    text = text.replace(pattern, (match, ...groups) => {
-      detections.push({ kind: replacement.slice(1, -1), length: match.length });
+    text = text.replace(pattern, (match, offset, source) => {
+      detections.push({
+        kind: replacement.slice(1, -1),
+        label: replacement.slice(1, -1).toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()),
+        value: match,
+        replacement,
+        length: match.length,
+        context: { before: source.slice(Math.max(0, offset - 80), offset), match, after: source.slice(offset + match.length, offset + match.length + 80) },
+      });
       return replacement;
     });
   }

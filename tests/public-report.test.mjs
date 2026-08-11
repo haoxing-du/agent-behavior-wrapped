@@ -38,6 +38,7 @@ test("sanitizes a hosted report to a strict share-safe shape", () => {
   assert.equal(serialized.includes("evidence"), false);
   assert.equal(safe.hosting.public, true);
   assert.equal(safe.rangeLabel, "Your recent agent history");
+  assert.equal(safe.donationHelperUrl, "http://localhost:4317/donate/shareSafe1234");
   assert.equal(safe.stats.agentUserWordRatio, 4);
   assert.equal(safe.stats.longestSessionTurns, 51);
   assert.deepEqual(safe.stats.sessionTurnCounts, [2, 12, 51]);

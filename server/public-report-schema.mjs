@@ -68,8 +68,8 @@ export function sanitizePublicReport(value) {
     models: safeWorkaroundModels,
     ...(value.workaroundCard.count > 0 && safeWorkaroundExample ? { example: safeWorkaroundExample } : {}),
   } : null;
-  const defaultDonationHelperUrl = `http://127.0.0.1:4317/donate/${value.id}`;
-  const donationHelperUrl = new RegExp(`^http://127\\.0\\.0\\.1:[0-9]{2,5}/donate/${value.id}$`).test(value.donationHelperUrl || "") ? value.donationHelperUrl : defaultDonationHelperUrl;
+  const defaultDonationHelperUrl = `http://localhost:4317/donate/${value.id}`;
+  const donationHelperUrl = new RegExp(`^http://localhost:[0-9]{2,5}/donate/${value.id}$`).test(value.donationHelperUrl || "") ? value.donationHelperUrl : defaultDonationHelperUrl;
   return {
     id: value.id,
     createdAt: /^\d{4}-\d{2}-\d{2}T/.test(value.createdAt || "") ? value.createdAt : new Date().toISOString(),
