@@ -579,6 +579,8 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .donation-mode-links { margin-top: 22px; }
 .donation-mode-links a { border-color: #bcb3c0; color: #514956; font-size: 11px; }
 .donation-mode-links a.active { border-color: #627c25; background: #627c25; color: white; }
+.donation-mode-links a.unredacted { border-color: #c98b78; color: #8a3f2c; }
+.donation-mode-links a.unredacted.active { border-color: #9d3f29; background: #9d3f29; color: white; }
 .donation-layout { grid-template-columns: minmax(280px, .72fr) minmax(480px, 1.28fr); gap: 20px; max-width: 1120px; margin: 0 auto; }
 .donation-controls, .donation-preview { border: 1px solid #d4cdd6; border-radius: 20px; background: rgba(255,255,255,.68); box-shadow: none; }
 .donation-controls { position: sticky; top: 20px; }
@@ -593,6 +595,8 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .donation-summary span { color: #6f6873; }
 .donation-summary a { color: #627c25; font-weight: 800; }
 .redaction-banner { border: 1px solid #cad6ae; background: rgba(225,239,191,.58); }
+.unredacted-warning { display: grid; gap: 5px; margin-top: 20px; padding: 14px; border: 1px solid #d8a08f; border-radius: 12px; background: #fff0ea; color: #713321; font-size: 11px; line-height: 1.45; }
+.unredacted-warning strong { font-size: 13px; }
 .automatic-redactions, .broad-redaction-options, .custom-redaction-builder { border-radius: 14px; }
 .redaction-list-heading { background: rgba(233,221,245,.42); }
 .automatic-redaction-help { background: rgba(255,255,255,.5); }
@@ -610,8 +614,10 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .remove-message { border-color: #c7bdca; background: #fffdf8; color: #875068; }
 .consent-step { border-color: #d6cfd8; }
 .donation-preview .consent { border: 1px solid #ddd6df; background: #f0ebf1; color: #4f4854; }
+.donation-preview .consent.unredacted-consent { border-color: #d8a08f; background: #fff0ea; color: #713321; }
 .donation-page .primary { box-shadow: none; }
 .donation-page .export-button { background: #627c25; color: white; }
+.donation-page .export-button.unredacted { background: #9d3f29; }
 .donation-step > span { flex: 0 0 30px; width: 30px; min-width: 30px; height: 30px; aspect-ratio: 1; border-radius: 50%; }
 .donation-step h2 { margin-top: 2px; font-size: 20px; line-height: 1.15; }
 .donation-step p { font-size: 12.5px; line-height: 1.5; }

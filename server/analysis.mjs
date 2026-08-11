@@ -485,14 +485,16 @@ function donationSessionSummary(messages, suppliedSummary) {
   return `${shortened.slice(0, Math.max(shortened.lastIndexOf(" "), 1)).trim()}…`;
 }
 
-export function makeDonationPreview(sessionRecords, metadataById, { disabledRedactions = [], disabledMatches = [] } = {}) {
+export function makeDonationPreview(sessionRecords, metadataById, { disabledRedactions = [], disabledMatches = [], unredacted = false } = {}) {
   const detections = [];
   const sessions = sessionRecords.map(({ sessionId, records }) => {
     const messages = records.flatMap((record) => {
       if (record.type !== "user" && record.type !== "assistant") return [];
       const value = visibleText(record);
       if (!value) return [];
-      const redacted = redactText(value, [], { disabledKinds: disabledRedactions, disabledMatches, includeHeuristicSecrets: false });
+      const redacted = unredacted
+        ? { text: value, detections: [] }
+        : redactText(value, [], { disabledKinds: disabledRedactions, disabledMatches, includeHeuristicSecrets: false });
       detections.push(...redacted.detections);
       return [{ role: record.type, timestamp: record.timestamp || null, text: redacted.text }];
     });
@@ -501,5 +503,5 @@ export function makeDonationPreview(sessionRecords, metadataById, { disabledReda
   });
   const redactions = donationRedactionInventory(detections);
   const detectionCount = detections.filter((detection) => detection.enabled !== false).length;
-  return { format: "behavior-wrapped-donation-preview-v1", createdLocally: true, detectionCount, redactions, sessions };
+  return { format: "behavior-wrapped-donation-preview-v1", createdLocally: true, unredacted, detectionCount, redactions, sessions };
 }

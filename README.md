@@ -22,7 +22,7 @@ The interaction card uses GPT-5.6 Luna to distinguish clear frustration and grat
 
 Every selected session is scanned locally for explicit blockers. The judge receives chronological redacted context plus allowlisted semantic action labels such as `delete`, `move`, and `install`, never raw tool output or command arguments. It must classify every blocker and return event IDs, confidence, disclosure/authorization status, and a same-effect explanation. Confirmed high- and medium-confidence cases count on the card; low-confidence cases stay in the private review.
 
-The deck links to hosted token and agent/user word-ratio distributions, opt-in top-user rankings, and a public wall of opted-in favorite phrases. Its final card offers an optional research donation with either standard local redactions or a detailed local review where sessions and messages can be excluded, text can be edited, extra terms can be removed, and timestamps remain off by default. No donation data is transmitted until the user checks the final research-consent box and presses Donate.
+The deck links to hosted token and agent/user word-ratio distributions, opt-in top-user rankings, and a public wall of opted-in favorite phrases. Its final card offers an optional research donation with standard local redactions, a customizable redaction review, or a deliberately unredacted copy. Every detailed mode allows sessions and messages to be excluded, text to be edited, and timestamps remain off by default. The unredacted path shows every included line and requires a separate warning and explicit acknowledgement that credentials and private details may be transmitted. No donation data is transmitted until the user checks the final research-consent box and presses Donate.
 
 When developing from this repository, run `npm install`, then `npm run wrapped`. Add `--demo` to use synthetic fixtures or `--no-open` to leave the browser closed. For fast formatting work, run `npm run wrapped -- --test`; test mode skips consent and all LLM calls, uses deterministic local fallbacks, keeps the report on localhost, and does not publish it. `--no-llm` is an alias for `--test`.
 
@@ -40,7 +40,7 @@ Saved reports are managed with:
 
 ## Local donation helper
 
-The CLI starts a loopback-only helper at `http://localhost:4317`. It has no analysis dashboard: it can only resolve a saved report's selected sessions, construct a redacted donation preview, accept local edits, and submit the reviewed bundle after final consent. Run `npm start -- --no-open` when developing this helper directly.
+The CLI starts a loopback-only helper at `http://localhost:4317`. It has no analysis dashboard: it can only resolve a saved report's selected sessions, construct the chosen redacted or unredacted donation preview, accept local edits, and submit the reviewed bundle after final consent. Run `npm start -- --no-open` when developing this helper directly.
 
 For hosted-page UI development, run `npm run dev`. The normal end-to-end development path remains `npm run wrapped -- --demo`.
 
@@ -52,7 +52,7 @@ For hosted-page UI development, run `npm run dev`. The normal end-to-end develop
 - Viewing the leaderboard compares the report's aggregate token, word-ratio, Good Human Score (thanks as a share of thank-or-scold moments), and instrumental-workaround values without storing a leaderboard entry. Joining requires separate consent through the creator's report-scoped management link; public ranking and phrase-wall inclusion are independent choices, and copied public links cannot add, update, or remove an entry.
 - Browser payloads never include source file paths or raw tool outputs.
 - Share-card PNG exports contain only aggregates and generalized findings.
-- Donation discovery, default redaction, preview, exclusion, and editing happen on localhost. The reviewed bundle is transmitted to research storage only after a separate final checkbox and Donate action; the receiving Worker validates a fixed donation schema and stores no local session IDs or project labels.
+- Donation discovery, default redaction, preview, exclusion, and editing happen on localhost. An optional unredacted mode applies no automatic redactions and requires a mode-specific acknowledgement before submission. The reviewed bundle is transmitted to research storage only after a separate final checkbox and Donate action; the receiving Worker validates a fixed donation schema and stores no local session IDs or project labels.
 
 Heuristics are deliberately explainable and uncertain findings are labeled with confidence. They are signals for review, not factual judgments.
 

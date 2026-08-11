@@ -309,6 +309,17 @@ test("donation preview keeps code, URLs, and paths while masking home-directory 
   assert.equal(bundle.sessions[0].summary, "See https://example.com/private and /Users/private detail/project/file.ts with `secretCall()`");
 });
 
+test("unredacted donation preview preserves sensitive transcript text without automatic detections", () => {
+  const text = "Email ada@example.com with token=sk-test_12345678901234567890 from /Users/ada/private";
+  const bundle = makeDonationPreview([{ sessionId: "raw-session", records: [
+    { type: "user", message: { content: text } },
+  ] }], new Map([["raw-session", { label: "Session 1" }]]), { unredacted: true });
+  assert.equal(bundle.unredacted, true);
+  assert.equal(bundle.sessions[0].messages[0].text, text);
+  assert.equal(bundle.detectionCount, 0);
+  assert.deepEqual(bundle.redactions, []);
+});
+
 test("donation preview uses a supplied privacy-safe session summary", () => {
   const bundle = makeDonationPreview([{ sessionId: "summary-session", records: [
     { type: "user", message: { content: "Please debug the checkout form." } },

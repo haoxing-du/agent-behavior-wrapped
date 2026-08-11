@@ -1,4 +1,4 @@
-const MAX_DONATION_BYTES = 4_000_000;
+const MAX_DONATION_BYTES = 1_800_000;
 const MAX_SESSIONS = 250;
 const MAX_MESSAGES = 50_000;
 const MAX_MESSAGE_LENGTH = 20_000;
@@ -11,7 +11,9 @@ export function sanitizeResearchDonation(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   if (value.consent?.researchDonation !== true) return null;
   if (!/^[A-Za-z0-9_-]{8,32}$/.test(value.reportId || "")) return null;
-  if (!new Set(["standard", "custom"]).has(value.redactionMode)) return null;
+  if (!new Set(["standard", "custom", "unredacted"]).has(value.redactionMode)) return null;
+  const unredacted = value.redactionMode === "unredacted";
+  if (unredacted && value.consent?.unredactedData !== true) return null;
   if (!Array.isArray(value.sessions) || !value.sessions.length || value.sessions.length > MAX_SESSIONS) return null;
   let messageCount = 0;
   const sessions = value.sessions.flatMap((session, sessionIndex) => {
@@ -33,14 +35,17 @@ export function sanitizeResearchDonation(value) {
     redactionMode: value.redactionMode,
     createdAt: /^\d{4}-\d{2}-\d{2}T/.test(value.createdAt || "") ? value.createdAt : new Date().toISOString(),
     redactionSummary: {
-      automatedDetections: Math.round(Math.max(0, Math.min(Number(value.redactionSummary?.automatedDetections) || 0, 1_000_000))),
+      automatedDetections: unredacted ? 0 : Math.round(Math.max(0, Math.min(Number(value.redactionSummary?.automatedDetections) || 0, 1_000_000))),
       sessions: sessions.length,
       messages: messageCount,
     },
     sessions,
     consent: {
       researchDonation: true,
-      statement: "I consent for this reviewed data to be transmitted and used for research.",
+      ...(unredacted ? { unredactedData: true } : {}),
+      statement: unredacted
+        ? "I understand this donation is not automatically redacted and may contain credentials, personal details, private code, URLs, and file paths. I consent to transmit it for research."
+        : "I consent for this reviewed data to be transmitted and used for research.",
       consentedAt: /^\d{4}-\d{2}-\d{2}T/.test(value.consent.consentedAt || "") ? value.consent.consentedAt : new Date().toISOString(),
     },
   };

@@ -22,7 +22,8 @@ type RedactionContext = { before: string; match: string; after: string };
 type RedactionMatch = { id: string; value: string; truncated?: boolean; length: number; enabled: boolean; count: number; contexts: RedactionContext[] };
 type AutomaticRedaction = { kind: string; label: string; replacement: string; enabled: boolean; enabledCount: number; count: number; matches: RedactionMatch[] };
 type CustomRedactionRule = { id: string; label?: string; mode: "text" | "regex"; pattern: string; flags: string; replacement: string; count: number; contexts: RedactionContext[] };
-type Donation = { format: string; createdLocally: boolean; detectionCount: number; redactions?: AutomaticRedaction[]; sessions: DonationSession[] };
+type Donation = { format: string; createdLocally: boolean; unredacted?: boolean; detectionCount: number; redactions?: AutomaticRedaction[]; sessions: DonationSession[] };
+type DonationMode = "standard" | "advanced" | "unredacted";
 type Stage = "select" | "report" | "donate";
 type SavedReport = Report & { id: string; createdAt: string; rangeLabel: string; source: string; publicUrl?: string; donationHelperUrl?: string; hosting?: { public: boolean }; privacy: { shareSafe: boolean; containsTranscriptText: boolean; externalTransmission: boolean } };
 type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; headlineAccent?: string; wordRatio?: string; example?: string; workaround?: boolean; turnDistribution?: { values: number[]; median: number }; ctaHref?: string; ctaLabel?: string; ctas?: { href: string; label: string; primary?: boolean; note?: string }[]; rows?: { label: string; value: string; percentage?: number; rank?: number }[]; comparison?: { label: string; highlight: string; accent: "yell" | "thanks"; value: string; suffix: string; quote?: string }[] };
@@ -630,7 +631,8 @@ function SavedDonationRoute({ id }: { id: string }) {
   const [selection, setSelection] = useState<Set<string> | null>(null);
   const [report, setReport] = useState<SavedReport | null>(null);
   const [error, setError] = useState("");
-  const mode = new URLSearchParams(window.location.search).get("mode") === "advanced" ? "advanced" : "standard";
+  const requestedMode = new URLSearchParams(window.location.search).get("mode");
+  const mode: DonationMode = requestedMode === "advanced" || requestedMode === "unredacted" ? requestedMode : "standard";
   useEffect(() => {
     Promise.all([
       fetch("/api/discover").then((response) => { if (!response.ok) throw new Error("Could not read the local agent-session catalog."); return response.json(); }),
@@ -922,7 +924,7 @@ function DonationMessageEditor({ message, rules, onChange }: { message: Donation
   </div>;
 }
 
-function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { reportId: string; mode: "standard" | "advanced"; sessions: Session[]; initialSelected: Set<string>; onBack: () => void }) {
+function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { reportId: string; mode: DonationMode; sessions: Session[]; initialSelected: Set<string>; onBack: () => void }) {
   const [chosen, setChosen] = useState(new Set(initialSelected));
   const [bundle, setBundle] = useState<Donation | null>(null);
   const [reviewSessions, setReviewSessions] = useState<DonationSession[]>([]);
@@ -944,7 +946,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
   async function preview(ids = [...chosen], disabledRedactions = [...disabledAutomatic], disabledMatches = [...disabledAutomaticMatches]) {
     setLoading(true); setError(""); setConsent(false);
     try {
-      const response = await fetch("/api/donation-preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reportId, sessionIds: ids, disabledRedactions, disabledMatches }) });
+      const response = await fetch("/api/donation-preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reportId, sessionIds: ids, disabledRedactions, disabledMatches, previewMode: mode === "unredacted" ? "unredacted" : "redacted" }) });
       if (!response.ok) throw new Error((await response.json()).error || "Preview failed");
       const nextBundle = await response.json() as Donation;
       setBundle(nextBundle);
@@ -1066,11 +1068,11 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
     setLoading(true); setError("");
     const donation = {
       reportId,
-      redactionMode: mode === "advanced" ? "custom" : "standard",
+      redactionMode: mode === "advanced" ? "custom" : mode,
       createdAt: new Date().toISOString(),
       redactionSummary: { automatedDetections: bundle.detectionCount },
       sessions: bundle.sessions.map((session) => ({ label: session.label, messages: session.messages.map((message) => ({ role: message.role, text: applyCustomRedactions(message.text, customRules), ...(includeTimestamps && message.timestamp ? { timestamp: message.timestamp } : {}) })) })),
-      consent: { researchDonation: true, consentedAt: new Date().toISOString() },
+      consent: { researchDonation: true, ...(mode === "unredacted" ? { unredactedData: true } : {}), consentedAt: new Date().toISOString() },
     };
     try {
       const response = await fetch("/api/research-donations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ donation }) });
@@ -1082,24 +1084,26 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
   }
 
   const messageCount = bundle?.sessions.reduce((sum, session) => sum + session.messages.length, 0) || 0;
-  if (acceptedId) return <main className="donation-page"><section className="donation-hero donation-success"><span className="eyebrow">Donation received</span><h1>Thank you for contributing.</h1><p>Your reviewed data was transmitted only after your consent. Donation reference: {acceptedId}</p><button className="primary" onClick={onBack}>Back to your Wrapped</button></section></main>;
+  const detailedReview = mode !== "standard";
+  const unredacted = mode === "unredacted";
+  if (acceptedId) return <main className="donation-page"><section className="donation-hero donation-success"><span className="eyebrow">Donation received</span><h1>Thank you for contributing.</h1><p>Your reviewed {unredacted ? "unredacted " : ""}data was transmitted only after your consent. Donation reference: {acceptedId}</p><button className="primary" onClick={onBack}>Back to your Wrapped</button></section></main>;
 
   return <main className="donation-page">
     <button className="back-link" onClick={onBack}>← Back to Wrapped</button>
-    <section className="donation-hero"><span className="eyebrow">Research donation · local review</span><h1>You decide what leaves<br />your machine.</h1><p>Nothing in this donation is transmitted until you check the consent box and press the final Donate button.</p><div className="donation-mode-links"><a className={mode === "standard" ? "active" : ""} href={`/donate/${reportId}?mode=standard`}>Standard redactions</a><a className={mode === "advanced" ? "active" : ""} href={`/donate/${reportId}?mode=advanced`}>Review and customize</a></div></section>
+    <section className="donation-hero"><span className="eyebrow">Research donation · local review</span><h1>You decide what leaves<br />your machine.</h1><p>Nothing in this donation is transmitted until you check the consent box and press the final Donate button.</p><div className="donation-mode-links"><a className={mode === "standard" ? "active" : ""} href={`/donate/${reportId}?mode=standard`}>Standard redactions</a><a className={mode === "advanced" ? "active" : ""} href={`/donate/${reportId}?mode=advanced`}>Review and customize</a><a className={`unredacted ${unredacted ? "active" : ""}`} href={`/donate/${reportId}?mode=unredacted`}>Unredacted copy</a></div></section>
     <div className="donation-layout">
       <section className="donation-controls">
-        <div className="donation-step"><span>1</span><div><h2>{mode === "advanced" ? "Choose what to include" : "Standard redactions applied"}</h2><p>High-confidence secrets and personal details are removed locally. Code, URLs, and paths remain so the transcript keeps its context; home-directory usernames are masked.</p></div></div>
-        {mode === "advanced" && <><div className="donation-sessions">{sessions.filter((session) => initialSelected.has(session.id)).map((session) => <label key={session.id}><input type="checkbox" checked={chosen.has(session.id)} disabled={loading} onChange={() => toggleDonationSession(session.id)} /><span>{session.label}<small>{session.projectName} · {fmtDate(session.startedAt)}</small></span></label>)}</div><button className="primary full" disabled={!chosen.size || loading} onClick={() => preview()}>{loading ? "Building preview…" : bundle ? "Refresh redacted preview" : "Build redacted preview"}</button></>}
+        <div className="donation-step"><span>1</span><div><h2>{detailedReview ? "Choose what to include" : "Standard redactions applied"}</h2><p>{unredacted ? "No automatic redactions are applied. Credentials, personal details, private code, URLs, and file paths may all be included." : "High-confidence secrets and personal details are removed locally. Code, URLs, and paths remain so the transcript keeps its context; home-directory usernames are masked."}</p></div></div>
+        {detailedReview && <><div className="donation-sessions">{sessions.filter((session) => initialSelected.has(session.id)).map((session) => <label key={session.id}><input type="checkbox" checked={chosen.has(session.id)} disabled={loading} onChange={() => toggleDonationSession(session.id)} /><span>{session.label}<small>{session.projectName} · {fmtDate(session.startedAt)}</small></span></label>)}</div><button className="primary full" disabled={!chosen.size || loading} onClick={() => preview()}>{loading ? "Building preview…" : bundle ? `Refresh ${unredacted ? "unredacted " : "redacted "}preview` : `Build ${unredacted ? "unredacted " : "redacted "}preview`}</button></>}
         {mode === "standard" && <div className="donation-summary"><strong>{bundle ? `${bundle.sessions.length} sessions · ${messageCount} messages` : "Preparing your redacted donation…"}</strong><span>{bundle?.detectionCount || 0} sensitive items automatically removed</span><a href={`/donate/${reportId}?mode=advanced`}>Want more control? Review every message.</a></div>}
         {error && <p className="error">{error}</p>}
       </section>
       <section className={`donation-preview ${bundle ? "ready" : ""}`}>
-        <div className="donation-step"><span>2</span><div><h2>{mode === "advanced" ? "Review every line" : "Review the summary"}</h2><p>{mode === "advanced" ? "Automated detection is imperfect. Edit or remove any message directly." : "The standard bundle contains redacted user and assistant prose from the selected sessions."}</p></div></div>
-        {!bundle ? <div className="preview-placeholder"><span>⌁</span><p>Your redacted donation is being prepared locally.</p></div> : <>
-          <div className="redaction-banner"><strong>{bundle.detectionCount} likely sensitive item{bundle.detectionCount === 1 ? "" : "s"} removed</strong><span>High-confidence secrets and personal details</span></div>
-          <AutomaticRedactionReview redactions={bundle.redactions || []} onToggle={mode === "advanced" ? toggleAutomaticRedaction : undefined} onToggleMatch={mode === "advanced" ? toggleAutomaticMatch : undefined} loading={loading} />
-          {mode === "advanced" && <>
+        <div className="donation-step"><span>2</span><div><h2>{unredacted ? "Review every unredacted line" : mode === "advanced" ? "Review every line" : "Review the summary"}</h2><p>{unredacted ? "Nothing is hidden automatically. Read, edit, or exclude anything you do not want to share." : mode === "advanced" ? "Automated detection is imperfect. Edit or remove any message directly." : "The standard bundle contains redacted user and assistant prose from the selected sessions."}</p></div></div>
+        {!bundle ? <div className="preview-placeholder"><span>⌁</span><p>Your {unredacted ? "unredacted " : "redacted "}donation is being prepared locally.</p></div> : <>
+          {unredacted ? <div className="unredacted-warning"><strong>No automatic redactions</strong><span>This preview may expose passwords, API keys, names, email addresses, private code, URLs, and local file paths.</span></div> : <><div className="redaction-banner"><strong>{bundle.detectionCount} likely sensitive item{bundle.detectionCount === 1 ? "" : "s"} removed</strong><span>High-confidence secrets and personal details</span></div><AutomaticRedactionReview redactions={bundle.redactions || []} onToggle={mode === "advanced" ? toggleAutomaticRedaction : undefined} onToggleMatch={mode === "advanced" ? toggleAutomaticMatch : undefined} loading={loading} /></>}
+          {detailedReview && <>
+            {mode === "advanced" && <>
             <section className="broad-redaction-options">
               <div><strong>Optional broad redactions</strong><span>These can remove useful context, so they stay off unless you choose them.</span></div>
               <div>{BROAD_REDACTION_PRESETS.map((preset) => { const active = customRules.some((rule) => rule.id === preset.id); return <button className={active ? "active" : ""} type="button" aria-pressed={active} key={preset.id} onClick={() => toggleBroadRedaction(preset)}>{active ? "✓ " : "+ "}{preset.label}</button>; })}</div>
@@ -1111,8 +1115,9 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
               {customStatus && <p className={`custom-redaction-status ${customStatus.startsWith("Added") ? "success" : "error"}`} aria-live="polite">{customStatus}</p>}
               {customRules.length > 0 && <div className="custom-rule-list">{customRules.map((rule) => <details key={rule.id}><summary><span><strong>{rule.label || (rule.mode === "text" ? `“${rule.pattern}”` : `/${rule.pattern}/g${rule.flags}`)}</strong><code>→ {rule.replacement}</code></span><b>{rule.count.toLocaleString()}×</b></summary><div className="redaction-contexts">{rule.contexts.map((context, index) => <p key={index}>…{context.before}<mark>{context.match}</mark>{context.after}…</p>)}</div><button type="button" onClick={() => removeCustomRule(rule.id)}>Remove this rule</button></details>)}</div>}
             </section>
+            </>}
             <label className="leader-check"><input type="checkbox" checked={includeTimestamps} onChange={(event) => { setIncludeTimestamps(event.target.checked); setConsent(false); }} /><span>Include message timestamps in the donation.</span></label>
-            <div className="final-preview-heading"><strong>Final conversation preview</strong><span>Highlighted text is redacted. Edit or exclude any message.</span></div>
+            <div className="final-preview-heading"><strong>Final conversation preview</strong><span>{unredacted ? "Nothing is automatically hidden. Edit or exclude any message." : "Highlighted text is redacted. Edit or exclude any message."}</span></div>
             <div className="bundle-preview">{reviewSessions.map((listedSession, reviewIndex) => {
               const sessionIndex = bundle.sessions.findIndex((session) => session.sessionId === listedSession.sessionId);
               const included = chosen.has(listedSession.sessionId) && sessionIndex >= 0;
@@ -1124,8 +1129,8 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
             })}</div>
           </>}
           <div className="donation-step consent-step"><span>3</span><div><h2>Consent separately</h2><p>This consent applies only to the reviewed bundle described above.</p></div></div>
-          <label className="consent"><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /><span>I consent for this reviewed data to be transmitted and used for research.</span></label>
-          <button className="export-button" disabled={!consent || loading || !messageCount} onClick={donate}>{loading ? "Transmitting…" : "Donate reviewed data"} <span>→</span></button>
+          <label className={`consent ${unredacted ? "unredacted-consent" : ""}`}><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /><span>{unredacted ? "I understand this donation is not automatically redacted and may contain credentials, personal details, private code, URLs, and file paths. I consent to transmit it for research." : "I consent for this reviewed data to be transmitted and used for research."}</span></label>
+          <button className={`export-button ${unredacted ? "unredacted" : ""}`} disabled={!consent || loading || !messageCount} onClick={donate}>{loading ? "Transmitting…" : unredacted ? "Donate unredacted data" : "Donate reviewed data"} <span>→</span></button>
         </>}
       </section>
     </div>

@@ -24,6 +24,19 @@ test("research donation schema requires consent and removes local identifiers", 
   assert.equal(donation.consent.statement, "I consent for this reviewed data to be transmitted and used for research.");
 });
 
+test("unredacted donations require a separate explicit acknowledgement", () => {
+  assert.equal(sanitizeResearchDonation(fixture({ redactionMode: "unredacted" })), null);
+  const donation = sanitizeResearchDonation(fixture({
+    redactionMode: "unredacted",
+    consent: { researchDonation: true, unredactedData: true, consentedAt: "2026-08-06T12:01:00.000Z" },
+  }));
+  assert.ok(donation);
+  assert.equal(donation.redactionMode, "unredacted");
+  assert.equal(donation.redactionSummary.automatedDetections, 0);
+  assert.equal(donation.consent.unredactedData, true);
+  assert.match(donation.consent.statement, /not automatically redacted/);
+});
+
 test("worker stores a research donation only after validated final consent", async () => {
   let stored = null;
   const database = {
@@ -41,4 +54,15 @@ test("worker stores a research donation only after validated final consent", asy
   assert.ok(stored);
   assert.equal(stored[2], "researchReport1");
   assert.equal(JSON.parse(stored[3]).consent.researchDonation, true);
+});
+
+test("worker rejects an unredacted donation without its specific acknowledgement", async () => {
+  const request = new Request("https://example.test/v1/research-donations", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-behavior-wrapped-protocol": "1", "x-behavior-wrapped-client": "b".repeat(32) },
+    body: JSON.stringify({ donation: fixture({ redactionMode: "unredacted" }) }),
+  });
+  const database = { prepare() { throw new Error("Unacknowledged data must not reach storage."); } };
+  const response = await handleRequest(request, { LEADERBOARD_DB: database });
+  assert.equal(response.status, 400);
 });
