@@ -261,7 +261,18 @@ test("redacts likely secrets and PII, strips code from evidence", () => {
   assert.equal(safeEvidenceText("Here is ```private code```"), "Here is [CODE OMITTED]");
 });
 
-test("donation preview contains only message text, with code and secrets removed", () => {
+test("does not mistake redaction markers or ordinary prose for credential values", () => {
+  const sample = "Done. No API key: [CODE REMOVED] is needed. **Password: the** password you entered is no longer needed. Password: authentication is handled elsewhere.";
+  const result = redactText(sample);
+  assert.equal(result.text, sample);
+  assert.deepEqual(result.detections, []);
+
+  const sensitive = redactText('Password: "hunter2" and token=sk-test_12345678901234567890');
+  assert.equal(sensitive.text, "[REDACTED CREDENTIAL] and [REDACTED CREDENTIAL]");
+  assert.equal(sensitive.detections.length, 2);
+});
+
+test("donation preview contains only message text, with secrets and PII removed", () => {
   const catalog = discoverSessions(root);
   const entries = [...catalog.index].map(([sessionId, session]) => ({ sessionId, records: readRecords(session.file) }));
   const labels = new Map(catalog.sessions.map((s, index) => [s.id, { label: `Session ${index + 1}` }]));
@@ -276,13 +287,14 @@ test("donation preview contains only message text, with code and secrets removed
   assert.ok(!serialized.includes("tool_result"));
 });
 
-test("donation preview removes code, URLs, and full paths before review", () => {
+test("donation preview keeps code, URLs, and paths while masking home-directory usernames", () => {
   const bundle = makeDonationPreview([{ sessionId: "private-session", records: [
     { type: "user", message: { content: "See https://example.com/private and /Users/ada/project/file.ts with `secretCall()`" } },
   ] }], new Map([["private-session", { label: "Session 1" }]]));
   const serialized = JSON.stringify(bundle.sessions);
-  assert.equal(serialized.includes("example.com"), false);
+  assert.equal(serialized.includes("https://example.com/private"), true);
   assert.equal(serialized.includes("/Users/ada"), false);
-  assert.equal(serialized.includes("secretCall"), false);
-  assert.deepEqual(bundle.redactions.map((item) => item.replacement).sort(), ["[INLINE CODE REMOVED]", "[PATH REMOVED]", "[URL REMOVED]"]);
+  assert.equal(serialized.includes("/Users/[REDACTED USER]/project/file.ts"), true);
+  assert.equal(serialized.includes("`secretCall()`"), true);
+  assert.deepEqual(bundle.redactions.map((item) => item.replacement), ["/Users/[REDACTED USER]"]);
 });

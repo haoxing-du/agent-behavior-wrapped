@@ -181,6 +181,13 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .redaction-contexts { padding: 0 15px 12px; }
 .redaction-contexts p { margin: 6px 0; padding: 8px 10px; border-left: 2px solid #cfc5dc; background: white; color: #68616d; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9px; line-height: 1.5; overflow-wrap: anywhere; }
 .redaction-contexts mark, .donation-redacted { border-radius: 4px; padding: 1px 3px; background: #dff2b9; color: #3c571c; font-weight: 800; }
+.broad-redaction-options { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin: 14px 0; padding: 14px 16px; border: 1px solid #ded9e1; border-radius: 14px; background: #fbfafc; }
+.broad-redaction-options > div:first-child { display: flex; flex-direction: column; gap: 4px; }
+.broad-redaction-options strong { color: #3f3944; font-size: 11px; }
+.broad-redaction-options span { color: #7b7481; font-size: 9px; line-height: 1.4; }
+.broad-redaction-options > div:last-child { flex: none; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.broad-redaction-options button { border: 1px solid #d5cedc; border-radius: 999px; padding: 7px 10px; background: white; color: #675f6d; font-size: 9px; font-weight: 800; }
+.broad-redaction-options button.active { border-color: #6c44b8; background: #eee7fb; color: #563292; }
 .custom-redaction-builder { margin: 16px 0; padding: 17px; border: 1px solid #dcd5e4; border-radius: 15px; background: #f7f4f9; }
 .custom-redaction-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; }
 .custom-redaction-heading > div:first-child { display: flex; flex-direction: column; gap: 4px; }
@@ -240,6 +247,8 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
   .analysis-progress > div:first-child { flex-direction: column; gap: 4px; }
   .bundle-message { width: 94%; }
   .custom-redaction-heading, .final-preview-heading { align-items: stretch; flex-direction: column; }
+  .broad-redaction-options { align-items: stretch; flex-direction: column; }
+  .broad-redaction-options > div:last-child { justify-content: flex-start; }
   .redaction-mode-toggle { align-self: flex-start; }
   .custom-redaction-fields, .custom-redaction-fields:has(.custom-flags) { grid-template-columns: 1fr; }
   .custom-redaction-fields button { width: 100%; }

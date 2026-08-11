@@ -450,23 +450,6 @@ export function analyzeSessions(sessionRecords) {
   return { stats, findings: analyzeBehavior(sessionRecords) };
 }
 
-const donationRedactionRules = [
-  { kind: "code", label: "Code block", pattern: /```[\s\S]*?```/g, replacement: "[CODE REMOVED]" },
-  { kind: "inline-code", label: "Inline code", pattern: /`[^`\n]+`/g, replacement: "[INLINE CODE REMOVED]" },
-  { kind: "url", label: "URL", pattern: /https?:\/\/\S+/g, replacement: "[URL REMOVED]" },
-  { kind: "path", label: "Filesystem path", pattern: /(?:[A-Za-z]:\\|\/(?:Users|home|private|tmp|var|opt)\/)[^\s,;:)]+/g, replacement: "[PATH REMOVED]" },
-];
-
-function donationText(value) {
-  const detections = [];
-  let text = String(value || "");
-  for (const rule of donationRedactionRules) text = text.replace(rule.pattern, (match, offset, source) => {
-    detections.push({ ...rule, pattern: undefined, value: match, length: match.length, context: { before: source.slice(Math.max(0, offset - 80), offset), match, after: source.slice(offset + match.length, offset + match.length + 80) } });
-    return rule.replacement;
-  });
-  return { text, detections };
-}
-
 function donationRedactionInventory(detections) {
   const categories = new Map();
   for (const detection of detections) {
@@ -495,9 +478,8 @@ export function makeDonationPreview(sessionRecords, metadataById) {
       if (record.type !== "user" && record.type !== "assistant") return [];
       const value = visibleText(record);
       if (!value) return [];
-      const prepared = donationText(value);
-      const redacted = redactText(prepared.text);
-      detections.push(...prepared.detections, ...redacted.detections);
+      const redacted = redactText(value);
+      detections.push(...redacted.detections);
       return [{ role: record.type, timestamp: record.timestamp || null, text: redacted.text }];
     });
     return { sessionId, label: metadataById.get(sessionId)?.label || `Session ${sessionId.slice(0, 6)}`, messages };

@@ -21,7 +21,7 @@ type DonationSession = { sessionId: string; label: string; messages: DonationMes
 type RedactionContext = { before: string; match: string; after: string };
 type RedactionMatch = { value: string; truncated?: boolean; length: number; count: number; contexts: RedactionContext[] };
 type AutomaticRedaction = { kind: string; label: string; replacement: string; count: number; matches: RedactionMatch[] };
-type CustomRedactionRule = { id: string; mode: "text" | "regex"; pattern: string; flags: string; replacement: string; count: number; contexts: RedactionContext[] };
+type CustomRedactionRule = { id: string; label?: string; mode: "text" | "regex"; pattern: string; flags: string; replacement: string; count: number; contexts: RedactionContext[] };
 type Donation = { format: string; createdLocally: boolean; detectionCount: number; redactions?: AutomaticRedaction[]; sessions: DonationSession[] };
 type Stage = "select" | "report" | "donate";
 type SavedReport = Report & { id: string; createdAt: string; rangeLabel: string; source: string; publicUrl?: string; donationHelperUrl?: string; hosting?: { public: boolean }; privacy: { shareSafe: boolean; containsTranscriptText: boolean; externalTransmission: boolean } };
@@ -281,7 +281,7 @@ function SharedWrapped({ id }: { id: string }) {
     ...(report.phraseCard ? [{ kicker: "Beyond those common phrases, your agent’s favorite was", headline: `“${report.phraseCard.phrase}”`, detail: `It said this ${report.phraseCard.occurrences} time${report.phraseCard.occurrences === 1 ? "" : "s"} across ${report.phraseCard.distinctSessions} session${report.phraseCard.distinctSessions === 1 ? "" : "s"}.`, tone: "quote" }] : []),
     { kicker: "What’s next?", headline: "Your move.", detail: "", tone: "leaderboard", ctas: [
       { href: `/leaderboard/${report.id}${managementToken ? `#manage=${managementToken}` : ""}`, label: "See your place on the leaderboard", primary: true },
-      { href: `${report.donationHelperUrl || `http://localhost:4317/donate/${report.id}`}?mode=standard`, label: "Donate your data for research", note: "Nothing is sent until you review the redactions and explicitly consent. Code, paths, URLs, likely secrets, and common personal details are removed locally." },
+      { href: `${report.donationHelperUrl || `http://localhost:4317/donate/${report.id}`}?mode=standard`, label: "Donate your data for research", note: "Nothing is sent until you review the redactions and explicitly consent. Likely secrets and common personal details are removed locally; code, paths, and URLs remain available for context." },
     ] },
   ];
     return wrappedSlides;
@@ -866,10 +866,16 @@ function applyCustomRedactions(value: string, rules: CustomRedactionRule[]) {
   return rules.reduce((text, rule) => text.replace(customRedactionExpression(rule), rule.replacement), value);
 }
 
+const BROAD_REDACTION_PRESETS = [
+  { id: "preset-code", label: "Code", pattern: "```[\\s\\S]*?```|`[^`\\n]+`", replacement: "[CODE REMOVED]" },
+  { id: "preset-urls", label: "URLs", pattern: "https?:\\/\\/\\S+", replacement: "[URL REMOVED]" },
+  { id: "preset-paths", label: "Full paths", pattern: "(?:[A-Za-z]:\\\\|\\/(?:Users|home|private|tmp|var|opt)\\/)(?:\\[REDACTED USER\\]|[^\\s/]+)(?:\\/[^\\s,;:)]+)*", replacement: "[PATH REMOVED]" },
+] as const;
+
 function renderDonationText(value: string, rules: CustomRedactionRule[]) {
   const replacements = new Set(rules.map((rule) => rule.replacement));
   const custom = [...replacements].filter(Boolean).map(escapeExpression);
-  const automatic = String.raw`\/Users\/\[REDACTED USER\]|\[(?:(?:REDACTED|REMOVED)[^\]]*|(?:CODE|INLINE CODE|URL|PATH) REMOVED)\]`;
+  const automatic = String.raw`\/(?:Users|home)\/\[REDACTED USER\]|\[(?:(?:REDACTED|REMOVED)[^\]]*|(?:CODE|INLINE CODE|URL|PATH) REMOVED)\]`;
   const expression = new RegExp(`(${[automatic, ...custom].join("|")})`, "g");
   return value.split(expression).filter(Boolean).map((part, index) => replacements.has(part) || new RegExp(`^(?:${automatic})$`).test(part)
     ? <mark className="donation-redacted" key={`${part}-${index}`}>{part}</mark>
@@ -943,36 +949,54 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
 
   useEffect(() => { void preview([...initialSelected]); }, []);
 
+  function buildCustomRule({ id, label, mode: ruleMode, pattern, flags, replacement }: Pick<CustomRedactionRule, "id" | "label" | "mode" | "pattern" | "flags" | "replacement">) {
+    if (!bundle) throw new Error("Build the preview before adding a rule.");
+    if (!pattern || pattern.length > 200) throw new Error("Enter text or a pattern between 1 and 200 characters.");
+    if (ruleMode === "regex" && (!/^[imsu]*$/.test(flags) || new Set(flags).size !== flags.length)) throw new Error("Flags may only contain i, m, s, or u once each.");
+    const expression = customRedactionExpression({ mode: ruleMode, pattern, flags });
+    expression.lastIndex = 0;
+    if (expression.test("")) throw new Error("The rule cannot match an empty string.");
+    let count = 0;
+    const contexts: RedactionContext[] = [];
+    for (const session of bundle.sessions) for (const message of session.messages) {
+      const matcher = customRedactionExpression({ mode: ruleMode, pattern, flags });
+      let match;
+      while ((match = matcher.exec(message.text))) {
+        if (++count > 10_000) throw new Error("That rule matches too broadly; narrow it before adding.");
+        if (contexts.length < 6) contexts.push({
+          before: message.text.slice(Math.max(0, match.index - 80), match.index).replace(/\s+/g, " "),
+          match: match[0],
+          after: message.text.slice(match.index + match[0].length, match.index + match[0].length + 80).replace(/\s+/g, " "),
+        });
+      }
+    }
+    if (!count) throw new Error("No matches were found in the current donation.");
+    return { id, label, mode: ruleMode, pattern, flags, replacement, count, contexts };
+  }
+
   function addCustomRule() {
-    if (!bundle) return;
     setCustomStatus("");
     try {
       const pattern = customPattern.trim();
       const flags = customMode === "regex" ? customFlags.trim().replaceAll("g", "") : "";
       const replacement = customReplacement.replace(/[\u0000-\u001f\u007f]/g, "").trim() || "[REDACTED CUSTOM]";
-      if (!pattern || pattern.length > 200) throw new Error("Enter text or a pattern between 1 and 200 characters.");
-      if (customMode === "regex" && (!/^[imsu]*$/.test(flags) || new Set(flags).size !== flags.length)) throw new Error("Flags may only contain i, m, s, or u once each.");
-      const expression = customRedactionExpression({ mode: customMode, pattern, flags });
-      expression.lastIndex = 0;
-      if (expression.test("")) throw new Error("The rule cannot match an empty string.");
-      let count = 0;
-      const contexts: RedactionContext[] = [];
-      for (const session of bundle.sessions) for (const message of session.messages) {
-        const matcher = customRedactionExpression({ mode: customMode, pattern, flags });
-        let match;
-        while ((match = matcher.exec(message.text))) {
-          if (++count > 10_000) throw new Error("That rule matches too broadly; narrow it before adding.");
-          if (contexts.length < 6) contexts.push({
-            before: message.text.slice(Math.max(0, match.index - 80), match.index).replace(/\s+/g, " "),
-            match: match[0],
-            after: message.text.slice(match.index + match[0].length, match.index + match[0].length + 80).replace(/\s+/g, " "),
-          });
-        }
-      }
-      if (!count) throw new Error("No matches were found in the current donation.");
-      setCustomRules((rules) => [...rules, { id: `${Date.now()}-${rules.length}`, mode: customMode, pattern, flags, replacement, count, contexts }]);
-      setCustomPattern(""); setCustomStatus(`Added ${count.toLocaleString()} replacement${count === 1 ? "" : "s"}.`); setConsent(false);
+      const rule = buildCustomRule({ id: `${Date.now()}-${customRules.length}`, mode: customMode, pattern, flags, replacement });
+      setCustomRules((rules) => [...rules, rule]);
+      setCustomPattern(""); setCustomStatus(`Added ${rule.count.toLocaleString()} replacement${rule.count === 1 ? "" : "s"}.`); setConsent(false);
     } catch (caught) { setCustomStatus(caught instanceof Error ? caught.message : "Could not add that rule."); }
+  }
+
+  function toggleBroadRedaction(preset: typeof BROAD_REDACTION_PRESETS[number]) {
+    if (customRules.some((rule) => rule.id === preset.id)) {
+      removeCustomRule(preset.id);
+      return;
+    }
+    setCustomStatus("");
+    try {
+      const rule = buildCustomRule({ ...preset, mode: "regex", flags: "" });
+      setCustomRules((rules) => [...rules, rule]);
+      setCustomStatus(`Added ${rule.count.toLocaleString()} optional ${preset.label.toLowerCase()} replacement${rule.count === 1 ? "" : "s"}.`); setConsent(false);
+    } catch (caught) { setCustomStatus(caught instanceof Error ? caught.message : "Could not add that redaction."); }
   }
 
   function removeCustomRule(id: string) {
@@ -1020,7 +1044,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
     <section className="donation-hero"><span className="eyebrow">Research donation · local review</span><h1>You decide what leaves<br />your machine.</h1><p>Nothing in this donation is transmitted until you check the consent box and press the final Donate button.</p><div className="donation-mode-links"><a className={mode === "standard" ? "active" : ""} href={`/donate/${reportId}?mode=standard`}>Standard redactions</a><a className={mode === "advanced" ? "active" : ""} href={`/donate/${reportId}?mode=advanced`}>Review and customize</a></div></section>
     <div className="donation-layout">
       <section className="donation-controls">
-        <div className="donation-step"><span>1</span><div><h2>{mode === "advanced" ? "Choose what to include" : "Standard redactions applied"}</h2><p>Code, inline code, URLs, paths, likely secrets, and common PII are removed locally.</p></div></div>
+        <div className="donation-step"><span>1</span><div><h2>{mode === "advanced" ? "Choose what to include" : "Standard redactions applied"}</h2><p>High-confidence secrets and personal details are removed locally. Code, URLs, and paths remain so the transcript keeps its context; home-directory usernames are masked.</p></div></div>
         {mode === "advanced" && <><div className="donation-sessions">{sessions.filter((session) => initialSelected.has(session.id)).map((session) => <label key={session.id}><input type="checkbox" checked={chosen.has(session.id)} onChange={() => { const next = new Set(chosen); next.has(session.id) ? next.delete(session.id) : next.add(session.id); setChosen(next); setBundle(null); setConsent(false); }} /><span>{session.label}<small>{session.projectName} · {fmtDate(session.startedAt)}</small></span></label>)}</div><button className="primary full" disabled={!chosen.size || loading} onClick={() => preview()}>{loading ? "Building preview…" : bundle ? "Rebuild redacted preview" : "Build redacted preview"}</button></>}
         {mode === "standard" && <div className="donation-summary"><strong>{bundle ? `${bundle.sessions.length} sessions · ${messageCount} messages` : "Preparing your redacted donation…"}</strong><span>{bundle?.detectionCount || 0} sensitive items automatically removed</span><a href={`/donate/${reportId}?mode=advanced`}>Want more control? Review every message.</a></div>}
         {error && <p className="error">{error}</p>}
@@ -1028,15 +1052,19 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
       <section className={`donation-preview ${bundle ? "ready" : ""}`}>
         <div className="donation-step"><span>2</span><div><h2>{mode === "advanced" ? "Review every line" : "Review the summary"}</h2><p>{mode === "advanced" ? "Automated detection is imperfect. Edit or remove any message directly." : "The standard bundle contains redacted user and assistant prose from the selected sessions."}</p></div></div>
         {!bundle ? <div className="preview-placeholder"><span>⌁</span><p>Your redacted donation is being prepared locally.</p></div> : <>
-          <div className="redaction-banner"><strong>{bundle.detectionCount} likely sensitive item{bundle.detectionCount === 1 ? "" : "s"} removed</strong><span>Secrets, emails, phone numbers, paths, URLs, and code</span></div>
+          <div className="redaction-banner"><strong>{bundle.detectionCount} likely sensitive item{bundle.detectionCount === 1 ? "" : "s"} removed</strong><span>High-confidence secrets and personal details</span></div>
           <AutomaticRedactionReview redactions={bundle.redactions || []} />
           {mode === "advanced" && <>
+            <section className="broad-redaction-options">
+              <div><strong>Optional broad redactions</strong><span>These can remove useful context, so they stay off unless you choose them.</span></div>
+              <div>{BROAD_REDACTION_PRESETS.map((preset) => { const active = customRules.some((rule) => rule.id === preset.id); return <button className={active ? "active" : ""} type="button" aria-pressed={active} key={preset.id} onClick={() => toggleBroadRedaction(preset)}>{active ? "✓ " : "+ "}{preset.label}</button>; })}</div>
+            </section>
             <section className="custom-redaction-builder">
               <div className="custom-redaction-heading"><div><strong>Add another redaction</strong><span>Test plain text or a regular expression against every included message.</span></div><div className="redaction-mode-toggle"><button className={customMode === "text" ? "active" : ""} type="button" onClick={() => { setCustomMode("text"); setCustomStatus(""); }}>Plain text</button><button className={customMode === "regex" ? "active" : ""} type="button" onClick={() => { setCustomMode("regex"); setCustomStatus(""); }}>Regex</button></div></div>
               <div className="custom-redaction-fields"><label>{customMode === "text" ? "Text to remove everywhere" : "Regex pattern"}<input value={customPattern} maxLength={200} onChange={(event) => setCustomPattern(event.target.value)} placeholder={customMode === "text" ? "Acme Corp" : "Acme Corp|acme-internal"} /></label>{customMode === "regex" && <label className="custom-flags">Flags<input value={customFlags} maxLength={4} onChange={(event) => setCustomFlags(event.target.value)} placeholder="i" /></label>}<label>Replacement<input value={customReplacement} maxLength={100} onChange={(event) => setCustomReplacement(event.target.value)} /></label><button type="button" onClick={addCustomRule}>Test and add</button></div>
               {customMode === "regex" && <p className="regex-help"><code>i</code> ignores capitalization · <code>m</code> works line by line · <code>s</code> includes line breaks · <code>u</code> enables Unicode</p>}
               {customStatus && <p className={`custom-redaction-status ${customStatus.startsWith("Added") ? "success" : "error"}`} aria-live="polite">{customStatus}</p>}
-              {customRules.length > 0 && <div className="custom-rule-list">{customRules.map((rule) => <details key={rule.id}><summary><span><strong>{rule.mode === "text" ? `“${rule.pattern}”` : `/${rule.pattern}/g${rule.flags}`}</strong><code>→ {rule.replacement}</code></span><b>{rule.count.toLocaleString()}×</b></summary><div className="redaction-contexts">{rule.contexts.map((context, index) => <p key={index}>…{context.before}<mark>{context.match}</mark>{context.after}…</p>)}</div><button type="button" onClick={() => removeCustomRule(rule.id)}>Remove this rule</button></details>)}</div>}
+              {customRules.length > 0 && <div className="custom-rule-list">{customRules.map((rule) => <details key={rule.id}><summary><span><strong>{rule.label || (rule.mode === "text" ? `“${rule.pattern}”` : `/${rule.pattern}/g${rule.flags}`)}</strong><code>→ {rule.replacement}</code></span><b>{rule.count.toLocaleString()}×</b></summary><div className="redaction-contexts">{rule.contexts.map((context, index) => <p key={index}>…{context.before}<mark>{context.match}</mark>{context.after}…</p>)}</div><button type="button" onClick={() => removeCustomRule(rule.id)}>Remove this rule</button></details>)}</div>}
             </section>
             <label className="leader-check"><input type="checkbox" checked={includeTimestamps} onChange={(event) => { setIncludeTimestamps(event.target.checked); setConsent(false); }} /><span>Include message timestamps in the donation.</span></label>
             <div className="final-preview-heading"><strong>Final conversation preview</strong><span>Highlighted text is redacted. Edit or exclude any message.</span></div>
