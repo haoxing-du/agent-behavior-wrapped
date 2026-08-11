@@ -1,7 +1,8 @@
 import { redactAggregateText } from "./privacy.mjs";
 import { extractCandidateId, OPENROUTER_MODEL, OPENROUTER_PROVIDER_PREFERENCES, PHRASE_JUDGE_NAME } from "./phrase-card.mjs";
+import { BEHAVIOR_WRAPPED_ORIGIN } from "./origins.mjs";
 
-export const FRUSTRATION_JUDGE_RELAY_URL = "https://agent-behavior-wrapped-judge.haoxingdu.workers.dev/v1/frustration-quote";
+export const FRUSTRATION_JUDGE_RELAY_URL = `${BEHAVIOR_WRAPPED_ORIGIN}/v1/frustration-quote`;
 const MAX_CANDIDATES = 40;
 const MAX_QUOTE_LENGTH = 150;
 const JUDGE_TIMEOUT_MS = 60_000;

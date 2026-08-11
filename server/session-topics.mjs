@@ -1,8 +1,9 @@
 import { redactAggregateText } from "./privacy.mjs";
 import { OPENROUTER_MODEL, OPENROUTER_PROVIDER_PREFERENCES, PHRASE_JUDGE_NAME } from "./phrase-card.mjs";
 import { judgeError, judgeRequestDetails, judgeResponseDetails } from "./judge-debug.mjs";
+import { BEHAVIOR_WRAPPED_ORIGIN } from "./origins.mjs";
 
-export const SESSION_TOPIC_RELAY_URL = "https://agent-behavior-wrapped-judge.haoxingdu.workers.dev/v1/session-topics";
+export const SESSION_TOPIC_RELAY_URL = `${BEHAVIOR_WRAPPED_ORIGIN}/v1/session-topics`;
 export const SESSION_TOPIC_MAX_CANDIDATES = 250;
 export const SESSION_TOPICS = ["Coding", "Writing", "Personal advice", "Research & search", "Planning", "Data & analysis", "Other"];
 const MAX_OPENING_MESSAGES = 3;

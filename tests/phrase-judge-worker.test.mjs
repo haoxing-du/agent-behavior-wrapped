@@ -13,8 +13,8 @@ const candidate = {
   end_boundary_rate: 1,
 };
 
-function relayRequest(body = { candidates: [candidate] }, headers = {}) {
-  return new Request("https://relay.example/v1/phrase-card", {
+function relayRequest(body = { candidates: [candidate] }, headers = {}, url = "https://relay.example/v1/phrase-card") {
+  return new Request(url, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -89,6 +89,49 @@ test("worker accepts only the narrow redacted aggregate schema", () => {
   assert.equal(validateRelayPayload({ candidates: [{ ...candidate, phrase: "/Users/private/project" }] }), null);
   assert.equal(validateRelayPayload({ candidates: [{ ...candidate, extra: "not allowed" }] }), null);
   assert.equal(validateRelayPayload({ candidates: Array.from({ length: 101 }, () => candidate) }), null);
+});
+
+test("worker redirects human pages to the canonical domain", async () => {
+  const legacyResponse = await handleRequest(
+    new Request("https://agent-behavior-wrapped-judge.haoxingdu.workers.dev/w/shareSafe1234"),
+    env(),
+  );
+  assert.equal(legacyResponse.status, 308);
+  assert.equal(legacyResponse.headers.get("location"), "https://behaviorwrapped.com/w/shareSafe1234");
+
+  const wwwResponse = await handleRequest(new Request("https://www.behaviorwrapped.com/"), env());
+  assert.equal(wwwResponse.status, 308);
+  assert.equal(wwwResponse.headers.get("location"), "https://behaviorwrapped.com/");
+});
+
+test("worker serves the landing page from assets on the canonical domain", async () => {
+  let assetUrl;
+  const response = await handleRequest(new Request("https://behaviorwrapped.com/"), {
+    ...env(),
+    ASSETS: {
+      fetch(request) {
+        assetUrl = request.url;
+        return new Response("landing page");
+      },
+    },
+  });
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), "landing page");
+  assert.equal(assetUrl, "https://behaviorwrapped.com/");
+});
+
+test("worker keeps legacy API clients working without a redirect", async () => {
+  const request = relayRequest(
+    undefined,
+    {},
+    "https://agent-behavior-wrapped-judge.haoxingdu.workers.dev/v1/phrase-card",
+  );
+  const response = await handleRequest(request, env(), async () => new Response(JSON.stringify({
+    model: OPENROUTER_MODEL,
+    choices: [{ message: { content: JSON.stringify({ candidate_id: "phrase-1" }) } }],
+  }), { status: 200, headers: { "content-type": "application/json" } }));
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).candidate_id, "phrase-1");
 });
 
 test("worker validates and judges only narrow share-safe frustration quotes", async () => {

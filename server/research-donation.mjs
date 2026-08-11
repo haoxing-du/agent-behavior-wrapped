@@ -1,6 +1,7 @@
 import { encryptResearchDonation } from "./research-donation-crypto.mjs";
+import { BEHAVIOR_WRAPPED_ORIGIN } from "./origins.mjs";
 
-export const RESEARCH_DONATION_URL = "https://agent-behavior-wrapped-judge.haoxingdu.workers.dev/v1/research-donations";
+export const RESEARCH_DONATION_URL = `${BEHAVIOR_WRAPPED_ORIGIN}/v1/research-donations`;
 const REQUEST_TIMEOUT_MS = 30_000;
 
 export async function submitResearchDonation(value, { clientId, endpoint = RESEARCH_DONATION_URL, fetchImpl = fetch } = {}) {

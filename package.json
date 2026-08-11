@@ -1,6 +1,6 @@
 {
   "name": "behavior-wrapped",
-  "version": "0.2.16",
+  "version": "0.2.17",
   "description": "A private, local-first Wrapped report for Claude Code and Codex behavior.",
   "license": "Apache-2.0",
   "type": "module",
@@ -9,7 +9,7 @@
     "type": "git",
     "url": "git+https://github.com/haoxing-du/agent-behavior-wrapped.git"
   },
-  "homepage": "https://github.com/haoxing-du/agent-behavior-wrapped#readme",
+  "homepage": "https://behaviorwrapped.com",
   "bugs": {
     "url": "https://github.com/haoxing-du/agent-behavior-wrapped/issues"
   },
