@@ -3,7 +3,7 @@ import { buildOpenRouterFrustrationRequest, isShareSafeFrustrationQuote } from "
 import { buildOpenRouterInteractionToneRequest, extractInteractionToneSelection, interactionToneBatches, INTERACTION_TONE_MAX_CANDIDATES, isShareSafeInteractionText, mergeInteractionToneSelections, restoreInteractionToneIds } from "../server/interaction-tone.mjs";
 import { buildOpenRouterSessionTopicRequest, extractSessionTopicSelection, isShareSafeTopicMessage, SESSION_TOPIC_MAX_CANDIDATES } from "../server/session-topics.mjs";
 import { buildOpenRouterWorkaroundRequest, extractWorkaroundSelection, validateWorkaroundChunks } from "../server/instrumental-workarounds.mjs";
-import { BEHAVIOR_WRAPPED_HOST, BEHAVIOR_WRAPPED_ORIGIN, BEHAVIOR_WRAPPED_WWW_HOST, LEGACY_BEHAVIOR_WRAPPED_HOST } from "../server/origins.mjs";
+import { BEHAVIOR_WRAPPED_HOST, BEHAVIOR_WRAPPED_WWW_HOST, LEGACY_BEHAVIOR_WRAPPED_HOST } from "../server/origins.mjs";
 import { sanitizePublicReport } from "../server/public-report-schema.mjs";
 import { MAX_ENCRYPTED_DONATION_BYTES, sanitizeEncryptedDonationEnvelope } from "../server/encrypted-donation-schema.mjs";
 export { sanitizePublicReport } from "../server/public-report-schema.mjs";
@@ -554,15 +554,6 @@ function invalidJudgeError(judgeKind) {
   return "Card judge returned an invalid selection.";
 }
 
-async function interactionToneCacheEntry(candidates) {
-  const cache = globalThis.caches?.default;
-  if (!cache || !globalThis.crypto?.subtle) return null;
-  const bytes = new TextEncoder().encode(JSON.stringify({ model: OPENROUTER_MODEL, candidates }));
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  const hash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-  return { cache, key: new Request(`${BEHAVIOR_WRAPPED_ORIGIN}/.cache/interaction-tone-v3/${hash}`) };
-}
-
 function isHostedAppPath(pathname) {
   return pathname === "/" || /^\/(?:w|leaderboard|donate)\/[A-Za-z0-9_-]{8,32}$/.test(pathname);
 }
@@ -627,13 +618,6 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
   const candidates = workaroundRoute ? validateWorkaroundRelayPayload(body) : sessionTopicRoute ? validateSessionTopicRelayPayload(body) : interactionToneRoute ? validateInteractionToneRelayPayload(body) : frustrationRoute ? validateFrustrationRelayPayload(body) : validateRelayPayload(body);
   if (!candidates) return json({ error: "Invalid redacted analysis payload." }, 400);
 
-  const toneCache = interactionToneRoute ? await interactionToneCacheEntry(candidates) : null;
-  const cachedTone = toneCache ? await toneCache.cache.match(toneCache.key) : null;
-  if (cachedTone) {
-    const cachedBody = await cachedTone.json().catch(() => null);
-    if (cachedBody && extractInteractionToneSelection(cachedBody, candidates)) return json(cachedBody);
-  }
-
   const clientHeader = request.headers.get("x-behavior-wrapped-client") || "";
   const networkId = request.headers.get("cf-connecting-ip") || "unknown";
   const clientKey = /^[a-f0-9]{32}$/.test(clientHeader) ? clientHeader : networkId;
@@ -656,7 +640,6 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
       model: results[0]?.body?.model || OPENROUTER_MODEL,
       usage: mergedUsage(results.map((result) => result.body)),
     };
-    if (toneCache) await toneCache.cache.put(toneCache.key, new Response(JSON.stringify(responseBody), { headers: { "content-type": "application/json", "cache-control": "public, max-age=604800" } }));
     return json(responseBody);
   }
 

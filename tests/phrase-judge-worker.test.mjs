@@ -247,6 +247,35 @@ test("worker validates interaction candidates and returns classifications withou
   assert.deepEqual(await response.json(), { ...expectedSelection, model: OPENROUTER_MODEL, usage: null });
 });
 
+test("worker always sends repeated interaction-tone requests upstream", async () => {
+  const originalCaches = Object.getOwnPropertyDescriptor(globalThis, "caches");
+  let cacheReads = 0;
+  let upstreamCalls = 0;
+  Object.defineProperty(globalThis, "caches", {
+    configurable: true,
+    value: { default: { match: async () => { cacheReads++; return null; }, put: async () => {} } },
+  });
+  const selection = {
+    classifications: [{ candidate_id: "interaction-1", frustrated: true, grateful: false }],
+    funniest_frustration_candidate_id: "interaction-1",
+  };
+  try {
+    const fetchImpl = async () => {
+      upstreamCalls++;
+      return new Response(JSON.stringify({ model: OPENROUTER_MODEL, choices: [{ message: { content: JSON.stringify(selection) } }] }), { status: 200, headers: { "content-type": "application/json" } });
+    };
+    for (let run = 0; run < 2; run++) {
+      const response = await handleRequest(interactionRequest(), env(), fetchImpl);
+      assert.equal(response.status, 200);
+    }
+  } finally {
+    if (originalCaches) Object.defineProperty(globalThis, "caches", originalCaches);
+    else delete globalThis.caches;
+  }
+  assert.equal(cacheReads, 0);
+  assert.equal(upstreamCalls, 2);
+});
+
 test("worker retries one malformed interaction-tone completion", async () => {
   let calls = 0;
   const selection = {
