@@ -1148,6 +1148,23 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
   </main>;
 }
 
+function LandingPage() {
+  const command = "npx behavior-wrapped@latest";
+  const [copied, setCopied] = useState(false);
+
+  async function copyCommand() {
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return <main className="landing-page"><div><h1>Behavior Wrapped</h1><div className="landing-command"><code>{command}</code><button type="button" onClick={copyCommand} aria-label="Copy npx command">{copied ? "Copied!" : "Copy"}</button></div></div></main>;
+}
+
 export default function App() {
   const leaderboardId = window.location.pathname.match(/^\/leaderboard\/([A-Za-z0-9_-]{8,32})$/)?.[1];
   if (leaderboardId) return <LeaderboardView id={leaderboardId} />;
@@ -1155,5 +1172,5 @@ export default function App() {
   if (donationId) return <SavedDonationRoute id={donationId} />;
   const sharedId = window.location.pathname.match(/^\/w\/([A-Za-z0-9_-]{8,32})$/)?.[1];
   if (sharedId) return <SharedWrapped id={sharedId} />;
-  return <main className="landing-page"><div><h1>Behavior Wrapped</h1><code>npx behavior-wrapped@latest</code></div></main>;
+  return <LandingPage />;
 }
