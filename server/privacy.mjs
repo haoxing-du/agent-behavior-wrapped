@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 const SECRET_PATTERNS = [
   [/\bsk[-_][a-z0-9_-]{16,}\b/gi, "[REDACTED SECRET]"],
   [/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, "[REDACTED AWS KEY]"],
@@ -44,7 +42,16 @@ function normalizedRedactionKind(value) {
 }
 
 function redactionMatchId(kind, value) {
-  return createHash("sha256").update(`${normalizedRedactionKind(kind)}\0${value}`).digest("hex").slice(0, 24);
+  const input = `${normalizedRedactionKind(kind)}\0${value}`;
+  return [0x811c9dc5, 0x9e3779b9, 0x85ebca6b].map((seed) => {
+    let hash = seed;
+    for (let index = 0; index < input.length; index++) {
+      hash ^= input.charCodeAt(index);
+      hash = Math.imul(hash, 0x01000193);
+      hash ^= hash >>> 13;
+    }
+    return (hash >>> 0).toString(16).padStart(8, "0");
+  }).join("");
 }
 
 function detectionDetails({ kind, label, value, replacement, offset, source, enabled = true }) {
