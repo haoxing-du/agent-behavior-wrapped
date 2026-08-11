@@ -100,6 +100,12 @@ test("worker validates and judges only narrow share-safe frustration quotes", as
     return new Response(JSON.stringify({ model: OPENROUTER_MODEL, choices: [{ message: { content: "{\"candidate_id\":\"frustration-1\"}" } }] }), { status: 200, headers: { "content-type": "application/json" } });
   });
   assert.equal(response.status, 200);
+  assert.deepEqual(upstreamBody.provider, {
+    data_collection: "deny",
+    zdr: true,
+    order: ["Azure"],
+    allow_fallbacks: false,
+  });
   assert.deepEqual(upstreamBody.response_format.json_schema.schema.properties.candidate_id.enum, ["frustration-1"]);
   assert.equal(upstreamBody.messages[0].content.includes("funniest supplied user call-out"), true);
   assert.deepEqual(await response.json(), { candidate_id: "frustration-1", model: OPENROUTER_MODEL, usage: null });

@@ -1,8 +1,9 @@
 import { redactAggregateText } from "./privacy.mjs";
 import { judgeError, judgeRequestDetails, judgeResponseDetails } from "./judge-debug.mjs";
 
-export const OPENROUTER_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free";
-export const PHRASE_JUDGE_NAME = "Nemotron 3 Ultra";
+export const OPENROUTER_MODEL = "openai/gpt-5.6-luna";
+export const PHRASE_JUDGE_NAME = "GPT-5.6 Luna";
+export const OPENROUTER_PROVIDER_PREFERENCES = Object.freeze({ data_collection: "deny", zdr: true });
 export const PHRASE_JUDGE_RELAY_URL = "https://agent-behavior-wrapped-judge.haoxingdu.workers.dev/v1/phrase-card";
 
 const segmenter = new Intl.Segmenter("en", { granularity: "sentence" });
@@ -153,10 +154,10 @@ export function buildOpenRouterJudgeRequest(candidates, model = OPENROUTER_MODEL
   assertSafePayload(payload);
   return {
     model,
+    provider: OPENROUTER_PROVIDER_PREFERENCES,
     temperature: 0,
-    // This is a small editorial classification task. Nemotron enables high-effort
-    // reasoning by default, so merely hiding its reasoning still generates hundreds
-    // of unnecessary tokens before returning the candidate ID.
+    // These are bounded classification tasks, so additional reasoning would add
+    // latency and cost without changing the requested output contract.
     reasoning: { effort: "none", exclude: true },
     max_tokens: PHRASE_JUDGE_MAX_TOKENS,
     messages: [

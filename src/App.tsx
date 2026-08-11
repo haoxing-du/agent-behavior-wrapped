@@ -760,8 +760,8 @@ function Selection({ catalog, selected, setSelected, onAnalyze, loading, error }
 
         <div className={`judge-option judge-required ${catalog.phraseJudge?.available ? "" : "unavailable"}`}>
           <span className="network-mark">↗</span>
-          <span><strong>Nemotron picks the favorite phrase and judges interaction, usage themes, and workarounds</strong><small>Workaround discovery finds explicit blockers locally, then sends only bounded context windows around them. Code, raw tool outputs, paths, likely secrets, and PII are removed before those windows go through our rate-limited relay to OpenRouter’s free NVIDIA endpoint.</small></span>
-          <em>Nemotron 3 Ultra · shared relay</em>
+          <span><strong>GPT-5.6 Luna picks the favorite phrase and judges interaction, usage themes, and workarounds</strong><small>Workaround discovery finds explicit blockers locally, then sends only bounded context windows around them. Code, raw tool outputs, paths, likely secrets, and PII are removed before those windows go through our rate-limited relay to OpenRouter with zero-data-retention routing.</small></span>
+          <em>GPT-5.6 Luna · ZDR shared relay</em>
         </div>
 
         <div className="analyze-bar">

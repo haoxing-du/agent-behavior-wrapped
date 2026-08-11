@@ -18,6 +18,7 @@ test("remote analysis consent defaults to yes and accepts an explicit yes", asyn
 });
 
 test("remote analysis consent identifies the model and provider", () => {
-  assert.match(remoteAnalysisConsentText, /Nemotron 3 Ultra/);
+  assert.match(remoteAnalysisConsentText, /GPT-5\.6 Luna/);
   assert.match(remoteAnalysisConsentText, /OpenRouter/);
+  assert.match(remoteAnalysisConsentText, /zero-data-retention/);
 });

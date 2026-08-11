@@ -1,5 +1,5 @@
 import { redactAggregateText } from "./privacy.mjs";
-import { OPENROUTER_MODEL, PHRASE_JUDGE_NAME } from "./phrase-card.mjs";
+import { OPENROUTER_MODEL, OPENROUTER_PROVIDER_PREFERENCES, PHRASE_JUDGE_NAME } from "./phrase-card.mjs";
 import { judgeError, judgeRequestDetails, judgeResponseDetails } from "./judge-debug.mjs";
 
 export const INTERACTION_TONE_RELAY_URL = "https://agent-behavior-wrapped-judge.haoxingdu.workers.dev/v1/interaction-tone";
@@ -106,6 +106,7 @@ export function buildOpenRouterInteractionToneRequest(candidates, model = OPENRO
   const ids = candidates.map((candidate) => candidate.candidate_id);
   return {
     model,
+    provider: OPENROUTER_PROVIDER_PREFERENCES,
     temperature: 0,
     seed: 1729,
     reasoning: { effort: "none", exclude: true },

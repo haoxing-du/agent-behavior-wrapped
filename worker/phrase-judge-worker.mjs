@@ -424,6 +424,14 @@ async function readLimitedBody(request, maximumBytes = MAX_BODY_BYTES) {
 }
 
 async function requestOpenRouter(env, fetchImpl, requestBody) {
+  const routedRequestBody = {
+    ...requestBody,
+    provider: {
+      ...(requestBody.provider || {}),
+      order: ["Azure"],
+      allow_fallbacks: false,
+    },
+  };
   let upstream;
   try {
     upstream = await fetchImpl("https://openrouter.ai/api/v1/chat/completions", {
@@ -433,7 +441,7 @@ async function requestOpenRouter(env, fetchImpl, requestBody) {
         authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
         "x-title": "Behavior Wrapped",
       },
-      body: JSON.stringify(requestBody),
+      body: JSON.stringify(routedRequestBody),
     });
   } catch (error) {
     console.error(JSON.stringify({
@@ -483,10 +491,10 @@ async function judgeInteractionToneBatch(env, fetchImpl, batch) {
 async function interactionToneCacheEntry(candidates) {
   const cache = globalThis.caches?.default;
   if (!cache || !globalThis.crypto?.subtle) return null;
-  const bytes = new TextEncoder().encode(JSON.stringify(candidates));
+  const bytes = new TextEncoder().encode(JSON.stringify({ model: OPENROUTER_MODEL, candidates }));
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   const hash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-  return { cache, key: new Request(`https://agent-behavior-wrapped-judge.haoxingdu.workers.dev/.cache/interaction-tone-v2/${hash}`) };
+  return { cache, key: new Request(`https://agent-behavior-wrapped-judge.haoxingdu.workers.dev/.cache/interaction-tone-v3/${hash}`) };
 }
 
 export async function handleRequest(request, env, fetchImpl = fetch) {

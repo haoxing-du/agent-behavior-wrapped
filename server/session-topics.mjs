@@ -1,5 +1,5 @@
 import { redactAggregateText } from "./privacy.mjs";
-import { OPENROUTER_MODEL, PHRASE_JUDGE_NAME } from "./phrase-card.mjs";
+import { OPENROUTER_MODEL, OPENROUTER_PROVIDER_PREFERENCES, PHRASE_JUDGE_NAME } from "./phrase-card.mjs";
 import { judgeError, judgeRequestDetails, judgeResponseDetails } from "./judge-debug.mjs";
 
 export const SESSION_TOPIC_RELAY_URL = "https://agent-behavior-wrapped-judge.haoxingdu.workers.dev/v1/session-topics";
@@ -130,6 +130,7 @@ export function buildOpenRouterSessionTopicRequest(candidates, model = OPENROUTE
   const ids = candidates.map((candidate) => candidate.candidate_id);
   return {
     model,
+    provider: OPENROUTER_PROVIDER_PREFERENCES,
     temperature: 0,
     reasoning: { effort: "none", exclude: true },
     max_tokens: Math.min(8192, Math.max(512, candidates.length * 56)),

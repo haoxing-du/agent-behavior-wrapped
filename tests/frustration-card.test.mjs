@@ -26,6 +26,7 @@ test("uses a strict candidate-ID schema for the funniest quote judge", () => {
   const candidates = [{ candidate_id: "frustration-1", quote: safeQuote }];
   const request = buildOpenRouterFrustrationRequest(candidates);
   assert.deepEqual(request.reasoning, { effort: "none", exclude: true });
+  assert.deepEqual(request.provider, { data_collection: "deny", zdr: true });
   assert.deepEqual(request.response_format.json_schema.schema.properties.candidate_id.enum, ["frustration-1"]);
   assert.equal(request.messages[0].content.includes("funniest supplied user call-out"), true);
   assert.equal(isShareSafeFrustrationQuote("Come on, see https://private.example"), false);

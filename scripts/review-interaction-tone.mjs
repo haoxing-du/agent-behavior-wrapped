@@ -25,7 +25,7 @@ function section(title, matches) {
 
 const markdown = `# Private interaction-tone review
 
-Generated locally from ${sessions.length} sessions in the latest 30-day window. Nemotron classified ${result.candidateMessages} occurrences represented by ${candidates.length} redacted, deduplicated candidates. Repeated identical excerpts appear once with an occurrence count.
+Generated locally from ${sessions.length} sessions in the latest 30-day window. GPT-5.6 Luna classified ${result.candidateMessages} occurrences represented by ${candidates.length} redacted, deduplicated candidates. Repeated identical excerpts appear once with an occurrence count.
 
 This file is private, gitignored, and may contain excerpts from your session history.
 

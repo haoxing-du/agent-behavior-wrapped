@@ -1,6 +1,6 @@
 import { displayModelName } from "./model-names.mjs";
 import { redactAggregateText } from "./privacy.mjs";
-import { OPENROUTER_MODEL } from "./phrase-card.mjs";
+import { OPENROUTER_MODEL, OPENROUTER_PROVIDER_PREFERENCES } from "./phrase-card.mjs";
 import { judgeError, judgeRequestDetails, judgeResponseDetails } from "./judge-debug.mjs";
 import { semanticActions, semanticMethods, semanticToolUse } from "./tool-semantics.mjs";
 
@@ -287,6 +287,7 @@ export function buildOpenRouterWorkaroundRequest(chunks, model = OPENROUTER_MODE
   const blockerOrder = blockerIds.map((id, index) => `${index + 1}. ${id}`).join("\n");
   return {
     model,
+    provider: OPENROUTER_PROVIDER_PREFERENCES,
     temperature: 0,
     reasoning: { effort: reasoningEffort, exclude: true },
     max_tokens: 8192,

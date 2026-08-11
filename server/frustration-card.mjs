@@ -1,5 +1,5 @@
 import { redactAggregateText } from "./privacy.mjs";
-import { extractCandidateId, OPENROUTER_MODEL, PHRASE_JUDGE_NAME } from "./phrase-card.mjs";
+import { extractCandidateId, OPENROUTER_MODEL, OPENROUTER_PROVIDER_PREFERENCES, PHRASE_JUDGE_NAME } from "./phrase-card.mjs";
 
 export const FRUSTRATION_JUDGE_RELAY_URL = "https://agent-behavior-wrapped-judge.haoxingdu.workers.dev/v1/frustration-quote";
 const MAX_CANDIDATES = 40;
@@ -97,6 +97,7 @@ function buildOpenRouterQuoteRequest(candidates, { model, prompt, schemaName, pr
   const payload = JSON.stringify(candidates);
   return {
     model,
+    provider: OPENROUTER_PROVIDER_PREFERENCES,
     temperature: 0,
     reasoning: { effort: "none", exclude: true },
     max_tokens: 32,
