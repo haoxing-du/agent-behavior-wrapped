@@ -475,6 +475,16 @@ function donationRedactionInventory(detections) {
   }).sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
 }
 
+function donationSessionSummary(messages, suppliedSummary) {
+  const provided = String(suppliedSummary || "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+  if (provided) return provided.slice(0, 140);
+  const opening = messages.find((message) => message.role === "user")?.text || messages[0]?.text || "Session transcript";
+  const compact = opening.replace(/\[(?:REDACTED|REMOVED)[^\]]*\]/g, "private detail").replace(/\s+/g, " ").trim();
+  if (compact.length <= 110) return compact;
+  const shortened = compact.slice(0, 109);
+  return `${shortened.slice(0, Math.max(shortened.lastIndexOf(" "), 1)).trim()}…`;
+}
+
 export function makeDonationPreview(sessionRecords, metadataById, { disabledRedactions = [], disabledMatches = [] } = {}) {
   const detections = [];
   const sessions = sessionRecords.map(({ sessionId, records }) => {
@@ -486,7 +496,8 @@ export function makeDonationPreview(sessionRecords, metadataById, { disabledReda
       detections.push(...redacted.detections);
       return [{ role: record.type, timestamp: record.timestamp || null, text: redacted.text }];
     });
-    return { sessionId, label: metadataById.get(sessionId)?.label || `Session ${sessionId.slice(0, 6)}`, messages };
+    const metadata = metadataById.get(sessionId);
+    return { sessionId, label: metadata?.label || `Session ${sessionId.slice(0, 6)}`, summary: donationSessionSummary(messages, metadata?.summary), messages };
   });
   const redactions = donationRedactionInventory(detections);
   const detectionCount = detections.filter((detection) => detection.enabled !== false).length;

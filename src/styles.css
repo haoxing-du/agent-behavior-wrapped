@@ -612,6 +612,35 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .donation-preview .consent { border: 1px solid #ddd6df; background: #f0ebf1; color: #4f4854; }
 .donation-page .primary { box-shadow: none; }
 .donation-page .export-button { background: #627c25; color: white; }
+.donation-step > span { flex: 0 0 30px; width: 30px; min-width: 30px; height: 30px; aspect-ratio: 1; border-radius: 50%; }
+.donation-step h2 { margin-top: 2px; font-size: 20px; line-height: 1.15; }
+.donation-step p { font-size: 12.5px; line-height: 1.5; }
+.donation-summary { gap: 6px; margin-top: 18px; padding: 15px 16px; border-radius: 13px; }
+.donation-summary strong { font-size: 16px; line-height: 1.25; }
+.donation-summary span { font-size: 12px; line-height: 1.35; }
+.donation-summary a { margin-top: 3px; font-size: 11px; line-height: 1.35; }
+.donation-sessions label { font-size: 13px; }
+.donation-sessions small { font-size: 10.5px; }
+.redaction-list-heading, .automatic-redaction-row summary strong, .broad-redaction-options strong { font-size: 12px; }
+.automatic-redaction-help, .automatic-redaction-row summary code, .automatic-match summary code, .automatic-match summary span, .broad-redaction-options span { font-size: 10px; }
+.bundle-session { padding: 0; }
+.bundle-session-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 14px 16px; }
+.bundle-session-include { min-width: 0; display: flex; align-items: center; gap: 11px; cursor: pointer; }
+.bundle-session-include input { flex: 0 0 auto; width: 16px; height: 16px; margin: 0; accent-color: #754ba8; }
+.bundle-session-include > span { min-width: 0; display: grid; gap: 4px; }
+.bundle-session-include strong { font-size: 12px; }
+.bundle-session-include small { overflow: hidden; color: #716977; font-size: 10.5px; font-weight: 500; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
+.bundle-session-count { color: #81798a; font-size: 10px; white-space: nowrap; }
+.bundle-session-heading > button { border: 1px solid #c9c0cc; border-radius: 999px; padding: 7px 10px; background: #fffdf8; color: #754ba8; font-size: 10px; font-weight: 800; white-space: nowrap; }
+.bundle-session.excluded { background: rgba(240,235,241,.55); }
+.bundle-session.excluded .bundle-session-include strong, .bundle-session.excluded .bundle-session-include small { color: #928a96; }
+.bundle-session-heading > button:disabled { border-color: transparent; background: transparent; color: #9b949f; cursor: default; }
+.bundle-chat { padding: 16px; border-top: 1px solid #e1dbe3; }
+.donation-message-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; width: 100%; padding-right: 0; }
+.donation-message-row.assistant .bundle-message { justify-self: start; }
+.donation-message-row.user .bundle-message { justify-self: end; }
+.donation-message-row .remove-message { position: static; grid-column: 2; grid-row: 1; align-self: start; margin-top: 20px; }
+.bundle-final-text, .bundle-bubble textarea { font-size: 12px; }
 
 @media (max-width: 900px) {
   .donation-layout { grid-template-columns: 1fr; }
@@ -626,4 +655,10 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
   .automatic-redaction-row summary { gap: 9px; padding-inline: 11px; }
   .automatic-redaction-row .automatic-match summary { align-items: center; flex-direction: row; }
   .automatic-match summary code { white-space: normal; overflow-wrap: anywhere; }
+  .bundle-session-heading { grid-template-columns: minmax(0, 1fr) auto; gap: 9px; padding: 13px 12px; }
+  .bundle-session-count { display: none; }
+  .bundle-session-heading > button { padding-inline: 8px; }
+  .bundle-chat { padding: 13px 10px; }
+  .donation-message-row { gap: 6px; }
+  .donation-message-row .remove-message { padding-inline: 8px; }
 }

@@ -306,6 +306,14 @@ test("donation preview keeps code, URLs, and paths while masking home-directory 
   assert.equal(serialized.includes("/Users/[REDACTED USER]/project/file.ts"), true);
   assert.equal(serialized.includes("`secretCall()`"), true);
   assert.deepEqual(bundle.redactions.map((item) => item.replacement), ["/Users/[REDACTED USER]"]);
+  assert.equal(bundle.sessions[0].summary, "See https://example.com/private and /Users/private detail/project/file.ts with `secretCall()`");
+});
+
+test("donation preview uses a supplied privacy-safe session summary", () => {
+  const bundle = makeDonationPreview([{ sessionId: "summary-session", records: [
+    { type: "user", message: { content: "Please debug the checkout form." } },
+  ] }], new Map([["summary-session", { label: "Session 1", summary: "Debugging checkout form validation" }]]));
+  assert.equal(bundle.sessions[0].summary, "Debugging checkout form validation");
 });
 
 test("donation preview can keep an unchecked automatic redaction category", () => {

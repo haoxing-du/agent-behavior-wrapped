@@ -17,7 +17,7 @@ type StockPhraseStat = { phrase: string; count: number };
 type WorkaroundCard = { count: number; models: { name: string; count: number }[]; example?: string };
 type Report = { stats: { sessions: number; activeDays: number; durationMinutes: number; prompts: number; toolCalls: number; interruptions: number; tokens: number; agentWords?: number; userWords?: number; agentUserWordRatio?: number | null; averageAgentResponseWords?: number; averageUserInputWords?: number; longestSessionTurns?: number; sessionTurnCounts?: number[]; interactionTone?: InteractionTone; stockPhrases?: StockPhraseStat[]; outputLanguages?: LanguageStat[]; languageAnomaly?: LanguageAnomaly | null; topics?: TopicStat[]; tools: { name: string; count: number }[]; agents: AgentStat[]; models: ModelStat[]; estimatedCostUsd: number; costEstimateMethod: string }; findings: Finding[]; phraseCard?: PhraseCard | null; interactionCard?: InteractionCard | null; workaroundCard?: WorkaroundCard | null };
 type DonationMessage = { role: string; timestamp: string | null; text: string };
-type DonationSession = { sessionId: string; label: string; messages: DonationMessage[] };
+type DonationSession = { sessionId: string; label: string; summary: string; messages: DonationMessage[] };
 type RedactionContext = { before: string; match: string; after: string };
 type RedactionMatch = { id: string; value: string; truncated?: boolean; length: number; enabled: boolean; count: number; contexts: RedactionContext[] };
 type AutomaticRedaction = { kind: string; label: string; replacement: string; enabled: boolean; enabledCount: number; count: number; matches: RedactionMatch[] };
@@ -925,6 +925,7 @@ function DonationMessageEditor({ message, rules, onChange }: { message: Donation
 function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { reportId: string; mode: "standard" | "advanced"; sessions: Session[]; initialSelected: Set<string>; onBack: () => void }) {
   const [chosen, setChosen] = useState(new Set(initialSelected));
   const [bundle, setBundle] = useState<Donation | null>(null);
+  const [reviewSessions, setReviewSessions] = useState<DonationSession[]>([]);
   const [disabledAutomatic, setDisabledAutomatic] = useState(new Set<string>());
   const [disabledAutomaticMatches, setDisabledAutomaticMatches] = useState(new Set<string>());
   const [customRules, setCustomRules] = useState<CustomRedactionRule[]>([]);
@@ -945,7 +946,13 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
     try {
       const response = await fetch("/api/donation-preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reportId, sessionIds: ids, disabledRedactions, disabledMatches }) });
       if (!response.ok) throw new Error((await response.json()).error || "Preview failed");
-      setBundle(await response.json());
+      const nextBundle = await response.json() as Donation;
+      setBundle(nextBundle);
+      setReviewSessions((current) => {
+        const byId = new Map(current.map((session) => [session.sessionId, session]));
+        for (const session of nextBundle.sessions) byId.set(session.sessionId, session);
+        return sessions.filter((session) => initialSelected.has(session.id)).flatMap((session) => byId.has(session.id) ? [byId.get(session.id)!] : []);
+      });
       setDisabledAutomatic(new Set(disabledRedactions));
       setDisabledAutomaticMatches(new Set(disabledMatches));
       setCustomRules([]); setCustomStatus("");
@@ -973,6 +980,18 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
       nextMatches.delete(match.id);
     }
     void preview([...chosen], [...nextKinds], [...nextMatches]);
+  }
+
+  function toggleDonationSession(sessionId: string) {
+    const next = new Set(chosen);
+    next.has(sessionId) ? next.delete(sessionId) : next.add(sessionId);
+    setChosen(next); setConsent(false); setOpenSession(null);
+    if (!next.size) {
+      setBundle((current) => current ? { ...current, detectionCount: 0, redactions: [], sessions: [] } : current);
+      setCustomRules([]); setCustomStatus("");
+      return;
+    }
+    void preview([...next]);
   }
 
   function buildCustomRule({ id, label, mode: ruleMode, pattern, flags, replacement }: Pick<CustomRedactionRule, "id" | "label" | "mode" | "pattern" | "flags" | "replacement">) {
@@ -1071,7 +1090,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
     <div className="donation-layout">
       <section className="donation-controls">
         <div className="donation-step"><span>1</span><div><h2>{mode === "advanced" ? "Choose what to include" : "Standard redactions applied"}</h2><p>High-confidence secrets and personal details are removed locally. Code, URLs, and paths remain so the transcript keeps its context; home-directory usernames are masked.</p></div></div>
-        {mode === "advanced" && <><div className="donation-sessions">{sessions.filter((session) => initialSelected.has(session.id)).map((session) => <label key={session.id}><input type="checkbox" checked={chosen.has(session.id)} onChange={() => { const next = new Set(chosen); next.has(session.id) ? next.delete(session.id) : next.add(session.id); setChosen(next); setBundle(null); setDisabledAutomatic(new Set()); setDisabledAutomaticMatches(new Set()); setConsent(false); }} /><span>{session.label}<small>{session.projectName} · {fmtDate(session.startedAt)}</small></span></label>)}</div><button className="primary full" disabled={!chosen.size || loading} onClick={() => preview()}>{loading ? "Building preview…" : bundle ? "Rebuild redacted preview" : "Build redacted preview"}</button></>}
+        {mode === "advanced" && <><div className="donation-sessions">{sessions.filter((session) => initialSelected.has(session.id)).map((session) => <label key={session.id}><input type="checkbox" checked={chosen.has(session.id)} disabled={loading} onChange={() => toggleDonationSession(session.id)} /><span>{session.label}<small>{session.projectName} · {fmtDate(session.startedAt)}</small></span></label>)}</div><button className="primary full" disabled={!chosen.size || loading} onClick={() => preview()}>{loading ? "Building preview…" : bundle ? "Refresh redacted preview" : "Build redacted preview"}</button></>}
         {mode === "standard" && <div className="donation-summary"><strong>{bundle ? `${bundle.sessions.length} sessions · ${messageCount} messages` : "Preparing your redacted donation…"}</strong><span>{bundle?.detectionCount || 0} sensitive items automatically removed</span><a href={`/donate/${reportId}?mode=advanced`}>Want more control? Review every message.</a></div>}
         {error && <p className="error">{error}</p>}
       </section>
@@ -1094,7 +1113,15 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
             </section>
             <label className="leader-check"><input type="checkbox" checked={includeTimestamps} onChange={(event) => { setIncludeTimestamps(event.target.checked); setConsent(false); }} /><span>Include message timestamps in the donation.</span></label>
             <div className="final-preview-heading"><strong>Final conversation preview</strong><span>Highlighted text is redacted. Edit or exclude any message.</span></div>
-            <div className="bundle-preview">{bundle.sessions.map((session, sessionIndex) => <div className="bundle-session" key={session.sessionId}><button className="bundle-session-toggle" onClick={() => setOpenSession(openSession === sessionIndex ? null : sessionIndex)}><span>{session.label}<small>{session.messages.length} messages</small></span><b>{openSession === sessionIndex ? "Hide" : "Review"}</b></button>{openSession === sessionIndex && <div className="bundle-chat">{session.messages.map((message, messageIndex) => <div className="donation-message-row" key={messageIndex}><DonationMessageEditor message={message} rules={customRules} onChange={(text) => editMessage(sessionIndex, messageIndex, text)} /><button className="remove-message" onClick={() => removeMessage(sessionIndex, messageIndex)}>Exclude</button></div>)}</div>}</div>)}</div>
+            <div className="bundle-preview">{reviewSessions.map((listedSession, reviewIndex) => {
+              const sessionIndex = bundle.sessions.findIndex((session) => session.sessionId === listedSession.sessionId);
+              const included = chosen.has(listedSession.sessionId) && sessionIndex >= 0;
+              const session = included ? bundle.sessions[sessionIndex] : listedSession;
+              return <div className={`bundle-session ${included ? "" : "excluded"}`} key={session.sessionId}>
+                <div className="bundle-session-heading"><label className="bundle-session-include"><input type="checkbox" checked={included} disabled={loading} onChange={() => toggleDonationSession(session.sessionId)} /><span><strong>{session.label}</strong><small>{session.summary}</small></span></label><span className="bundle-session-count">{included ? `${session.messages.length} messages` : "Excluded"}</span><button type="button" disabled={!included} onClick={() => setOpenSession(openSession === reviewIndex ? null : reviewIndex)}>{included ? openSession === reviewIndex ? "Hide" : "Review" : "Re-include to review"}</button></div>
+                {included && openSession === reviewIndex && <div className="bundle-chat">{session.messages.map((message, messageIndex) => <div className={`donation-message-row ${message.role === "assistant" ? "assistant" : "user"}`} key={messageIndex}><DonationMessageEditor message={message} rules={customRules} onChange={(text) => editMessage(sessionIndex, messageIndex, text)} /><button className="remove-message" onClick={() => removeMessage(sessionIndex, messageIndex)}>Exclude</button></div>)}</div>}
+              </div>;
+            })}</div>
           </>}
           <div className="donation-step consent-step"><span>3</span><div><h2>Consent separately</h2><p>This consent applies only to the reviewed bundle described above.</p></div></div>
           <label className="consent"><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /><span>I consent for this reviewed data to be transmitted and used for research.</span></label>
@@ -1112,5 +1139,5 @@ export default function App() {
   if (donationId) return <SavedDonationRoute id={donationId} />;
   const sharedId = window.location.pathname.match(/^\/w\/([A-Za-z0-9_-]{8,32})$/)?.[1];
   if (sharedId) return <SharedWrapped id={sharedId} />;
-  return <main className="shared-error landing-page"><GiftbotMark /><h1>Make your Behavior Wrapped</h1><p>Run the one-command experience on your Mac. It analyzes your selected agent history locally, publishes an unguessable share-safe report, and opens it here.</p><code>npx agent-behavior-wrapped@latest</code><p className="landing-note">Full transcripts, code, paths, and raw tool output are not published.</p></main>;
+  return <main className="shared-error landing-page"><GiftbotMark /><h1>Make your Behavior Wrapped</h1><p>Run the one-command experience on your Mac. It analyzes your selected agent history locally, publishes an unguessable share-safe report, and opens it here.</p><code>npx behavior-wrapped@latest</code><p className="landing-note">Full transcripts, code, paths, and raw tool output are not published.</p></main>;
 }

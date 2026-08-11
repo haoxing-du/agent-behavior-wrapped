@@ -7,7 +7,7 @@ A local-first, macOS prototype that discovers Claude Code history in `~/.claude/
 Requires Node.js 20 or newer.
 
 ```bash
-npx agent-behavior-wrapped@latest
+npx behavior-wrapped@latest
 ```
 
 Nothing is installed globally. To try it without reading your real session history, add `--demo` to use only the bundled synthetic fixtures.

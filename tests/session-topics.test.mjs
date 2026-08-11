@@ -27,6 +27,7 @@ test("builds redacted session openings with private token weights", () => {
   assert.deepEqual(bundle.candidates[0].opening_messages, ["Implement the React component.", "Now add tests."]);
   assert.equal(bundle.tokenWeights.get("session-topic-1"), 100);
   assert.equal(bundle.tokenWeights.get("session-topic-2"), 50);
+  assert.equal(bundle.sessionIds.get("session-topic-1"), "coding");
   assert.equal("sessionId" in bundle.candidates[0], false);
   assert.equal("tokens" in bundle.candidates[0], false);
 });
@@ -38,14 +39,15 @@ test("builds a strict one-classification-per-session request", () => {
   assert.equal(schema.minItems, 2);
   assert.equal(schema.maxItems, 2);
   assert.ok(schema.items.properties.topic.enum.includes("Coding"));
+  assert.equal(schema.items.properties.summary.maxLength, 120);
   assert.deepEqual(request.reasoning, { effort: "none", exclude: true });
 });
 
 test("weights judged session topics by locally counted tokens", async () => {
   const bundle = buildSessionTopicCandidates(sessions);
   const classifications = [
-    { candidate_id: "session-topic-1", topic: "Coding", confidence: 0.94 },
-    { candidate_id: "session-topic-2", topic: "Writing", confidence: 0.88 },
+    { candidate_id: "session-topic-1", topic: "Coding", confidence: 0.94, summary: "Building and testing a React component" },
+    { candidate_id: "session-topic-2", topic: "Writing", confidence: 0.88, summary: "Drafting a warm launch email" },
   ];
   const result = await judgeSessionTopicsViaRelay(bundle, {
     endpoint: "https://relay.example/v1/session-topics",
@@ -60,6 +62,10 @@ test("weights judged session topics by locally counted tokens", async () => {
     { topic: "Coding", tokens: 100, percentage: 66.7 },
     { topic: "Writing", tokens: 50, percentage: 33.3 },
   ]);
+  assert.deepEqual(result.sessionSummaries, [
+    { sessionId: "coding", summary: "Building and testing a React component", topic: "Coding" },
+    { sessionId: "writing", summary: "Drafting a warm launch email", topic: "Writing" },
+  ]);
   const analyzed = { stats: { topics: [] } };
   applySessionTopicJudgment(analyzed, result);
   assert.deepEqual(analyzed.stats.topics, result.topics);
@@ -68,11 +74,11 @@ test("weights judged session topics by locally counted tokens", async () => {
 test("maps low-confidence classifications to Other and rejects missing IDs", () => {
   const bundle = buildSessionTopicCandidates(sessions);
   assert.deepEqual(extractSessionTopicSelection({ classifications: [
-    { candidate_id: "session-topic-1", topic: "Coding", confidence: 0.4 },
-    { candidate_id: "session-topic-2", topic: "Writing", confidence: 0.9 },
+    { candidate_id: "session-topic-1", topic: "Coding", confidence: 0.4, summary: "Building and testing a React component" },
+    { candidate_id: "session-topic-2", topic: "Writing", confidence: 0.9, summary: "Drafting a warm launch email" },
   ] }, bundle.candidates), { classifications: [
-    { candidate_id: "session-topic-1", topic: "Other", confidence: 0.4 },
-    { candidate_id: "session-topic-2", topic: "Writing", confidence: 0.9 },
+    { candidate_id: "session-topic-1", topic: "Other", confidence: 0.4, summary: "Building and testing a React component" },
+    { candidate_id: "session-topic-2", topic: "Writing", confidence: 0.9, summary: "Drafting a warm launch email" },
   ] });
-  assert.equal(extractSessionTopicSelection({ classifications: [{ candidate_id: "session-topic-1", topic: "Coding", confidence: 0.9 }] }, bundle.candidates), null);
+  assert.equal(extractSessionTopicSelection({ classifications: [{ candidate_id: "session-topic-1", topic: "Coding", confidence: 0.9, summary: "Building a React component" }] }, bundle.candidates), null);
 });

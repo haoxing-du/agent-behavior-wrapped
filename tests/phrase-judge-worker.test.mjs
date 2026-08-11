@@ -184,7 +184,7 @@ test("worker batches a full interaction corpus and restores the original candida
 test("worker validates session openings and returns only topic classifications", async () => {
   assert.deepEqual(validateSessionTopicRelayPayload({ candidates: [sessionTopicCandidate] }), [sessionTopicCandidate]);
   assert.equal(validateSessionTopicRelayPayload({ candidates: [{ ...sessionTopicCandidate, opening_messages: ["See https://private.example"] }] }), null);
-  const classifications = [{ candidate_id: "session-topic-1", topic: "Coding", confidence: 0.93 }];
+  const classifications = [{ candidate_id: "session-topic-1", topic: "Coding", confidence: 0.93, summary: "Building a local behavior report" }];
   let upstreamBody;
   const response = await handleRequest(sessionTopicRequest(), env(), async (_url, init) => {
     upstreamBody = JSON.parse(init.body);
