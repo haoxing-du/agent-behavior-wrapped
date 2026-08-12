@@ -6,7 +6,7 @@ import { spawn } from "node:child_process";
 import { discoverAllSessionsAsync, readRecordsAsync, sessionsInDefaultWindow, DEFAULT_WINDOW_DAYS } from "./discovery.mjs";
 import { analyzeSessions } from "./analysis.mjs";
 import { buildLocalPhraseCard, buildPhraseCandidates, judgePhraseCard, judgePhraseCardViaRelay, PHRASE_JUDGE_NAME, PHRASE_JUDGE_RELAY_URL } from "./phrase-card.mjs";
-import { requestRemoteAnalysisConsent } from "./consent.mjs";
+import { requestAnalysisMode } from "./consent.mjs";
 import { applyInteractionToneJudgment, buildInteractionToneCandidates, emptyInteractionToneJudgment, INTERACTION_TONE_RELAY_URL, judgeInteractionTone, judgeInteractionToneViaRelay } from "./interaction-tone.mjs";
 import { applySessionTopicJudgment, buildSessionTopicCandidates, emptySessionTopicJudgment, judgeSessionTopics, judgeSessionTopicsViaRelay, SESSION_TOPIC_RELAY_URL } from "./session-topics.mjs";
 import { applyWorkaroundJudgment, buildWorkaroundTrajectories, emptyWorkaroundJudgment, judgeWorkarounds, judgeWorkaroundsViaRelay, WORKAROUND_RELAY_URL } from "./instrumental-workarounds.mjs";
@@ -121,11 +121,12 @@ async function createWrapped() {
   const chosenSessions = sessionsInDefaultWindow(catalog.sessions, { days: windowDays, anchorLatest: demo });
   progress.succeed(`Found ${catalog.sessions.length} sessions; ${chosenSessions.length} are in the ${windowDays}-day window`);
   if (!chosenSessions.length) throw new Error(`No Claude Code or Codex sessions found in the last ${windowDays} days.`);
-  const consented = testMode || await requestRemoteAnalysisConsent();
-  if (!consented) {
+  const analysisMode = testMode ? "local-only" : await requestAnalysisMode();
+  if (analysisMode === "cancel") {
     console.log(`\n${muted}Nothing was sent or published.${reset}\n`);
     return;
   }
+  const localOnly = analysisMode === "local-only";
   progress.start("Reading selected sessions locally", `0/${chosenSessions.length}`);
   const sessionRecords = [];
   let bytesRead = 0;
@@ -142,7 +143,7 @@ async function createWrapped() {
   let interactionCandidates = [];
   let sessionTopicBundle = null;
   let workaroundBundle = null;
-  if (!testMode) {
+  if (!localOnly) {
     progress.update("interaction candidates");
     interactionCandidates = buildInteractionToneCandidates(sessionRecords);
     progress.update("usage-topic candidates");
@@ -158,11 +159,10 @@ async function createWrapped() {
   let interactionTone = null;
   let sessionTopics = null;
   let workarounds;
-  if (testMode) {
-    progress.start("Building local test report", "all LLM calls disabled");
+  if (localOnly) {
+    progress.start(testMode ? "Building local test report" : "Building local-only report", "all LLM calls disabled");
     phraseCard = buildLocalPhraseCard(candidates);
-    workarounds = emptyWorkaroundJudgment();
-    progress.succeed("Local test fallbacks ready; no LLM calls made");
+    progress.succeed(`${testMode ? "Local test fallbacks" : "Local-only analysis"} ready; no LLM calls made`);
   } else {
     const judgeStates = { phrase: "waiting", tone: "waiting", topics: "waiting", workarounds: "waiting" };
     const judgeStatus = (state) => state === "waiting" ? "queued" : state === "working" ? "…" : state === "done" ? "✓" : state === "failed" ? "skipped" : state;
@@ -212,13 +212,20 @@ async function createWrapped() {
     progress.succeed("Privacy-safe AI analysis complete");
   }
   analyzed.phraseCard = phraseCard;
-  if (!testMode) {
+  if (!localOnly) {
     if (interactionTone) applyInteractionToneJudgment(analyzed, interactionTone);
     else delete analyzed.stats.interactionTone;
     if (sessionTopics) applySessionTopicJudgment(analyzed, sessionTopics);
     else analyzed.stats.topics = [];
+    applyWorkaroundJudgment(analyzed, workarounds);
+  } else {
+    delete analyzed.stats.interactionTone;
+    delete analyzed.stats.topics;
+    delete analyzed.stats.topicMethod;
+    delete analyzed.interactionCard;
+    delete analyzed.workaroundCard;
+    delete analyzed.workaroundReview;
   }
-  applyWorkaroundJudgment(analyzed, workarounds);
   for (const warning of analysisWarnings) {
     console.log(`◇  ${muted}Skipped the ${warning.label}; the judge request failed or its response could not be validated.${reset}          `);
     printJudgeDebug(warning.label, warning.error);
@@ -226,9 +233,9 @@ async function createWrapped() {
   const id = createReportId();
   const safeFindings = analyzed.findings.map(({ evidence, method, ...finding }) => finding);
   const hasPrivateWorkaroundEvidence = Boolean(analyzed.workaroundReview?.occurrences?.length || analyzed.workaroundReview?.borderline?.length);
-  const report = { id, createdAt: new Date().toISOString(), rangeLabel: formatRange(chosenSessions), source: "Claude Code + Codex", stats: analyzed.stats, findings: safeFindings, phraseCard: analyzed.phraseCard, interactionCard: analyzed.interactionCard, workaroundCard: analyzed.workaroundCard, workaroundReview: analyzed.workaroundReview, sessionSummaries: analyzed.sessionSummaries || [], sessionIds: chosenSessions.map((session) => session.id), donationHelperUrl: `${baseUrl}/donate/${id}`, privacy: { shareSafe: !hasPrivateWorkaroundEvidence, containsTranscriptText: hasPrivateWorkaroundEvidence, externalTransmission: !testMode, ...(testMode ? { transmittedData: "None; test mode stays local.", externalRecipient: "None" } : { transmittedData: "redacted phrase, interaction-tone, and session-topic candidates; locally redacted context windows around explicit blockers for workaround discovery; aggregate report statistics; and a random client ID only", externalRecipient: "Behavior Wrapped relay, OpenRouter, a zero-data-retention GPT-5.6 Luna provider, and public report hosting" }) } };
+  const report = { id, createdAt: new Date().toISOString(), rangeLabel: formatRange(chosenSessions), source: "Claude Code + Codex", stats: analyzed.stats, findings: safeFindings, phraseCard: analyzed.phraseCard, interactionCard: analyzed.interactionCard, workaroundCard: analyzed.workaroundCard, workaroundReview: analyzed.workaroundReview, sessionSummaries: analyzed.sessionSummaries || [], sessionIds: chosenSessions.map((session) => session.id), donationHelperUrl: `${baseUrl}/donate/${id}`, privacy: { shareSafe: !hasPrivateWorkaroundEvidence, containsTranscriptText: hasPrivateWorkaroundEvidence, externalTransmission: !localOnly, analysisMode: localOnly ? "local-only" : "remote", leaderboardParticipation: localOnly ? "excluded" : "included-by-default", ...(localOnly ? { transmittedData: `None; ${testMode ? "test" : "local-only"} mode stays on this Mac.`, externalRecipient: "None" } : { transmittedData: "redacted phrase, interaction-tone, and session-topic candidates; locally redacted context windows around explicit blockers for workaround discovery; aggregate report statistics; and a random client ID only", externalRecipient: "Behavior Wrapped relay, OpenRouter, a zero-data-retention GPT-5.6 Luna provider, and public report hosting" }) } };
   let publicUrl = null;
-  if (!testMode) {
+  if (!localOnly) {
     progress.start("Publishing share-safe Wrapped", "strict aggregate-only schema");
     try {
       const published = await publishPublicReport(report, { clientId: getOrCreateClientId(), origin: process.env.BEHAVIOR_WRAPPED_PUBLIC_URL || PUBLIC_REPORT_ORIGIN });
@@ -246,10 +253,10 @@ async function createWrapped() {
   await ensureServer(demo);
   progress.succeed("Local donation helper ready");
   const localUrl = `${baseUrl}/w/${id}`;
-  const url = testMode ? localUrl : report.managementUrl || publicUrl || localUrl;
+  const url = localOnly ? localUrl : report.managementUrl || publicUrl || localUrl;
   const tokenLabel = formatNumber(report.stats.tokens || 0);
   console.log(`◇  ${bright}Wrapped ready${reset} · ${tokenLabel} tokens across ${report.stats.sessions} sessions          `);
-  if (report.phraseCard) console.log(`◇  ${testMode ? "Local test pick" : `${PHRASE_JUDGE_NAME}'s pick`} · “${report.phraseCard.phrase}” × ${report.phraseCard.occurrences}${testMode ? "" : ` · ${(report.phraseCard.latencyMs / 1000).toFixed(1)}s`}          `);
+  if (report.phraseCard) console.log(`◇  ${localOnly ? "Local pick" : `${PHRASE_JUDGE_NAME}'s pick`} · “${report.phraseCard.phrase}” × ${report.phraseCard.occurrences}${localOnly ? "" : ` · ${(report.phraseCard.latencyMs / 1000).toFixed(1)}s`}          `);
   console.log(`│\n◇  Your wrapped is ${publicUrl ? "live" : "ready locally"} ───────────────────────────────╮`);
   console.log(`│                                                        │`);
   console.log(`│  ${purple}${bright}${publicUrl || localUrl}${reset}`);
@@ -257,7 +264,7 @@ async function createWrapped() {
   console.log(`│  ${tokenLabel} tokens  ·  ${report.stats.toolCalls} tool calls  ·  ${report.stats.sessions} sessions`);
   console.log(`│                                                        │`);
   console.log(`├────────────────────────────────────────────────────────╯`);
-  if (testMode) console.log(`│  ${muted}Test mode: no LLM calls and no public report upload.${reset}`);
+  if (localOnly) console.log(`│  ${muted}${testMode ? "Test" : "Local-only"} mode: no LLM calls, public report upload, or leaderboard entry.${reset}`);
   else if (!publicUrl) console.log(`│  ${muted}Public hosting unavailable; your local report still works.${reset}`);
   console.log(`│\n└  ${muted}saved to ${storeRoot}  ·  behavior-wrapped list / delete <id>${reset}\n`);
   openUrl(url);
