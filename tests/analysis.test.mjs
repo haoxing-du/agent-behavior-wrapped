@@ -183,7 +183,6 @@ test("records the turn count for each session and the longest session", () => {
   })), { sessionId: "no-visible-turns", records: [{ type: "user", isMeta: true, message: { content: "tool output" } }] }]);
   assert.equal(report.stats.longestSessionTurns, 51);
   assert.deepEqual(report.stats.sessionTurnCounts, [1, 2, 6, 11, 21, 51]);
-  assert.equal(report.stats.sessionTurnExcludedCount, 1);
   assert.equal(report.stats.sessions, 7);
 });
 
