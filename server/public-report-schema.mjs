@@ -20,6 +20,7 @@ function safeBreakdown(value, labelKey, countKey, allowedLabels) {
 }
 
 const stockPhraseLabels = ["You're right", "Say the word", "genuinely", "one wrinkle"];
+const allowedAgents = new Set(["claude", "cowork", "codex"]);
 
 function safeTurnCounts(value) {
   if (!Array.isArray(value)) return [];
@@ -74,7 +75,7 @@ export function sanitizePublicReport(value) {
     id: value.id,
     createdAt: /^\d{4}-\d{2}-\d{2}T/.test(value.createdAt || "") ? value.createdAt : new Date().toISOString(),
     rangeLabel: "Your recent agent history",
-    source: safeText(value.source, 40) || "Claude Code + Codex",
+    source: safeText(value.source, 40) || "Claude Code + Cowork + Codex",
     stats: {
       sessions: Math.round(safeNumber(stats.sessions, 1_000_000)), activeDays: Math.round(safeNumber(stats.activeDays, 1_000_000)),
       durationMinutes: Math.round(safeNumber(stats.durationMinutes)), prompts: Math.round(safeNumber(stats.prompts)), toolCalls: Math.round(safeNumber(stats.toolCalls)),
@@ -94,7 +95,7 @@ export function sanitizePublicReport(value) {
       topics: safeBreakdown(stats.topics, "topic", "tokens", new Set(["Coding", "Writing", "Personal advice", "Research & search", "Planning", "Data & analysis", "Other"])),
       estimatedCostUsd: safeNumber(stats.estimatedCostUsd),
       tools: Array.isArray(stats.tools) ? stats.tools.slice(0, 6).map((item) => ({ name: safeText(item?.name, 40), count: Math.round(safeNumber(item?.count, 100_000_000)) })) : [],
-      agents: Array.isArray(stats.agents) ? stats.agents.slice(0, 4).map((item) => ({ agent: item?.agent === "codex" ? "codex" : "claude", name: safeText(item?.name, 30), count: Math.round(safeNumber(item?.count, 1_000_000)), percentage: safeNumber(item?.percentage, 100) })) : [],
+      agents: Array.isArray(stats.agents) ? stats.agents.slice(0, 4).map((item) => ({ agent: allowedAgents.has(item?.agent) ? item.agent : "claude", name: safeText(item?.name, 30), count: Math.round(safeNumber(item?.count, 1_000_000)), percentage: safeNumber(item?.percentage, 100) })) : [],
       models: Array.isArray(stats.models) ? stats.models.slice(0, 10).map((item) => ({ model: safeText(item?.model, 80), name: safeText(item?.name, 80), tokens: Math.round(safeNumber(item?.tokens)), percentage: safeNumber(item?.percentage, 100) })) : [],
     },
     findings: Array.isArray(value.findings) ? value.findings.slice(0, 20).map((item) => ({ id: safeText(item?.id, 40), kind: safeText(item?.kind, 30), title: safeText(item?.title, 120), summary: safeText(item?.summary, 240), confidence: { score: safeNumber(item?.confidence?.score, 1), label: safeText(item?.confidence?.label, 12) } })) : [],

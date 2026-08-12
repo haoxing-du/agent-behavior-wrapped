@@ -1,0 +1,8 @@
+{
+  "sessionId": "44444444-4444-4444-8444-444444444444",
+  "cliSessionId": "cowork-cli-synthetic",
+  "createdAt": 1786352400000,
+  "lastActivityAt": 1786352700000,
+  "title": "Synthetic Cowork session",
+  "model": "claude-sonnet-4-6"
+}

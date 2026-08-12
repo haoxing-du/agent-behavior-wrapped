@@ -15,13 +15,14 @@ const root = path.dirname(here);
 const dist = path.join(root, "dist");
 const fixtureRoot = path.join(root, "fixtures", "projects");
 const codexFixtureRoot = path.join(root, "fixtures", "codex-sessions");
+const coworkFixtureRoot = path.join(root, "fixtures", "cowork-sessions");
 const demo = process.argv.includes("--demo");
 const portArg = process.argv.find((arg) => arg.startsWith("--port="));
 const port = Number(portArg?.split("=")[1] || 4317);
 let catalog = await loadCatalog();
 
 async function loadCatalog() {
-  const found = await discoverAllSessionsAsync(demo ? { claudeRoot: fixtureRoot, codexRoots: [codexFixtureRoot], cache: false } : undefined);
+  const found = await discoverAllSessionsAsync(demo ? { claudeRoot: fixtureRoot, coworkRoot: coworkFixtureRoot, codexRoots: [codexFixtureRoot], cache: false } : undefined);
   if (demo) found.sessions = found.sessions.map((session, index) => ({ ...session, synthetic: true, label: `Demo session ${index + 1}` }));
   return found;
 }
@@ -80,7 +81,7 @@ function publicCatalog() {
     projects: catalog.projects,
     sessions: catalog.sessions.map((session, index) => ({ ...session, label: session.label || `Session ${index + 1}` })),
     defaultRange: defaultDateRange(catalog.sessions, { days: DEFAULT_WINDOW_DAYS, anchorLatest: demo }),
-    privacy: { canonicalDirectories: ["~/.claude/projects", "~/.codex/sessions", "~/.codex/archived_sessions"], networkRequests: "only-after-final-donation-consent" },
+    privacy: { canonicalDirectories: ["~/.claude/projects", "~/Library/Application Support/Claude/local-agent-mode-sessions", "~/.codex/sessions", "~/.codex/archived_sessions"], networkRequests: "only-after-final-donation-consent" },
   };
 }
 
@@ -160,6 +161,6 @@ const server = http.createServer(async (request, response) => {
 server.listen(port, "127.0.0.1", () => {
   const url = `http://localhost:${port}`;
   console.log(`Behavior Wrapped donation helper is ready at ${url}`);
-  console.log(demo ? "Using synthetic demo sessions." : `Donation review reads selected sessions locally from ${path.join(os.homedir(), ".claude")} and ${path.join(os.homedir(), ".codex")}.`);
+  console.log(demo ? "Using synthetic demo sessions." : `Donation review reads selected sessions locally from ${path.join(os.homedir(), ".claude")}, ${path.join(os.homedir(), "Library", "Application Support", "Claude")}, and ${path.join(os.homedir(), ".codex")}.`);
   if (!process.argv.includes("--no-open") && process.env.NODE_ENV !== "test") spawn("open", [url], { stdio: "ignore", detached: true }).unref();
 });

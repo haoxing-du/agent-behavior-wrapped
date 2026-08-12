@@ -4,12 +4,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { discoverSessions, discoverAllSessions, discoverAllSessionsAsync, defaultDateRange, sessionsInDefaultWindow, readRecords, readRecordsAsync } from "../server/discovery.mjs";
+import { discoverSessions, discoverCoworkSessions, discoverAllSessions, discoverAllSessionsAsync, defaultDateRange, sessionsInDefaultWindow, readRecords, readRecordsAsync } from "../server/discovery.mjs";
 import { analyzeSessions, makeDonationPreview } from "../server/analysis.mjs";
 import { redactText, safeEvidenceText } from "../server/privacy.mjs";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "projects");
 const codexRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "codex-sessions");
+const coworkRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "cowork-sessions");
+const missingCoworkRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "missing-cowork-sessions");
 
 test("discovers synthetic projects without exposing source file paths", () => {
   const catalog = discoverSessions(root);
@@ -31,7 +33,7 @@ test("async discovery indexes complete sessions beyond the former one-megabyte s
     { type: "user", timestamp: "2026-08-02T00:00:00.000Z", message: { content: "Finish" } },
   ];
   fs.writeFileSync(file, `${records.map((record) => JSON.stringify(record)).join("\n")}\n`);
-  const catalog = await discoverAllSessionsAsync({ claudeRoot: directory, codexRoots: [], cache: false });
+  const catalog = await discoverAllSessionsAsync({ claudeRoot: directory, coworkRoot: missingCoworkRoot, codexRoots: [], cache: false });
   assert.equal(catalog.sessions[0].recordCount, 3);
   assert.equal(catalog.sessions[0].promptCount, 2);
   assert.equal(catalog.sessions[0].endedAt, "2026-08-02T00:00:00.000Z");
@@ -50,6 +52,7 @@ test("computes deterministic stats and transparent behavior findings", () => {
   assert.deepEqual(report.stats.agents.map(({ name, count, percentage }) => ({ name, count, percentage })), [
     { name: "Claude Code", count: 3, percentage: 100 },
     { name: "Codex", count: 0, percentage: 0 },
+    { name: "Cowork", count: 0, percentage: 0 },
   ]);
   const kinds = new Set(report.findings.map((f) => f.kind));
   assert.ok(kinds.has("verification"));
@@ -60,25 +63,50 @@ test("computes deterministic stats and transparent behavior findings", () => {
   assert.ok(report.findings.every((f) => f.method && f.confidence.score && f.evidence.lines.length));
 });
 
-test("discovers and normalizes Claude Code and Codex sessions together", () => {
-  const catalog = discoverAllSessions({ claudeRoot: root, codexRoots: [codexRoot] });
-  assert.equal(catalog.sessions.length, 4);
-  assert.deepEqual([...new Set(catalog.sessions.map((session) => session.agent))].sort(), ["claude", "codex"]);
+test("discovers and normalizes Claude Code, Cowork, and Codex sessions together", () => {
+  const catalog = discoverAllSessions({ claudeRoot: root, coworkRoot, codexRoots: [codexRoot] });
+  assert.equal(catalog.sessions.length, 5);
+  assert.deepEqual([...new Set(catalog.sessions.map((session) => session.agent))].sort(), ["claude", "codex", "cowork"]);
   assert.ok(catalog.sessions.every((session) => !("file" in session)));
   const entries = [...catalog.index].map(([sessionId, session]) => ({ sessionId, agent: session.agent, records: readRecords(session.file, session.agent) }));
   const normalizedCodex = entries.find((entry) => entry.agent === "codex");
   assert.ok(!JSON.stringify(normalizedCodex).includes("synthetic build passed"));
   const report = analyzeSessions(entries);
-  assert.equal(report.stats.sessions, 4);
-  assert.equal(report.stats.tokens, 7500);
-  assert.equal(report.stats.toolCalls, 9);
+  assert.equal(report.stats.sessions, 5);
+  assert.equal(report.stats.tokens, 7720);
+  assert.equal(report.stats.toolCalls, 10);
   assert.deepEqual(report.stats.agents.map(({ name, count, percentage }) => ({ name, count, percentage })), [
-    { name: "Claude Code", count: 3, percentage: 75 },
-    { name: "Codex", count: 1, percentage: 25 },
+    { name: "Claude Code", count: 3, percentage: 60 },
+    { name: "Codex", count: 1, percentage: 20 },
+    { name: "Cowork", count: 1, percentage: 20 },
   ]);
   assert.equal(report.stats.models[0].name, "Claude Opus 4.8");
   assert.equal(report.stats.models[1].name, "GPT-5.6 Sol");
   assert.ok(report.stats.estimatedCostUsd > 0);
+});
+
+test("discovers Cowork audit streams and removes replay and split-message duplication", async () => {
+  const catalog = discoverCoworkSessions(coworkRoot);
+  assert.equal(catalog.sessions.length, 1);
+  assert.equal(catalog.sessions[0].agent, "cowork");
+  assert.equal(catalog.sessions[0].agentName, "Cowork");
+  assert.equal(catalog.sessions[0].promptCount, 2);
+  assert.equal(catalog.sessions[0].recordCount, 5);
+  assert.equal("file" in catalog.sessions[0], false);
+  const session = catalog.index.get(catalog.sessions[0].id);
+  const records = await readRecordsAsync(session.file, "cowork");
+  assert.equal(records.filter((record) => record.type === "user" && !record.isMeta).length, 2);
+  assert.equal(records.filter((record) => record.type === "assistant").length, 2);
+  assert.equal(records.filter((record) => record.message?.usage).length, 2);
+  assert.equal(JSON.stringify(records).includes("I should keep this concise"), true);
+  const report = analyzeSessions([{ sessionId: session.id, agent: "cowork", records }]);
+  assert.equal(report.stats.tokens, 220);
+  assert.equal(report.stats.toolCalls, 1);
+  assert.deepEqual(report.stats.agents.map(({ agent, count, percentage }) => ({ agent, count, percentage })), [
+    { agent: "cowork", count: 1, percentage: 100 },
+    { agent: "claude", count: 0, percentage: 0 },
+    { agent: "codex", count: 0, percentage: 0 },
+  ]);
 });
 
 test("normalizes structured Codex tool records into private-safe workaround evidence", () => {
@@ -155,6 +183,7 @@ test("sorts agent usage from highest percentage to lowest", () => {
   assert.deepEqual(report.stats.agents.map(({ agent, percentage }) => ({ agent, percentage })), [
     { agent: "codex", percentage: 66.7 },
     { agent: "claude", percentage: 33.3 },
+    { agent: "cowork", percentage: 0 },
   ]);
 });
 

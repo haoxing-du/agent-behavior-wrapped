@@ -19,6 +19,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.dirname(here);
 const fixtureRoot = path.join(root, "fixtures", "projects");
 const codexFixtureRoot = path.join(root, "fixtures", "codex-sessions");
+const coworkFixtureRoot = path.join(root, "fixtures", "cowork-sessions");
 const port = Number(process.env.BEHAVIOR_WRAPPED_PORT || 4317);
 const baseUrl = `http://localhost:${port}`;
 const loopbackUrl = `http://127.0.0.1:${port}`;
@@ -47,7 +48,7 @@ function formatNumber(value) {
 
 function formatRange(sessions) {
   const values = sessions.map((s) => new Date(s.startedAt)).filter((d) => !Number.isNaN(d.getTime())).sort((a, b) => a.getTime() - b.getTime());
-  if (!values.length) return "Your coding history";
+  if (!values.length) return "Your agent history";
   const format = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: values[0].getFullYear() === values.at(-1).getFullYear() ? undefined : "numeric" });
   const year = values.at(-1).getFullYear();
   return `${format.format(values[0])} – ${format.format(values.at(-1))}, ${year}`;
@@ -110,17 +111,17 @@ async function openSaved(id) {
 
 async function createWrapped() {
   console.log(mark);
-  console.log(`\n  ${bright}behavior-wrapped${reset}  ${muted}·  the wrapped for your coding agent${reset}\n`);
+  console.log(`\n  ${bright}behavior-wrapped${reset}  ${muted}·  the wrapped for your AI agents${reset}\n`);
   const demo = process.argv.includes("--demo");
   const testMode = process.argv.includes("--test") || process.argv.includes("--no-llm");
   const daysArgument = process.argv.find((argument) => argument.startsWith("--days="));
   const windowDays = daysArgument ? Number(daysArgument.split("=")[1]) : DEFAULT_WINDOW_DAYS;
   if (!Number.isInteger(windowDays) || windowDays < 1 || windowDays > 3650) throw new Error("--days must be a whole number from 1 to 3650.");
-  progress.start("Finding local agent sessions", demo ? "synthetic demo history" : "Claude Code + Codex");
-  const catalog = await discoverAllSessionsAsync(demo ? { claudeRoot: fixtureRoot, codexRoots: [codexFixtureRoot] } : undefined);
+  progress.start("Finding local agent sessions", demo ? "synthetic demo history" : "Claude Code + Cowork + Codex");
+  const catalog = await discoverAllSessionsAsync(demo ? { claudeRoot: fixtureRoot, coworkRoot: coworkFixtureRoot, codexRoots: [codexFixtureRoot] } : undefined);
   const chosenSessions = sessionsInDefaultWindow(catalog.sessions, { days: windowDays, anchorLatest: demo });
   progress.succeed(`Found ${catalog.sessions.length} sessions; ${chosenSessions.length} are in the ${windowDays}-day window`);
-  if (!chosenSessions.length) throw new Error(`No Claude Code or Codex sessions found in the last ${windowDays} days.`);
+  if (!chosenSessions.length) throw new Error(`No Claude Code, Cowork, or Codex sessions found in the last ${windowDays} days.`);
   const analysisMode = testMode ? "local-only" : await requestAnalysisMode();
   if (analysisMode === "cancel") {
     console.log(`\n${muted}Nothing was sent or published.${reset}\n`);
@@ -233,7 +234,7 @@ async function createWrapped() {
   const id = createReportId();
   const safeFindings = analyzed.findings.map(({ evidence, method, ...finding }) => finding);
   const hasPrivateWorkaroundEvidence = Boolean(analyzed.workaroundReview?.occurrences?.length || analyzed.workaroundReview?.borderline?.length);
-  const report = { id, createdAt: new Date().toISOString(), rangeLabel: formatRange(chosenSessions), source: "Claude Code + Codex", stats: analyzed.stats, findings: safeFindings, phraseCard: analyzed.phraseCard, interactionCard: analyzed.interactionCard, workaroundCard: analyzed.workaroundCard, workaroundReview: analyzed.workaroundReview, sessionSummaries: analyzed.sessionSummaries || [], sessionIds: chosenSessions.map((session) => session.id), donationHelperUrl: `${baseUrl}/donate/${id}`, privacy: { shareSafe: !hasPrivateWorkaroundEvidence, containsTranscriptText: hasPrivateWorkaroundEvidence, externalTransmission: !localOnly, analysisMode: localOnly ? "local-only" : "remote", leaderboardParticipation: localOnly ? "excluded" : "included-by-default", ...(localOnly ? { transmittedData: `None; ${testMode ? "test" : "local-only"} mode stays on this Mac.`, externalRecipient: "None" } : { transmittedData: "redacted phrase, interaction-tone, and session-topic candidates; locally redacted context windows around explicit blockers for workaround discovery; aggregate report statistics; and a random client ID only", externalRecipient: "Behavior Wrapped relay, OpenRouter, a zero-data-retention GPT-5.6 Luna provider, and public report hosting" }) } };
+  const report = { id, createdAt: new Date().toISOString(), rangeLabel: formatRange(chosenSessions), source: "Claude Code + Cowork + Codex", stats: analyzed.stats, findings: safeFindings, phraseCard: analyzed.phraseCard, interactionCard: analyzed.interactionCard, workaroundCard: analyzed.workaroundCard, workaroundReview: analyzed.workaroundReview, sessionSummaries: analyzed.sessionSummaries || [], sessionIds: chosenSessions.map((session) => session.id), donationHelperUrl: `${baseUrl}/donate/${id}`, privacy: { shareSafe: !hasPrivateWorkaroundEvidence, containsTranscriptText: hasPrivateWorkaroundEvidence, externalTransmission: !localOnly, analysisMode: localOnly ? "local-only" : "remote", leaderboardParticipation: localOnly ? "excluded" : "included-by-default", ...(localOnly ? { transmittedData: `None; ${testMode ? "test" : "local-only"} mode stays on this Mac.`, externalRecipient: "None" } : { transmittedData: "redacted phrase, interaction-tone, and session-topic candidates; locally redacted context windows around explicit blockers for workaround discovery; aggregate report statistics; and a random client ID only", externalRecipient: "Behavior Wrapped relay, OpenRouter, a zero-data-retention GPT-5.6 Luna provider, and public report hosting" }) } };
   let publicUrl = null;
   if (!localOnly) {
     progress.start("Publishing share-safe Wrapped", "strict aggregate-only schema");

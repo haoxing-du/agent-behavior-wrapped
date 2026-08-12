@@ -98,7 +98,7 @@ export function buildSessionTopicCandidates(sessionRecords, { maximumCandidates 
   return { candidates, tokenWeights, sessionIds, unclassifiedTokens, totalTokens, totalSessions };
 }
 
-export const sessionTopicJudgePrompt = `Classify the primary purpose of each coding-agent session from its opening user messages. Choose exactly one topic per session:
+export const sessionTopicJudgePrompt = `Classify the primary purpose of each AI-agent session from its opening user messages. Choose exactly one topic per session:
 
 - Coding: implementing, debugging, testing, reviewing, or operating software.
 - Writing: drafting or editing prose, communication, or other documents.
