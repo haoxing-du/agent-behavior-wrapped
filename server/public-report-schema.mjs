@@ -83,7 +83,6 @@ export function sanitizePublicReport(value) {
       averageAgentResponseWords: Math.round(safeNumber(stats.averageAgentResponseWords)), averageUserInputWords: Math.round(safeNumber(stats.averageUserInputWords)),
       longestSessionTurns: Math.max(0, ...safeSessionTurnCounts),
       sessionTurnCounts: safeSessionTurnCounts,
-      sessionTurnExcludedCount: Math.round(safeNumber(stats.sessionTurnExcludedCount, 1_000_000)),
       interactionTone: {
         frustratedMessages: Math.round(safeNumber(stats.interactionTone?.frustratedMessages, 1_000_000)),
         gratefulMessages: Math.round(safeNumber(stats.interactionTone?.gratefulMessages, 1_000_000)),
