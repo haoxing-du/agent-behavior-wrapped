@@ -8,7 +8,7 @@ import { getOrCreateClientId } from "../server/store.mjs";
 const outputFile = path.resolve(process.argv[2] || "analysis-output/private-interaction-tone-review.md");
 const catalog = discoverAllSessions();
 const sessions = sessionsInDefaultWindow(catalog.sessions);
-if (!sessions.length) throw new Error("No Claude Code or Codex sessions found in the last 30 days.");
+if (!sessions.length) throw new Error("No Claude Code, Cowork, or Codex sessions found in the last 30 days.");
 const sessionRecords = sessions.map((item) => {
   const session = catalog.index.get(item.id);
   return { sessionId: session.id, agent: session.agent, records: readRecords(session.file, session.agent) };

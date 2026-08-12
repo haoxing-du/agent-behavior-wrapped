@@ -12,6 +12,11 @@ const stockPhraseDefinitions = [
   { phrase: "genuinely", expression: /\bgenuinely\b/giu },
   { phrase: "one wrinkle", expression: /\bone wrinkle\b/giu },
 ];
+const agentDefinitions = [
+  { agent: "claude", name: "Claude Code" },
+  { agent: "cowork", name: "Cowork" },
+  { agent: "codex", name: "Codex" },
+];
 
 const languageLexicons = [
   ["Spanish", new Set("el la los las una unas para pero porque como esto esta este muy más con del quiero puede puedes hacer gracias ahora".split(" "))],
@@ -329,7 +334,7 @@ function analyzeBehavior(sessionRecords) {
 
 export function analyzeSessions(sessionRecords) {
   const toolCounts = new Map();
-  const agentCounts = new Map([["claude", 0], ["codex", 0]]);
+  const agentCounts = new Map(agentDefinitions.map(({ agent }) => [agent, 0]));
   const modelTokens = new Map();
   const activeDays = new Set();
   let prompts = 0;
@@ -402,11 +407,10 @@ export function analyzeSessions(sessionRecords) {
   }
   const tools = [...toolCounts].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name, count]) => ({ name, count }));
   const totalSessions = sessionRecords.length;
-  const claudePercentage = totalSessions ? Number(((agentCounts.get("claude") || 0) / totalSessions * 100).toFixed(1)) : 0;
-  const agents = [
-    { agent: "claude", name: "Claude Code", count: agentCounts.get("claude") || 0, percentage: claudePercentage },
-    { agent: "codex", name: "Codex", count: agentCounts.get("codex") || 0, percentage: totalSessions ? Number((100 - claudePercentage).toFixed(1)) : 0 },
-  ].sort((left, right) => right.percentage - left.percentage || right.count - left.count || left.name.localeCompare(right.name));
+  const agents = agentDefinitions.map(({ agent, name }) => {
+    const count = agentCounts.get(agent) || 0;
+    return { agent, name, count, percentage: totalSessions ? Number((count / totalSessions * 100).toFixed(1)) : 0 };
+  }).sort((left, right) => right.percentage - left.percentage || right.count - left.count || left.name.localeCompare(right.name));
   const models = [...modelTokens].sort((left, right) => right[1] - left[1]).map(([model, modelTokenCount]) => ({
     model: String(model),
     name: displayModelName(model),

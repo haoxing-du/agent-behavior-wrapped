@@ -89,7 +89,7 @@ export function buildInteractionToneCandidates(sessionRecords, { maximumCandidat
     .map(({ text, occurrences }, index) => ({ candidate_id: `interaction-${index + 1}`, text, occurrences }));
 }
 
-export const interactionToneJudgePrompt = `You classify how a user speaks to a coding agent for a playful "Behavior Wrapped" report. Evaluate every supplied excerpt independently.
+export const interactionToneJudgePrompt = `You classify how a user speaks to an AI agent for a playful "Behavior Wrapped" report. Evaluate every supplied excerpt independently.
 
 Mark frustrated only when the user clearly expresses anger, exasperation, blame, sharp pushback, or dissatisfaction directed at the agent or its work. A neutral correction, ordinary disagreement, the word "dude" used warmly, or discussion of somebody else's frustration does not count.
 

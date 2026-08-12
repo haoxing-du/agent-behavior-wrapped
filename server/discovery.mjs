@@ -7,6 +7,7 @@ import { semanticToolUse } from "./tool-semantics.mjs";
 
 const canonicalClaudeRoot = path.join(os.homedir(), ".claude", "projects");
 const canonicalCodexRoots = [path.join(os.homedir(), ".codex", "sessions"), path.join(os.homedir(), ".codex", "archived_sessions")];
+const canonicalCoworkRoot = path.join(os.homedir(), "Library", "Application Support", "Claude", "local-agent-mode-sessions");
 const DEFAULT_WINDOW_DAYS = 30;
 const metadataCacheFile = path.join(process.env.BEHAVIOR_WRAPPED_STORE_ROOT || path.join(os.homedir(), ".agent-behavior-wrapped"), "session-index-v1.json");
 
@@ -76,15 +77,21 @@ function cacheKey(file, stat, agent) {
   return `${agent}:${file}:${stat.size}:${stat.mtimeMs}`;
 }
 
-function baseMetadata({ file, stat, cwd, startedAt, endedAt, promptCount, recordCount, agent, projectFallback }) {
-  const projectKey = cwd || `${agent}:${path.dirname(file)}`;
+function agentDisplayName(agent) {
+  if (agent === "codex") return "Codex";
+  if (agent === "cowork") return "Cowork";
+  return "Claude Code";
+}
+
+function baseMetadata({ file, stat, cwd, startedAt, endedAt, promptCount, recordCount, agent, projectFallback, projectKey: suppliedProjectKey, projectName }) {
+  const projectKey = suppliedProjectKey || cwd || `${agent}:${path.dirname(file)}`;
   return {
     id: opaqueId(file),
     file,
     agent,
-    agentName: agent === "codex" ? "Codex" : "Claude Code",
+    agentName: agentDisplayName(agent),
     projectId: opaqueId(projectKey),
-    projectName: friendlyProjectName(path.basename(path.dirname(file)), cwd, projectFallback),
+    projectName: projectName || friendlyProjectName(path.basename(path.dirname(file)), cwd, projectFallback),
     startedAt: startedAt || stat.birthtime.toISOString(),
     endedAt: endedAt || stat.mtime.toISOString(),
     promptCount,
@@ -92,6 +99,67 @@ function baseMetadata({ file, stat, cwd, startedAt, endedAt, promptCount, record
     sizeBytes: stat.size,
     synthetic: false,
   };
+}
+
+function isoTimestamp(value) {
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+
+function coworkMetadataFile(file) {
+  const sessionDirectory = path.dirname(file);
+  return path.join(path.dirname(sessionDirectory), `${path.basename(sessionDirectory)}.json`);
+}
+
+function readCoworkMetadata(file) {
+  try { return JSON.parse(fs.readFileSync(coworkMetadataFile(file), "utf8")); }
+  catch { return {}; }
+}
+
+function coworkRecordTimestamp(record) {
+  return record?.timestamp || record?._audit_timestamp || null;
+}
+
+function shouldKeepCoworkRecord(record, seenUuids) {
+  if (!record || typeof record !== "object" || record.isReplay === true) return false;
+  if (typeof record.uuid === "string" && record.uuid) {
+    if (seenUuids.has(record.uuid)) return false;
+    seenUuids.add(record.uuid);
+  }
+  return ["user", "assistant", "system"].includes(record.type);
+}
+
+function coworkMetadataFromRecords(file, stat, records, metadata = readCoworkMetadata(file)) {
+  const normalized = normalizeCoworkRecords(records);
+  const timestamps = normalized.map(coworkRecordTimestamp).filter(Boolean);
+  return coworkMetadataFromSummary(file, stat, metadata, {
+    firstTimestamp: timestamps[0],
+    lastTimestamp: timestamps.at(-1),
+    promptCount: normalized.filter((record) => record.type === "user" && !record.isMeta).length,
+    recordCount: normalized.length,
+  });
+}
+
+function coworkMetadataFromSummary(file, stat, metadata, { firstTimestamp, lastTimestamp, promptCount, recordCount }) {
+  const workspaceDirectory = path.dirname(path.dirname(file));
+  return baseMetadata({
+    file,
+    stat,
+    startedAt: isoTimestamp(metadata.createdAt) || firstTimestamp,
+    endedAt: isoTimestamp(metadata.lastActivityAt) || lastTimestamp,
+    promptCount,
+    recordCount,
+    agent: "cowork",
+    projectKey: `cowork:${workspaceDirectory}`,
+    projectName: "Cowork",
+    projectFallback: "Cowork",
+  });
+}
+
+function readCoworkSessionMetadata(file) {
+  const { stat, records } = recordsFromFileSync(file);
+  return coworkMetadataFromRecords(file, stat, records);
 }
 
 function readClaudeSessionMetadata(file, projectDirectory) {
@@ -150,6 +218,34 @@ async function readSessionMetadata(file, agent, projectFallback, cache) {
   return metadata;
 }
 
+async function readCoworkSessionMetadataAsync(file, cache) {
+  const stat = await fs.promises.stat(file);
+  const key = cacheKey(file, stat, "cowork");
+  if (cache[key]) return cache[key];
+  for (const [existingKey, entry] of Object.entries(cache)) if (entry?.file === file && existingKey !== key) delete cache[existingKey];
+  let metadata = {};
+  try { metadata = JSON.parse(await fs.promises.readFile(coworkMetadataFile(file), "utf8")); } catch { /* Metadata is helpful but the audit stream is authoritative. */ }
+  const seenUuids = new Set();
+  const assistantMessageIds = new Set();
+  let firstTimestamp = null;
+  let lastTimestamp = null;
+  let promptCount = 0;
+  let recordCount = 0;
+  await recordsFromFile(file, { collect: false, visit(record) {
+    if (!shouldKeepCoworkRecord(record, seenUuids)) return;
+    const messageId = record.type === "assistant" && typeof record?.message?.id === "string" ? record.message.id : null;
+    if (messageId && assistantMessageIds.has(messageId)) return;
+    if (messageId) assistantMessageIds.add(messageId);
+    recordCount++;
+    if (record.type === "user" && !record.isMeta) promptCount++;
+    const timestamp = coworkRecordTimestamp(record);
+    if (timestamp) { firstTimestamp ||= timestamp; lastTimestamp = timestamp; }
+  } });
+  const session = coworkMetadataFromSummary(file, stat, metadata, { firstTimestamp, lastTimestamp, promptCount, recordCount });
+  cache[key] = session;
+  return session;
+}
+
 function recursiveJsonl(root) {
   if (!fs.existsSync(root)) return [];
   const files = [];
@@ -205,15 +301,29 @@ export function discoverCodexSessions(roots = canonicalCodexRoots) {
   return finishCatalog(sessions, roots.some((root) => fs.existsSync(root)));
 }
 
-export function discoverAllSessions({ claudeRoot = canonicalClaudeRoot, codexRoots = canonicalCodexRoots } = {}) {
+function coworkAuditFiles(root) {
+  return recursiveJsonl(root).filter((file) => path.basename(file) === "audit.jsonl" && path.basename(path.dirname(file)).startsWith("local_"));
+}
+
+export function discoverCoworkSessions(root = canonicalCoworkRoot) {
+  if (!fs.existsSync(root)) return finishCatalog([], false);
+  const sessions = [];
+  for (const file of coworkAuditFiles(root)) {
+    try { sessions.push(readCoworkSessionMetadata(file)); } catch { /* Skip unreadable sessions. */ }
+  }
+  return finishCatalog(sessions, true);
+}
+
+export function discoverAllSessions({ claudeRoot = canonicalClaudeRoot, codexRoots = canonicalCodexRoots, coworkRoot = canonicalCoworkRoot } = {}) {
   const claude = discoverSessions(claudeRoot);
   const codex = discoverCodexSessions(codexRoots);
-  return finishCatalog([...claude.index.values(), ...codex.index.values()], claude.rootAvailable || codex.rootAvailable);
+  const cowork = discoverCoworkSessions(coworkRoot);
+  return finishCatalog([...claude.index.values(), ...cowork.index.values(), ...codex.index.values()], claude.rootAvailable || cowork.rootAvailable || codex.rootAvailable);
 }
 
 export async function discoverAllSessionsAsync(options = {}) {
-  const { claudeRoot = canonicalClaudeRoot, codexRoots = canonicalCodexRoots } = options;
-  const persistCache = options.cache !== false && claudeRoot === canonicalClaudeRoot && codexRoots.length === canonicalCodexRoots.length && codexRoots.every((root, index) => root === canonicalCodexRoots[index]);
+  const { claudeRoot = canonicalClaudeRoot, codexRoots = canonicalCodexRoots, coworkRoot = canonicalCoworkRoot } = options;
+  const persistCache = options.cache !== false && claudeRoot === canonicalClaudeRoot && coworkRoot === canonicalCoworkRoot && codexRoots.length === canonicalCodexRoots.length && codexRoots.every((root, index) => root === canonicalCodexRoots[index]);
   const cache = persistCache ? readMetadataCache() : {};
   const sessions = [];
   if (fs.existsSync(claudeRoot)) {
@@ -226,11 +336,14 @@ export async function discoverAllSessionsAsync(options = {}) {
       }
     }
   }
+  if (fs.existsSync(coworkRoot)) for (const file of coworkAuditFiles(coworkRoot)) {
+    try { sessions.push(await readCoworkSessionMetadataAsync(file, cache)); } catch { /* Skip unreadable sessions. */ }
+  }
   for (const root of codexRoots) for (const file of recursiveJsonl(root)) {
     try { sessions.push(await readSessionMetadata(file, "codex", "Codex project", cache)); } catch { /* Skip unreadable sessions. */ }
   }
   if (persistCache) writeMetadataCache(cache);
-  return finishCatalog(sessions, fs.existsSync(claudeRoot) || codexRoots.some((root) => fs.existsSync(root)));
+  return finishCatalog(sessions, fs.existsSync(claudeRoot) || fs.existsSync(coworkRoot) || codexRoots.some((root) => fs.existsSync(root)));
 }
 
 function isoDay(value) {
@@ -356,15 +469,56 @@ function normalizeCodexRecords(records) {
   return normalized;
 }
 
+function normalizeCoworkRecords(records) {
+  const normalized = [];
+  const seenUuids = new Set();
+  const assistantMessages = new Map();
+  for (const record of records) {
+    if (!shouldKeepCoworkRecord(record, seenUuids)) continue;
+    const timestamp = coworkRecordTimestamp(record);
+    const message = record.message && typeof record.message === "object" ? {
+      ...(record.message.content !== undefined ? { content: record.message.content } : {}),
+      ...(typeof record.message.model === "string" ? { model: record.message.model } : {}),
+      ...(record.message.usage && typeof record.message.usage === "object" ? { usage: record.message.usage } : {}),
+    } : undefined;
+    const item = {
+      type: record.type,
+      ...(timestamp ? { timestamp } : {}),
+      ...(record.isMeta ? { isMeta: true } : {}),
+      ...(record.subtype ? { subtype: record.subtype } : {}),
+      ...(record.content !== undefined ? { content: record.content } : {}),
+      ...(message ? { message } : {}),
+    };
+    const messageId = record.type === "assistant" && typeof record?.message?.id === "string" ? record.message.id : null;
+    if (messageId && assistantMessages.has(messageId)) {
+      const previous = assistantMessages.get(messageId);
+      const previousContent = Array.isArray(previous.message?.content) ? previous.message.content : [];
+      const nextContent = Array.isArray(message?.content) ? message.content : [];
+      const seenBlocks = new Set(previousContent.map((block) => JSON.stringify(block)));
+      previous.message.content = [...previousContent, ...nextContent.filter((block) => !seenBlocks.has(JSON.stringify(block)))];
+      if (!previous.message.model && message?.model) previous.message.model = message.model;
+      if (message?.usage) previous.message.usage = message.usage;
+      continue;
+    }
+    normalized.push(item);
+    if (messageId) assistantMessages.set(messageId, item);
+  }
+  return normalized;
+}
+
 export function readRecords(file, agent = "claude") {
   const { records } = recordsFromFileSync(file);
-  return agent === "codex" ? normalizeCodexRecords(records) : records;
+  if (agent === "codex") return normalizeCodexRecords(records);
+  if (agent === "cowork") return normalizeCoworkRecords(records);
+  return records;
 }
 
 export async function readRecordsAsync(file, agent = "claude") {
   const { records } = await recordsFromFile(file);
-  return agent === "codex" ? normalizeCodexRecords(records) : records;
+  if (agent === "codex") return normalizeCodexRecords(records);
+  if (agent === "cowork") return normalizeCoworkRecords(records);
+  return records;
 }
 
 const canonicalRoot = canonicalClaudeRoot;
-export { canonicalRoot, canonicalClaudeRoot, canonicalCodexRoots, DEFAULT_WINDOW_DAYS, opaqueId };
+export { canonicalRoot, canonicalClaudeRoot, canonicalCodexRoots, canonicalCoworkRoot, DEFAULT_WINDOW_DAYS, opaqueId };

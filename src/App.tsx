@@ -2,11 +2,11 @@ import { toPng } from "html-to-image";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type Project = { id: string; name: string; sessionCount: number; latestAt: string; agents: string[] };
-type Session = { id: string; agent: "claude" | "codex"; agentName: string; projectId: string; projectName: string; startedAt: string; endedAt: string; promptCount: number; recordCount: number; sizeBytes: number; synthetic: boolean; label: string };
+type Session = { id: string; agent: "claude" | "cowork" | "codex"; agentName: string; projectId: string; projectName: string; startedAt: string; endedAt: string; promptCount: number; recordCount: number; sizeBytes: number; synthetic: boolean; label: string };
 type Catalog = { rootAvailable: boolean; demo: boolean; projects: Project[]; sessions: Session[]; defaultRange: { from: string; to: string; days: number }; privacy: { canonicalDirectories: string[]; networkRequests: string }; phraseJudge?: { available: boolean; model: string; name: string; provider: string; requiredOnAnalysis: boolean; freeEndpointDataNotice: boolean } };
 type Finding = { id: string; kind: string; title: string; summary: string; method: string; confidence: { score: number; label: string }; evidence: { id: string; sessionId: string; lines: { role: string; text: string }[] } };
 type PhraseCard = { phrase: string; occurrences: number; distinctSessions: number; model: string; provider: string; latencyMs: number; method: string; candidateCount: number };
-type AgentStat = { agent: "claude" | "codex"; name: string; count: number; percentage: number };
+type AgentStat = { agent: "claude" | "cowork" | "codex"; name: string; count: number; percentage: number };
 type ModelStat = { model: string; name: string; tokens: number; percentage: number };
 type InteractionTone = { frustratedMessages: number; gratefulMessages: number; analyzedMessages: number; method?: string };
 type InteractionCard = { quote?: string; frustrationQuote?: string | null };
@@ -105,7 +105,7 @@ function fmtCostEquivalent(value: number, unitCost: number) {
 function costEquivalents(value: number) {
   return [
     { label: "iPhones", value: fmtCostEquivalent(value, 1_000) },
-    { label: "Claude/Codex subscription months", value: fmtCostEquivalent(value, 200) },
+    { label: "AI subscription months", value: fmtCostEquivalent(value, 200) },
     { label: "Hardcover books", value: fmtCostEquivalent(value, 20) },
     { label: "Starbucks lattes", value: fmtCostEquivalent(value, 6.5) },
   ];
@@ -714,7 +714,7 @@ function Selection({ catalog, selected, setSelected, onAnalyze, loading, error }
     <section className="hero">
       <div className="hero-glow glow-one" /><div className="hero-glow glow-two" />
       <div className="hero-copy">
-        <span className="eyebrow">Your last 30 days with Claude Code + Codex</span>
+        <span className="eyebrow">Your last 30 days with Claude Code + Cowork + Codex</span>
         <h1>See how your agent<br /><em>really</em> showed up.</h1>
         <p>Private, explainable behavior insights from the sessions already on your Mac.</p>
       </div>
@@ -733,8 +733,8 @@ function Selection({ catalog, selected, setSelected, onAnalyze, loading, error }
       </div>
 
       {!catalog.rootAvailable || catalog.sessions.length === 0 ? <div className="empty-state">
-        <h3>No Claude Code or Codex sessions found</h3>
-        <p>Behavior Wrapped looked in <code>~/.claude/projects</code> and <code>~/.codex/sessions</code>. Try the synthetic demo with <code>npm run demo</code>.</p>
+        <h3>No Claude Code, Cowork, or Codex sessions found</h3>
+        <p>Behavior Wrapped looked in the local Claude Code, Cowork, and Codex session stores. Try the synthetic demo with <code>npm run demo</code>.</p>
       </div> : <>
         <div className="filters">
           <label>From<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
