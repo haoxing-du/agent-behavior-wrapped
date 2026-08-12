@@ -346,6 +346,7 @@ export function analyzeSessions(sessionRecords) {
   let gratefulMessages = 0;
   const assistantProse = [];
   const sessionTurnCounts = [];
+  let sessionTurnExcludedCount = 0;
   for (const { records, agent = "claude" } of sessionRecords) {
     agentCounts.set(agent, (agentCounts.get(agent) || 0) + 1);
     const timestamps = records.map((r) => r.timestamp).filter(Boolean).map((value) => new Date(value).getTime()).filter(Number.isFinite);
@@ -398,7 +399,8 @@ export function analyzeSessions(sessionRecords) {
       }
     }
     finishResponse();
-    sessionTurnCounts.push(sessionTurns);
+    if (sessionTurns > 0) sessionTurnCounts.push(sessionTurns);
+    else sessionTurnExcludedCount++;
   }
   const tools = [...toolCounts].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name, count]) => ({ name, count }));
   const totalSessions = sessionRecords.length;
@@ -428,7 +430,8 @@ export function analyzeSessions(sessionRecords) {
     averageUserInputWords: userInputCount ? Math.round(userInputWords / userInputCount) : 0,
     longestSessionTurns: Math.max(0, ...sessionTurnCounts),
     sessionTurnCounts: [...sessionTurnCounts].sort((left, right) => left - right),
-    sessionTurnMethod: "Counts each visible, non-meta user message as one turn.",
+    sessionTurnExcludedCount,
+    sessionTurnMethod: "Counts each visible, non-meta user message as one turn. Session files with no visible user messages are excluded from the length distribution.",
     interactionTone: {
       frustratedMessages,
       gratefulMessages,

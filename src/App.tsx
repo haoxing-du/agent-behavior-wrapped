@@ -15,7 +15,7 @@ type LanguageAnomaly = { language: string; words: number; occurrences: number; l
 type TopicStat = { topic: string; tokens: number; percentage: number };
 type StockPhraseStat = { phrase: string; count: number };
 type WorkaroundCard = { count: number; models: { name: string; count: number }[]; example?: string };
-type Report = { stats: { sessions: number; activeDays: number; durationMinutes: number; prompts: number; toolCalls: number; interruptions: number; tokens: number; agentWords?: number; userWords?: number; agentUserWordRatio?: number | null; averageAgentResponseWords?: number; averageUserInputWords?: number; longestSessionTurns?: number; sessionTurnCounts?: number[]; interactionTone?: InteractionTone; stockPhrases?: StockPhraseStat[]; outputLanguages?: LanguageStat[]; languageAnomaly?: LanguageAnomaly | null; topics?: TopicStat[]; tools: { name: string; count: number }[]; agents: AgentStat[]; models: ModelStat[]; estimatedCostUsd: number; costEstimateMethod: string }; findings: Finding[]; phraseCard?: PhraseCard | null; interactionCard?: InteractionCard | null; workaroundCard?: WorkaroundCard | null };
+type Report = { stats: { sessions: number; activeDays: number; durationMinutes: number; prompts: number; toolCalls: number; interruptions: number; tokens: number; agentWords?: number; userWords?: number; agentUserWordRatio?: number | null; averageAgentResponseWords?: number; averageUserInputWords?: number; longestSessionTurns?: number; sessionTurnCounts?: number[]; sessionTurnExcludedCount?: number; interactionTone?: InteractionTone; stockPhrases?: StockPhraseStat[]; outputLanguages?: LanguageStat[]; languageAnomaly?: LanguageAnomaly | null; topics?: TopicStat[]; tools: { name: string; count: number }[]; agents: AgentStat[]; models: ModelStat[]; estimatedCostUsd: number; costEstimateMethod: string }; findings: Finding[]; phraseCard?: PhraseCard | null; interactionCard?: InteractionCard | null; workaroundCard?: WorkaroundCard | null };
 type DonationMessage = { role: string; timestamp: string | null; text: string };
 type DonationSession = { sessionId: string; label: string; summary: string; messages: DonationMessage[] };
 type RedactionContext = { before: string; match: string; after: string };
@@ -170,50 +170,49 @@ function GiftbotMark() {
 }
 
 function SessionTurnChart({ values, median }: { values: number[]; median: number }) {
-  const turns = values.filter((value) => Number.isFinite(value) && value >= 0).sort((left, right) => left - right);
+  const turns = values.filter((value) => Number.isFinite(value) && value >= 1).sort((left, right) => left - right);
   const longest = Math.max(0, ...turns);
-  const left = 18;
-  const right = 542;
-  const top = 30;
-  const baseline = 137;
-  const axis = 192;
-  const maximumLog = Math.max(1, Math.log1p(longest));
-  const xFor = (value: number) => left + Math.log1p(value) / maximumLog * (right - left);
-  const logs = turns.map((value) => Math.log1p(value));
-  const bandwidth = Math.max(.18, maximumLog / 11);
-  const density = Array.from({ length: 73 }, (_, index) => {
-    const logValue = maximumLog * index / 72;
-    const value = logs.reduce((sum, point) => sum + Math.exp(-.5 * ((logValue - point) / bandwidth) ** 2), 0);
-    return { x: left + (right - left) * index / 72, value };
-  });
-  const maximumDensity = Math.max(1, ...density.map((point) => point.value));
-  const densityPoints = density.map((point) => ({ x: point.x, y: baseline - point.value / maximumDensity * (baseline - top) }));
-  const areaPath = `M ${left} ${baseline} ${densityPoints.map((point) => `L ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(" ")} L ${right} ${baseline} Z`;
-  const linePath = `M ${densityPoints.map((point) => `${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(" L ")}`;
-  const candidates = [0, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1_000, 2_000, 5_000, 10_000].filter((value) => value <= longest);
-  if (!candidates.includes(longest)) candidates.push(longest);
-  const ticks: number[] = [];
-  candidates.sort((leftValue, rightValue) => leftValue - rightValue).forEach((value) => {
-    if (!ticks.length || xFor(value) - xFor(ticks[ticks.length - 1]) >= 38 || value === longest) {
-      if (value === longest && ticks.length > 1 && xFor(value) - xFor(ticks[ticks.length - 1]) < 38) ticks.pop();
-      ticks.push(value);
-    }
-  });
-  const dotLimit = 240;
-  const dots = turns.length <= dotLimit ? turns : Array.from({ length: dotLimit }, (_, index) => turns[Math.floor(index * turns.length / dotLimit)]);
+  const bins = [];
+  let firstBinStart = 1;
+  while ((firstBinStart === 1 ? 1 : firstBinStart * 2 - 1) < (turns[0] || 1)) firstBinStart *= 2;
+  for (let start = firstBinStart; start <= longest; start *= 2) {
+    const end = start === 1 ? 1 : start * 2 - 1;
+    const count = turns.filter((value) => value >= start && value <= end).length;
+    bins.push({ start, end, count, label: start === end ? "1" : `${fmtAxisCompact(start)}–${fmtAxisCompact(end)}` });
+  }
+  const left = 45;
+  const right = 590;
+  const top = 29;
+  const baseline = 184;
+  const maximumCount = Math.max(1, ...bins.map((bin) => bin.count));
+  const gap = bins.length > 14 ? 3 : 6;
+  const barWidth = (right - left - gap * Math.max(0, bins.length - 1)) / Math.max(1, bins.length);
+  const medianBin = bins.findIndex((bin) => median >= bin.start && median <= bin.end);
+  const yTicks = [...new Set([0, Math.ceil(maximumCount / 2), maximumCount])].sort((a, b) => a - b);
   const medianLabel = median.toLocaleString(undefined, { maximumFractionDigits: 1 });
   return <figure className="session-turn-chart">
-    <figcaption><span>{turns.length.toLocaleString()} sessions</span><strong>Median <b>{medianLabel}</b> turns</strong></figcaption>
-    <svg viewBox="0 0 560 222" role="img" aria-label={`Session lengths range from ${turns[0] || 0} to ${longest} turns, with a median of ${medianLabel} turns.`}>
-      <defs><linearGradient id="turn-density-fill" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stopColor="#f3c5b8" /><stop offset=".58" stopColor="#c86e57" /><stop offset="1" stopColor="#8f3f31" /></linearGradient></defs>
-      <path className="turn-density-area" d={areaPath} />
-      <path className="turn-density-line" d={linePath} />
-      <line className="turn-median-line" x1={xFor(median)} x2={xFor(median)} y1={top + 1} y2={axis - 7} />
-      {dots.map((value, index) => <circle className="turn-session-dot" key={`${value}-${index}`} cx={xFor(value)} cy={154 + index % 4 * 7.5} r="2.5" />)}
-      <line className="turn-axis" x1={left} x2={right} y1={axis} y2={axis} />
-      {ticks.map((value) => <g className="turn-tick" key={value}><line x1={xFor(value)} x2={xFor(value)} y1={axis - 4} y2={axis + 4} /><text x={xFor(value)} y={211} textAnchor={value === 0 ? "start" : value === longest ? "end" : "middle"}>{fmtAxisCompact(value)}</text></g>)}
+    <figcaption><span>{turns.length.toLocaleString()} measured sessions</span><strong>Median <b>{medianLabel}</b> turns</strong></figcaption>
+    <svg viewBox="0 0 610 235" role="img" aria-label={`Histogram of ${turns.length} measured sessions. Lengths range from ${turns[0] || 0} to ${longest} turns, with a median of ${medianLabel}.`}>
+      {yTicks.map((tick) => {
+        const y = baseline - tick / maximumCount * (baseline - top);
+        return <g className="turn-grid" key={tick}><line x1={left} x2={right} y1={y} y2={y} /><text x={left - 8} y={y + 3} textAnchor="end">{tick}</text></g>;
+      })}
+      {bins.map((bin, index) => {
+        const height = bin.count / maximumCount * (baseline - top);
+        const x = left + index * (barWidth + gap);
+        const y = baseline - height;
+        return <g className={`turn-bar${index === medianBin ? " median" : ""}`} key={bin.start}>
+          <title>{`${bin.label} turns: ${bin.count} session${bin.count === 1 ? "" : "s"}`}</title>
+          <rect x={x} y={y} width={Math.max(1, barWidth)} height={height} rx="2" />
+          {bin.count > 0 && <text className="turn-bar-count" x={x + barWidth / 2} y={Math.max(top - 5, y - 5)} textAnchor="middle">{bin.count}</text>}
+          <text className="turn-bin-label" x={x + barWidth / 2} y={baseline + 16} textAnchor="middle">{bin.label}</text>
+        </g>;
+      })}
+      <line className="turn-axis" x1={left} x2={right} y1={baseline} y2={baseline} />
+      <text className="turn-axis-title" x={(left + right) / 2} y="228" textAnchor="middle">Turns per session</text>
+      <text className="turn-axis-title" x="12" y={(top + baseline) / 2} textAnchor="middle" transform={`rotate(-90 12 ${(top + baseline) / 2})`}>Sessions</text>
     </svg>
-    <small>Log scale · {turns.length > dotLimit ? `${dotLimit} sampled session dots` : "each dot is one session"}</small>
+    <small>Actual counts · no smoothing or sampling · ranges widen for longer sessions</small>
   </figure>;
 }
 
@@ -251,7 +250,10 @@ function SharedWrapped({ id }: { id: string }) {
     const agentWordRatio = Number.isFinite(report.stats.agentUserWordRatio) && report.stats.agentUserWordRatio! > 0
       ? report.stats.agentUserWordRatio!
       : null;
-    const sessionTurnCounts = (report.stats.sessionTurnCounts || []).filter((value) => Number.isFinite(value) && value >= 0);
+    const rawSessionTurnCounts = report.stats.sessionTurnCounts || [];
+    const sessionTurnCounts = rawSessionTurnCounts.filter((value) => Number.isFinite(value) && value >= 1);
+    const legacyZeroTurnCount = rawSessionTurnCounts.filter((value) => Number.isFinite(value) && value < 1).length;
+    const sessionTurnExcludedCount = Math.max(legacyZeroTurnCount, Math.max(0, Math.round(report.stats.sessionTurnExcludedCount || 0)));
     const longestSessionTurns = Math.max(0, ...sessionTurnCounts);
     const harryPotterSeriesCount = fmtSeriesEquivalent(report.stats.tokens || 0, 1_450_000);
     const interactionTone = report.stats.interactionTone;
@@ -269,7 +271,7 @@ function SharedWrapped({ id }: { id: string }) {
     ...(leader ? [{ kicker: "Your most-used agent was", headline: leader.name, detail: `${leader.count} of ${report.stats.sessions} selected sessions.`, tone: "agents", rows: activeAgents.map((agent) => ({ label: agent.name, value: `${agent.percentage.toFixed(1)}%`, percentage: agent.percentage })) }] : []),
     ...(topModel ? [{ kicker: "Your top models", headline: `${topModel.percentage.toFixed(1)}%`, detail: `went to your #1 · ${topModel.name}`, tone: "models", rows: activeModels.slice(0, 4).map((model, index) => ({ label: model.name, value: `${model.percentage.toFixed(1)}%`, percentage: model.percentage, rank: index + 1 })) }] : []),
     ...(Number.isFinite(report.stats.averageAgentResponseWords) ? [{ kicker: "On average, your agent responded with", headline: `${report.stats.averageAgentResponseWords!.toLocaleString()} words`, detail: `Your average input was ${report.stats.averageUserInputWords!.toLocaleString()} words.`, wordRatio: agentWordRatio?.toLocaleString(undefined, { maximumFractionDigits: 2 }), tone: "violet" }] : []),
-    ...(sessionTurnCounts.length ? [{ kicker: "Your longest session lasted", headline: `${longestSessionTurns.toLocaleString()} turns`, detail: "One turn is one message you sent.", tone: "turns", turnDistribution: { values: sessionTurnCounts, median: quantile(sessionTurnCounts, .5) } }] : []),
+    ...(sessionTurnCounts.length ? [{ kicker: "Your longest measured session lasted", headline: `${longestSessionTurns.toLocaleString()} turns`, detail: `One turn is one visible message you sent.${sessionTurnExcludedCount ? ` ${sessionTurnExcludedCount.toLocaleString()} session file${sessionTurnExcludedCount === 1 ? "" : "s"} with no visible user message ${sessionTurnExcludedCount === 1 ? "was" : "were"} excluded.` : ""}`, tone: "turns", turnDistribution: { values: sessionTurnCounts, median: quantile(sessionTurnCounts, .5) } }] : []),
     ...(interactionTone && interactionTone.frustratedMessages + interactionTone.gratefulMessages > 0 ? [{ kicker: "Your relationship with your agent", headline: "", detail: "", tone: "social", comparison: [
       { label: "You yelled at your agent", highlight: "yelled at", accent: "yell" as const, value: interactionTone.frustratedMessages.toLocaleString(), suffix: `time${interactionTone.frustratedMessages === 1 ? "" : "s"}`, quote: report.interactionCard?.frustrationQuote || report.interactionCard?.quote },
       { label: "You thanked your agent", highlight: "thanked", accent: "thanks" as const, value: interactionTone.gratefulMessages.toLocaleString(), suffix: `time${interactionTone.gratefulMessages === 1 ? "" : "s"}` },

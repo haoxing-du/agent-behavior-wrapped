@@ -15,7 +15,7 @@ function reportFixture() {
       tokens: 1_200_000, agentWords: 8_000, userWords: 2_000, agentUserWordRatio: 4,
       averageAgentResponseWords: 400, averageUserInputWords: 100, estimatedCostUsd: 2.4,
       longestSessionTurns: 999,
-      sessionTurnCounts: [12, 2, 51, -1, "private"],
+      sessionTurnCounts: [12, 2, 51, 0, -1, "private"], sessionTurnExcludedCount: 1,
       interactionTone: { frustratedMessages: 3, gratefulMessages: 7, analyzedMessages: 20, method: "private implementation detail" },
       stockPhrases: [{ phrase: "You're right", count: 8 }, { phrase: "Say the word", count: 5 }, { phrase: "genuinely", count: 3 }, { phrase: "one wrinkle", count: 2 }, { phrase: "private custom phrase", count: 99 }],
       outputLanguages: [{ language: "English", words: 6_000, percentage: 75 }, { language: "Spanish", words: 2_000, percentage: 25 }, { language: "Private language", words: 1, percentage: 1 }],
@@ -42,6 +42,7 @@ test("sanitizes a hosted report to a strict share-safe shape", () => {
   assert.equal(safe.stats.agentUserWordRatio, 4);
   assert.equal(safe.stats.longestSessionTurns, 51);
   assert.deepEqual(safe.stats.sessionTurnCounts, [2, 12, 51]);
+  assert.equal(safe.stats.sessionTurnExcludedCount, 1);
   assert.deepEqual(safe.stats.interactionTone, { frustratedMessages: 3, gratefulMessages: 7, analyzedMessages: 20 });
   assert.deepEqual(safe.stats.stockPhrases, [{ phrase: "You're right", count: 8 }, { phrase: "Say the word", count: 5 }, { phrase: "genuinely", count: 3 }, { phrase: "one wrinkle", count: 2 }]);
   assert.deepEqual(safe.stats.outputLanguages.map((item) => item.language), ["English", "Spanish"]);

@@ -177,12 +177,14 @@ test("averages human inputs and complete agent responses across tool-use records
 
 test("records the turn count for each session and the longest session", () => {
   const turnCounts = [51, 2, 21, 1, 11, 6];
-  const report = analyzeSessions(turnCounts.map((turns, sessionIndex) => ({
+  const report = analyzeSessions([...turnCounts.map((turns, sessionIndex) => ({
     sessionId: `turn-session-${sessionIndex}`,
     records: Array.from({ length: turns }, (_, turnIndex) => ({ type: "user", message: { content: `Message ${turnIndex + 1}` } })),
-  })));
+  })), { sessionId: "no-visible-turns", records: [{ type: "user", isMeta: true, message: { content: "tool output" } }] }]);
   assert.equal(report.stats.longestSessionTurns, 51);
   assert.deepEqual(report.stats.sessionTurnCounts, [1, 2, 6, 11, 21, 51]);
+  assert.equal(report.stats.sessionTurnExcludedCount, 1);
+  assert.equal(report.stats.sessions, 7);
 });
 
 test("title-cases model families that are not hardcoded", () => {

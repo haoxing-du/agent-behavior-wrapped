@@ -25,7 +25,7 @@ function safeTurnCounts(value) {
   if (!Array.isArray(value)) return [];
   return value.slice(0, 10_000).flatMap((item) => {
     const turns = Number(item);
-    return Number.isFinite(turns) && turns >= 0 && turns <= 1_000_000 ? [Math.round(turns)] : [];
+    return Number.isFinite(turns) && turns >= 1 && turns <= 1_000_000 ? [Math.round(turns)] : [];
   }).sort((left, right) => left - right);
 }
 
@@ -83,6 +83,7 @@ export function sanitizePublicReport(value) {
       averageAgentResponseWords: Math.round(safeNumber(stats.averageAgentResponseWords)), averageUserInputWords: Math.round(safeNumber(stats.averageUserInputWords)),
       longestSessionTurns: Math.max(0, ...safeSessionTurnCounts),
       sessionTurnCounts: safeSessionTurnCounts,
+      sessionTurnExcludedCount: Math.round(safeNumber(stats.sessionTurnExcludedCount, 1_000_000)),
       interactionTone: {
         frustratedMessages: Math.round(safeNumber(stats.interactionTone?.frustratedMessages, 1_000_000)),
         gratefulMessages: Math.round(safeNumber(stats.interactionTone?.gratefulMessages, 1_000_000)),
