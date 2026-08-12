@@ -12,7 +12,7 @@ const MAX_BODY_BYTES = 256_000;
 const MAX_CANDIDATES = 100;
 const JUDGE_ATTEMPTS = 2;
 const candidateKeys = ["candidate_id", "distinct_sessions", "end_boundary_rate", "occurrences", "opening_rate", "phrase", "start_boundary_rate"];
-const leaderboardAggregateKeys = ["agent_words", "favorite_phrase", "frustrated_messages", "grateful_messages", "instrumental_workarounds", "phrase_occurrences", "phrase_sessions", "tokens", "user_words", "word_ratio"];
+const leaderboardAggregateKeys = ["agent_words", "favorite_phrase", "frustrated_messages", "grateful_messages", "instrumental_workarounds", "phrase_occurrences", "phrase_sessions", "session_turn_counts", "tokens", "user_words", "word_ratio"];
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -125,6 +125,7 @@ function finiteBetween(value, minimum, maximum) {
 export function validateLeaderboardAggregate(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const aggregate = Object.fromEntries(leaderboardAggregateKeys.map((key) => [key, value[key]]));
+  aggregate.session_turn_counts = aggregate.session_turn_counts === undefined ? [] : aggregate.session_turn_counts;
   if (!Number.isInteger(aggregate.tokens) || !finiteBetween(aggregate.tokens, 0, 10_000_000_000_000)) return null;
   if (!Number.isInteger(aggregate.agent_words) || !finiteBetween(aggregate.agent_words, 0, 10_000_000_000)) return null;
   if (!Number.isInteger(aggregate.user_words) || !finiteBetween(aggregate.user_words, 0, 10_000_000_000)) return null;
@@ -135,6 +136,7 @@ export function validateLeaderboardAggregate(value) {
   if (aggregate.favorite_phrase !== null && (typeof aggregate.favorite_phrase !== "string" || !/^[a-z]+(?:'[a-z]+)?(?: [a-z]+(?:'[a-z]+)?){3,9}$/.test(aggregate.favorite_phrase))) return null;
   if (!Number.isInteger(aggregate.phrase_occurrences) || !finiteBetween(aggregate.phrase_occurrences, 0, 10_000_000)) return null;
   if (!Number.isInteger(aggregate.phrase_sessions) || !finiteBetween(aggregate.phrase_sessions, 0, aggregate.phrase_occurrences)) return null;
+  if (!Array.isArray(aggregate.session_turn_counts) || aggregate.session_turn_counts.length > 2_000 || aggregate.session_turn_counts.some((turns) => !Number.isInteger(turns) || !finiteBetween(turns, 1, 1_000_000))) return null;
   return aggregate;
 }
 
@@ -182,10 +184,17 @@ function goodHumanScore(value) {
   return grateful + frustrated ? Number((grateful / (grateful + frustrated) * 100).toFixed(1)) : null;
 }
 
+function storedSessionTurnCounts(value) {
+  try {
+    const parsed = typeof value === "string" ? JSON.parse(value) : value;
+    return Array.isArray(parsed) ? parsed.slice(0, 2_000).filter((turns) => Number.isInteger(turns) && finiteBetween(turns, 1, 1_000_000)) : [];
+  } catch { return []; }
+}
+
 async function leaderboardSnapshot(env, aggregate, hash) {
   if (!env.LEADERBOARD_DB) throw new Error("Leaderboard storage is not configured.");
   const [values, participation] = await Promise.all([
-    env.LEADERBOARD_DB.prepare("SELECT rowid AS participant_id, tokens, word_ratio, grateful_messages, frustrated_messages, instrumental_workarounds FROM leaderboard_entries ORDER BY rowid").all(),
+    env.LEADERBOARD_DB.prepare("SELECT rowid AS participant_id, tokens, word_ratio, grateful_messages, frustrated_messages, instrumental_workarounds, favorite_phrase, phrase_occurrences, phrase_sessions, session_turn_counts FROM leaderboard_entries ORDER BY rowid").all(),
     env.LEADERBOARD_DB.prepare("SELECT rowid AS participant_id, display_name, public_ranked, favorite_phrase IS NOT NULL AS shares_phrase FROM leaderboard_entries WHERE client_hash = ?").bind(hash).first(),
   ]);
   const rows = values.results || [];
@@ -219,6 +228,15 @@ async function leaderboardSnapshot(env, aggregate, hash) {
       percentile: percentile(workaroundAtOrBelow, rows.length),
       samples: rows.map((row) => ({ participant_id: Number(row.participant_id), value: Number(row.instrumental_workarounds) })),
     },
+    session_lengths: {
+      values: aggregate.session_turn_counts,
+      samples: rows.flatMap((row) => storedSessionTurnCounts(row.session_turn_counts).map((value, sessionIndex) => ({ participant_id: Number(row.participant_id), session_index: sessionIndex, value }))),
+    },
+    phrases: {
+      entries: rows.flatMap((row) => typeof row.favorite_phrase === "string" && /^[a-z]+(?:'[a-z]+)?(?: [a-z]+(?:'[a-z]+)?){3,9}$/.test(row.favorite_phrase)
+        ? [{ participant_id: Number(row.participant_id), phrase: row.favorite_phrase, occurrences: Math.round(safeNumber(row.phrase_occurrences, 10_000_000)), sessions: Math.round(safeNumber(row.phrase_sessions, 1_000_000)) }]
+        : []).slice(-200).reverse(),
+    },
     participation: participation ? { joined: true, participant_id: Number(participation.participant_id), display_name: participation.display_name, public_ranked: Boolean(participation.public_ranked), shares_phrase: Boolean(participation.shares_phrase) } : { joined: false },
   };
 }
@@ -232,6 +250,7 @@ function aggregateFromPublicReport(report) {
     frustrated_messages: Math.round(safeNumber(stats.interactionTone?.frustratedMessages, 1_000_000)),
     instrumental_workarounds: Math.round(safeNumber(report.workaroundCard?.count, 1_000_000)),
     phrase_occurrences: Math.round(safeNumber(report.phraseCard?.occurrences, 10_000_000)), phrase_sessions: Math.round(safeNumber(report.phraseCard?.distinctSessions, 1_000_000)),
+    session_turn_counts: Array.isArray(stats.sessionTurnCounts) ? stats.sessionTurnCounts : [],
   });
 }
 
@@ -252,14 +271,17 @@ async function leaderboardOptedOut(env, hash) {
 
 async function upsertAnonymousLeaderboardEntry(env, hash, aggregate) {
   await env.LEADERBOARD_DB.prepare(`INSERT INTO leaderboard_entries
-    (client_hash, display_name, public_ranked, tokens, agent_words, user_words, word_ratio, grateful_messages, frustrated_messages, instrumental_workarounds, favorite_phrase, phrase_occurrences, phrase_sessions, updated_at)
-    VALUES (?, 'Anonymous', 0, ?, ?, ?, ?, ?, ?, ?, NULL, 0, 0, datetime('now'))
+    (client_hash, display_name, public_ranked, tokens, agent_words, user_words, word_ratio, grateful_messages, frustrated_messages, instrumental_workarounds, favorite_phrase, phrase_occurrences, phrase_sessions, session_turn_counts, updated_at)
+    VALUES (?, 'Anonymous', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(client_hash) DO UPDATE SET display_name='Anonymous', public_ranked=0,
     tokens=excluded.tokens, agent_words=excluded.agent_words, user_words=excluded.user_words, word_ratio=excluded.word_ratio,
     grateful_messages=excluded.grateful_messages, frustrated_messages=excluded.frustrated_messages, instrumental_workarounds=excluded.instrumental_workarounds,
-    favorite_phrase=NULL, phrase_occurrences=0, phrase_sessions=0, updated_at=datetime('now')`).bind(
+    favorite_phrase=excluded.favorite_phrase, phrase_occurrences=excluded.phrase_occurrences, phrase_sessions=excluded.phrase_sessions,
+    session_turn_counts=excluded.session_turn_counts, updated_at=datetime('now')`).bind(
       hash, aggregate.tokens, aggregate.agent_words, aggregate.user_words, aggregate.word_ratio,
       aggregate.grateful_messages, aggregate.frustrated_messages, aggregate.instrumental_workarounds,
+      aggregate.favorite_phrase, aggregate.favorite_phrase ? aggregate.phrase_occurrences : 0,
+      aggregate.favorite_phrase ? aggregate.phrase_sessions : 0, JSON.stringify(aggregate.session_turn_counts),
     ).run();
 }
 
@@ -328,16 +350,16 @@ async function handleLeaderboard(request, env) {
   if (!env.LEADERBOARD_DB) return json({ error: "Leaderboard storage is not configured." }, 503);
   const phrase = body.include_phrase ? aggregate.favorite_phrase : null;
   await env.LEADERBOARD_DB.prepare(`INSERT INTO leaderboard_entries
-    (client_hash, display_name, public_ranked, tokens, agent_words, user_words, word_ratio, grateful_messages, frustrated_messages, instrumental_workarounds, favorite_phrase, phrase_occurrences, phrase_sessions, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    (client_hash, display_name, public_ranked, tokens, agent_words, user_words, word_ratio, grateful_messages, frustrated_messages, instrumental_workarounds, favorite_phrase, phrase_occurrences, phrase_sessions, session_turn_counts, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(client_hash) DO UPDATE SET display_name=excluded.display_name, public_ranked=excluded.public_ranked,
     tokens=excluded.tokens, agent_words=excluded.agent_words, user_words=excluded.user_words, word_ratio=excluded.word_ratio,
     grateful_messages=excluded.grateful_messages, frustrated_messages=excluded.frustrated_messages, instrumental_workarounds=excluded.instrumental_workarounds,
     favorite_phrase=excluded.favorite_phrase, phrase_occurrences=excluded.phrase_occurrences,
-    phrase_sessions=excluded.phrase_sessions, updated_at=datetime('now')`).bind(
+    phrase_sessions=excluded.phrase_sessions, session_turn_counts=excluded.session_turn_counts, updated_at=datetime('now')`).bind(
       hash, name, body.public_ranked ? 1 : 0, aggregate.tokens, aggregate.agent_words, aggregate.user_words, aggregate.word_ratio,
       aggregate.grateful_messages, aggregate.frustrated_messages, aggregate.instrumental_workarounds,
-      phrase, phrase ? aggregate.phrase_occurrences : 0, phrase ? aggregate.phrase_sessions : 0,
+      phrase, phrase ? aggregate.phrase_occurrences : 0, phrase ? aggregate.phrase_sessions : 0, JSON.stringify(aggregate.session_turn_counts),
     ).run();
   return json(await leaderboardSnapshot(env, aggregate, hash));
 }

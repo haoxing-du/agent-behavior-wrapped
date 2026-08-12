@@ -28,6 +28,8 @@ type Stage = "select" | "report" | "donate";
 type SavedReport = Report & { id: string; createdAt: string; rangeLabel: string; source: string; publicUrl?: string; donationHelperUrl?: string; hosting?: { public: boolean }; privacy: { shareSafe: boolean; containsTranscriptText: boolean; externalTransmission: boolean; analysisMode?: "remote" | "local-only"; leaderboardParticipation?: "included-by-default" | "excluded" } };
 type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; headlineAccent?: string; wordRatio?: string; example?: string; workaround?: boolean; turnDistribution?: { values: number[]; median: number }; ctaHref?: string; ctaLabel?: string; ctas?: { href: string; label: string; primary?: boolean; note?: string }[]; rows?: { label: string; value: string; percentage?: number; rank?: number }[]; comparison?: { label: string; highlight: string; accent: "yell" | "thanks"; value: string; suffix: string; quote?: string }[] };
 type ParticipantSample = { participant_id: number; value: number };
+type SessionLengthSample = ParticipantSample & { session_index: number };
+type PhraseWallEntry = { participant_id: number; phrase: string; occurrences: number; sessions: number };
 type RelationshipPoint = { participant_id: number; yap_ratio: number; appreciation_index: number };
 type PlotTooltipState = { x: number; y: number; text: string } | null;
 type LeaderboardSnapshot = {
@@ -37,6 +39,8 @@ type LeaderboardSnapshot = {
   good_human_score: { value: number | null; percentile: number | null };
   relationship: { points: RelationshipPoint[] };
   instrumental_workarounds: { value: number; percentile: number | null; samples: ParticipantSample[] };
+  session_lengths: { values: number[]; samples: SessionLengthSample[] };
+  phrases: { entries: PhraseWallEntry[] };
   participation: { joined: boolean; participant_id?: number; display_name?: string; public_ranked?: boolean; shares_phrase?: boolean };
   can_manage?: boolean;
   opted_out?: boolean;
@@ -564,6 +568,59 @@ function WorkaroundFigure({ metric, participantId, included }: { metric: Leaderb
   </section>;
 }
 
+function PhraseWallFigure({ entries, participantId }: { entries: PhraseWallEntry[]; participantId?: number }) {
+  return <section className="leader-figure leader-phrase-figure">
+    <div className="leader-figure-head"><div><span>04 · Favorite phrase wall</span><h2>What do everyone’s agents keep saying?</h2></div><div className="leader-result"><strong>{entries.length.toLocaleString()}</strong><small>phrases shared</small></div></div>
+    {entries.length ? <div className="leader-phrase-wall">{entries.map((entry) => <article className={entry.participant_id === participantId ? "is-you" : ""} key={`${entry.participant_id}-${entry.phrase}`}>
+      {entry.participant_id === participantId && <b>Yours</b>}
+      <blockquote>“{entry.phrase}”</blockquote>
+      <p>{entry.occurrences.toLocaleString()} time{entry.occurrences === 1 ? "" : "s"} · {entry.sessions.toLocaleString()} session{entry.sessions === 1 ? "" : "s"}</p>
+    </article>)}</div> : <div className="leader-empty-wall"><strong>The wall is waiting for its first phrase.</strong><span>Favorite phrases from participating public Wrapped reports will appear here anonymously.</span></div>}
+    <p className="leader-figure-note">Phrases are anonymous and detached from the conversations where they appeared.</p>
+  </section>;
+}
+
+function SessionLengthFigure({ metric, participantId, included }: { metric: LeaderboardSnapshot["session_lengths"]; participantId?: number; included: boolean }) {
+  const { ref, width } = usePlotWidth();
+  const [tooltip, setTooltip] = useState<PlotTooltipState>(null);
+  const height = 286;
+  const left = width < 520 ? 38 : 54;
+  const right = width - 22;
+  const currentValues = metric.values.filter((value) => Number.isInteger(value) && value > 0);
+  const cohortSamples = metric.samples.filter((sample) => Number.isInteger(sample.value) && sample.value > 0);
+  const plottedSamples: SessionLengthSample[] = included || !currentValues.length ? cohortSamples : [...cohortSamples, ...currentValues.map((value, session_index) => ({ participant_id: -1, session_index, value }))];
+  const values = plottedSamples.map((sample) => sample.value);
+  const positive = values.length ? values : [1];
+  const minimum = Math.log10(Math.min(...positive)) - .16;
+  const maximum = Math.max(minimum + 1, Math.log10(Math.max(...positive)) + .16);
+  const xFor = (value: number) => left + (Math.log10(Math.max(1, value)) - minimum) / (maximum - minimum) * (right - left);
+  const dots = swarm(values, xFor, 117, 58);
+  const ticks = compactLogTicks(10 ** minimum, 10 ** maximum, width);
+  const median = quantile(cohortSamples.map((sample) => sample.value), .5);
+  const longest = Math.max(0, ...currentValues);
+  return <section className="leader-figure leader-session-figure">
+    <div className="leader-figure-head"><div><span>05 · Session lengths</span><h2>How long does everyone keep the conversation going?</h2></div><div className="leader-result"><strong>{longest.toLocaleString()}</strong><small>your longest · turns</small></div></div>
+    <div className="leader-session-legend"><span><i className="all" />Everyone’s sessions</span><span><i className="you" />Your sessions</span></div>
+    <div className="leader-plot" ref={ref}>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Session length distribution for ${cohortSamples.length} sessions. Your ${currentValues.length} sessions are highlighted.`}>
+        <rect className="leader-chart-frame" x={left} y="28" width={right - left} height="178" />
+        {median > 0 && <line className="leader-median" x1={xFor(median)} x2={xFor(median)} y1="38" y2="196"><title>Median: {median.toFixed(1)} turns</title></line>}
+        {dots.points.map((point) => {
+          const sample = plottedSamples[point.index];
+          const isCurrent = sample.participant_id === participantId || sample.participant_id === -1;
+          const label = `${isCurrent ? "Your session" : `Participant #${sample.participant_id} · session ${sample.session_index + 1}`}: ${point.value.toLocaleString()} turn${point.value === 1 ? "" : "s"}`;
+          return <InteractivePlotPoint key={`${sample.participant_id}-${sample.session_index}`} className={isCurrent ? "leader-session-you-dot" : "leader-session-dot"} cx={point.x} cy={point.y} radius={isCurrent ? dots.radius + 1.2 : dots.radius} label={label} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} />;
+        })}
+        <line className="leader-axis" x1={left} x2={right} y1="218" y2="218" />
+        {ticks.map((tick) => <g key={tick}><line className="leader-tick" x1={xFor(tick)} x2={xFor(tick)} y1="218" y2="224" /><text className="leader-tick-label" x={xFor(tick)} y="241" textAnchor="middle">{fmtAxisCompact(tick)}</text></g>)}
+        <text className="leader-axis-title" x={(left + right) / 2} y="274" textAnchor="middle">Turns per session · log scale</text>
+      </svg>
+      <PlotTooltip value={tooltip} />
+    </div>
+    <p className="leader-figure-note">One turn is one message you sent. Dashed line = cohort median.{!included ? " Your highlighted sessions are not included in the cohort." : ""}</p>
+  </section>;
+}
+
 function LeaderboardView({ id }: { id: string }) {
   const [report, setReport] = useState<SavedReport | null>(null);
   const [snapshot, setSnapshot] = useState<LeaderboardSnapshot | null>(null);
@@ -601,7 +658,7 @@ function LeaderboardView({ id }: { id: string }) {
   }
 
   async function leave() {
-    if (!window.confirm("Remove your anonymous aggregate stats from the Behavior Wrapped leaderboard? You can add them back later.")) return;
+    if (!window.confirm("Remove your anonymous stats, favorite phrase, and session lengths from the Behavior Wrapped leaderboard? You can add them back later.")) return;
     setSaving(true); setError("");
     try {
       const response = await fetch(`/api/reports/${id}/leaderboard`, { method: "DELETE", headers: managementHeaders() });
@@ -623,12 +680,14 @@ function LeaderboardView({ id }: { id: string }) {
       <TokenUsageFigure metric={snapshot.tokens} participantId={snapshot.participation.participant_id} included={snapshot.participation.joined} />
       <RelationshipFigure ratio={ratio} appreciation={snapshot.good_human_score.value} points={snapshot.relationship.points} participantId={snapshot.participation.participant_id} included={snapshot.participation.joined} />
       <WorkaroundFigure metric={snapshot.instrumental_workarounds} participantId={snapshot.participation.participant_id} included={snapshot.participation.joined} />
+      <PhraseWallFigure entries={snapshot.phrases.entries} participantId={snapshot.participation.participant_id} />
+      <SessionLengthFigure metric={snapshot.session_lengths} participantId={snapshot.participation.participant_id} included={snapshot.participation.joined} />
     </div>
     {snapshot.can_manage && <section className="leader-donation"><div><span className="eyebrow">Optional research donation</span><h2>Will you contribute your data to the research?</h2><p>Separate from the anonymous leaderboard, you can contribute your agent transcripts to the research corpus. You’ll review the redactions and explicitly consent before any transcript data is sent.</p></div><a className="primary" href={`${report.donationHelperUrl || `http://localhost:4317/donate/${report.id}`}?mode=standard`}>Review and donate your data <span>→</span></a></section>}
     {snapshot.can_manage ? <section className="leader-opt-out" id="join-leaderboard">
-      <div><p>{snapshot.participation.joined ? "Don’t want your stats to show up on the leaderboard?" : "Your stats are currently opted out of the leaderboard."}</p>{error && <span className="error" role="alert">{error}</span>}</div>
+      <div><p>{snapshot.participation.joined ? "Don’t want your data to show up on the leaderboard?" : "Your data is currently opted out of the leaderboard."}</p>{error && <span className="error" role="alert">{error}</span>}</div>
       {snapshot.participation.joined ? <button className="leader-remove" disabled={saving} onClick={leave}>{saving ? "Opting out…" : "Click here to opt out"}</button> : <button className="primary" disabled={saving} onClick={include}>{saving ? "Adding…" : "Add my anonymous stats back"}<span>→</span></button>}
-    </section> : <section className="leader-public-note" id="join-leaderboard"><strong>Anonymous aggregates, not transcripts.</strong><p>Published Wrapped reports are included by default. Only the creator can remove or restore this report’s aggregate stats using their private management link.</p></section>}
+    </section> : <section className="leader-public-note" id="join-leaderboard"><strong>Anonymous summaries, not full transcripts.</strong><p>Published Wrapped reports are included by default with aggregate stats, the favorite phrase shown on the public Wrapped, and session-length counts. Only the creator can remove or restore this data using their private management link.</p></section>}
   </main>;
 }
 

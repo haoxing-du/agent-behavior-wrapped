@@ -14,11 +14,12 @@ const aggregate = {
   favorite_phrase: "you are right to push back",
   phrase_occurrences: 12,
   phrase_sessions: 5,
+  session_turn_counts: [3, 18, 42],
 };
 
 const publicReport = {
   id: "leaderReport123",
-  stats: { tokens: aggregate.tokens, agentWords: aggregate.agent_words, userWords: aggregate.user_words, agentUserWordRatio: aggregate.word_ratio, interactionTone: { gratefulMessages: aggregate.grateful_messages, frustratedMessages: aggregate.frustrated_messages } },
+  stats: { tokens: aggregate.tokens, agentWords: aggregate.agent_words, userWords: aggregate.user_words, agentUserWordRatio: aggregate.word_ratio, sessionTurnCounts: aggregate.session_turn_counts, interactionTone: { gratefulMessages: aggregate.grateful_messages, frustratedMessages: aggregate.frustrated_messages } },
   phraseCard: { phrase: aggregate.favorite_phrase, occurrences: aggregate.phrase_occurrences, distinctSessions: aggregate.phrase_sessions },
   workaroundCard: { count: aggregate.instrumental_workarounds, models: [] },
 };
@@ -46,12 +47,12 @@ function leaderboardDatabase(managementTokenHash) {
           return null;
         },
         async all() {
-          if (sql.includes("tokens, word_ratio, grateful_messages")) return { results: entry ? [{ participant_id: 1, tokens: entry.tokens, word_ratio: entry.wordRatio, grateful_messages: entry.gratefulMessages, frustrated_messages: entry.frustratedMessages, instrumental_workarounds: entry.workarounds }] : [] };
+          if (sql.includes("tokens, word_ratio, grateful_messages")) return { results: entry ? [{ participant_id: 1, tokens: entry.tokens, word_ratio: entry.wordRatio, grateful_messages: entry.gratefulMessages, frustrated_messages: entry.frustratedMessages, instrumental_workarounds: entry.workarounds, favorite_phrase: entry.phrase, phrase_occurrences: entry.phraseOccurrences, phrase_sessions: entry.phraseSessions, session_turn_counts: entry.sessionTurnCounts }] : [] };
           return { results: [] };
         },
         async run() {
-          if (sql.startsWith("INSERT INTO leaderboard_entries") && sql.includes("'Anonymous'")) entry = { ownerHash: values[0], displayName: "Anonymous", publicRanked: 0, tokens: values[1], wordRatio: values[4], gratefulMessages: values[5], frustratedMessages: values[6], workarounds: values[7], sharesPhrase: false };
-          else if (sql.startsWith("INSERT INTO leaderboard_entries")) entry = { ownerHash: values[0], displayName: values[1], publicRanked: values[2], tokens: values[3], wordRatio: values[6], gratefulMessages: values[7], frustratedMessages: values[8], workarounds: values[9], sharesPhrase: Boolean(values[10]) };
+          if (sql.startsWith("INSERT INTO leaderboard_entries") && sql.includes("'Anonymous'")) entry = { ownerHash: values[0], displayName: "Anonymous", publicRanked: 0, tokens: values[1], wordRatio: values[4], gratefulMessages: values[5], frustratedMessages: values[6], workarounds: values[7], phrase: values[8], phraseOccurrences: values[9], phraseSessions: values[10], sessionTurnCounts: values[11], sharesPhrase: Boolean(values[8]) };
+          else if (sql.startsWith("INSERT INTO leaderboard_entries")) entry = { ownerHash: values[0], displayName: values[1], publicRanked: values[2], tokens: values[3], wordRatio: values[6], gratefulMessages: values[7], frustratedMessages: values[8], workarounds: values[9], phrase: values[10], phraseOccurrences: values[11], phraseSessions: values[12], sessionTurnCounts: values[13], sharesPhrase: Boolean(values[10]) };
           if (sql.startsWith("INSERT INTO leaderboard_opt_outs")) optedOut = true;
           if (sql.startsWith("DELETE FROM leaderboard_opt_outs")) optedOut = false;
           if (sql.startsWith("DELETE FROM leaderboard_entries")) entry = null;
@@ -64,7 +65,7 @@ function leaderboardDatabase(managementTokenHash) {
 
 test("builds a narrow leaderboard aggregate from a saved report", () => {
   const value = leaderboardAggregateFromReport({
-    stats: { tokens: 12_500_000, agentWords: 8_000, userWords: 2_000, interactionTone: { gratefulMessages: 7, frustratedMessages: 3 } },
+    stats: { tokens: 12_500_000, agentWords: 8_000, userWords: 2_000, sessionTurnCounts: [3, 18, 42], interactionTone: { gratefulMessages: 7, frustratedMessages: 3 } },
     phraseCard: { phrase: "you are right to push back", occurrences: 12, distinctSessions: 5 },
     workaroundCard: { count: 4 },
   });
@@ -78,6 +79,8 @@ test("rejects unsafe or malformed leaderboard aggregates", () => {
   assert.equal(validateLeaderboardAggregate({ ...aggregate, tokens: -1 }), null);
   assert.equal(validateLeaderboardAggregate({ ...aggregate, word_ratio: Infinity }), null);
   assert.equal(validateLeaderboardAggregate({ ...aggregate, grateful_messages: -1 }), null);
+  assert.equal(validateLeaderboardAggregate({ ...aggregate, session_turn_counts: [3, 0, 42] }), null);
+  assert.deepEqual(validateLeaderboardAggregate(Object.fromEntries(Object.entries(aggregate).filter(([key]) => key !== "session_turn_counts")))?.session_turn_counts, []);
 });
 
 test("builds a complete synthetic leaderboard without a network request", () => {
@@ -89,6 +92,9 @@ test("builds a complete synthetic leaderboard without a network request", () => 
   assert.equal(snapshot.good_human_score.value, 70);
   assert.equal(snapshot.instrumental_workarounds.value, 4);
   assert.equal(snapshot.instrumental_workarounds.samples.length, 12);
+  assert.equal(snapshot.session_lengths.samples.length, 29);
+  assert.deepEqual(snapshot.session_lengths.values, aggregate.session_turn_counts);
+  assert.equal(snapshot.phrases.entries[0].phrase, aggregate.favorite_phrase);
 });
 
 test("requires explicit consent before storing a leaderboard entry", async () => {
@@ -120,7 +126,7 @@ test("a published report is included anonymously by default", async () => {
   assert.equal(snapshot.participation.joined, true);
   assert.equal(database.entry.displayName, "Anonymous");
   assert.equal(database.entry.publicRanked, 0);
-  assert.equal(database.entry.sharesPhrase, false);
+  assert.equal(database.entry.sharesPhrase, true);
 });
 
 test("the creator can persistently opt out and later add anonymous stats back", async () => {
@@ -141,8 +147,11 @@ test("the creator can persistently opt out and later add anonymous stats back", 
   assert.deepEqual(snapshot.relationship.points, [{ participant_id: 1, yap_ratio: 4, appreciation_index: 70 }]);
   assert.deepEqual(snapshot.tokens.samples, [{ participant_id: 1, value: 12_500_000 }]);
   assert.deepEqual(snapshot.instrumental_workarounds.samples, [{ participant_id: 1, value: 4 }]);
+  assert.deepEqual(snapshot.session_lengths.values, [3, 18, 42]);
+  assert.deepEqual(snapshot.session_lengths.samples, [{ participant_id: 1, session_index: 0, value: 3 }, { participant_id: 1, session_index: 1, value: 18 }, { participant_id: 1, session_index: 2, value: 42 }]);
+  assert.deepEqual(snapshot.phrases.entries, [{ participant_id: 1, phrase: aggregate.favorite_phrase, occurrences: 12, sessions: 5 }]);
   assert.equal(database.entry.ownerHash, "owner-hash");
-  assert.equal(database.entry.sharesPhrase, false);
+  assert.equal(database.entry.sharesPhrase, true);
 
   const removed = await handleRequest(new Request("https://example.com/api/reports/leaderReport123/leaderboard", { method: "DELETE", headers }), {
     LEADERBOARD_DB: database, CLIENT_RATE_LIMITER: { limit: async () => ({ success: true }) },

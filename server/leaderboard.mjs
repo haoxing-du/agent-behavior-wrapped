@@ -5,10 +5,19 @@ const demoTokens = [820_000, 2_400_000, 8_900_000, 14_300_000, 31_000_000, 47_50
 const demoRatios = [0.8, 1.2, 1.7, 2.1, 2.8, 3.4, 4.2, 5.1, 6.7, 8.4, 11.2, 14.6];
 const demoGoodHumanScores = [12.5, 25, 33.3, 40, 50, 57.1, 66.7, 72.7, 80, 87.5, 94.1, 100];
 const demoWorkarounds = [0, 0, 1, 1, 2, 2, 3, 4, 5, 7, 9, 14];
+const demoSessionTurnCounts = [[2, 4, 8], [3, 12, 21], [5, 17], [7, 35, 66], [9, 14, 93], [11, 45], [16, 28, 120], [22, 73], [31, 180], [48, 310], [82, 620], [140, 1_240]];
 
 function finiteNonNegative(value) {
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : 0;
+}
+
+function sessionTurnCounts(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 2_000).flatMap((item) => {
+    const turns = Number(item);
+    return Number.isInteger(turns) && turns >= 1 && turns <= 1_000_000 ? [turns] : [];
+  });
 }
 
 export function leaderboardAggregateFromReport(report) {
@@ -31,6 +40,7 @@ export function leaderboardAggregateFromReport(report) {
     favorite_phrase: typeof phrase === "string" && /^[a-z]+(?:'[a-z]+)?(?: [a-z]+(?:'[a-z]+)?){3,9}$/.test(phrase) ? phrase : null,
     phrase_occurrences: Math.round(finiteNonNegative(report?.phraseCard?.occurrences)),
     phrase_sessions: Math.round(finiteNonNegative(report?.phraseCard?.distinctSessions)),
+    session_turn_counts: sessionTurnCounts(stats.sessionTurnCounts),
   };
 }
 
@@ -59,6 +69,13 @@ export function syntheticLeaderboardSnapshot(aggregate, participation = null) {
       value: aggregate.instrumental_workarounds,
       percentile: Math.round(demoWorkarounds.filter((value) => value <= aggregate.instrumental_workarounds).length / demoWorkarounds.length * 100),
       samples: demoWorkarounds.map((value, index) => ({ participant_id: index + 1, value })),
+    },
+    session_lengths: {
+      values: aggregate.session_turn_counts,
+      samples: demoSessionTurnCounts.flatMap((values, participantIndex) => values.map((value, sessionIndex) => ({ participant_id: participantIndex + 1, session_index: sessionIndex, value }))),
+    },
+    phrases: {
+      entries: aggregate.favorite_phrase ? [{ participant_id: 1, phrase: aggregate.favorite_phrase, occurrences: aggregate.phrase_occurrences, sessions: aggregate.phrase_sessions }] : [],
     },
     participation: participation || { joined: false },
   };
