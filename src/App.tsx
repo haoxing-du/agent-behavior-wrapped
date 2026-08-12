@@ -1164,20 +1164,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
 }
 
 function LandingPage() {
-  const command = "npx behavior-wrapped@latest";
-  const [copied, setCopied] = useState(false);
-
-  async function copyCommand() {
-    try {
-      await navigator.clipboard.writeText(command);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1800);
-    } catch {
-      setCopied(false);
-    }
-  }
-
-  return <main className="landing-page"><div><h1>Behavior Wrapped</h1><p className="landing-description">A local-first behavior report for you and your AI agents.</p><div className="landing-command"><code><span aria-hidden="true">$</span>{command}</code><button type="button" onClick={copyCommand} aria-label="Copy npx command">{copied ? "Copied!" : "Copy"}</button></div></div></main>;
+  return <main className="landing-page"><div><h1>Behavior Wrapped</h1><p className="landing-description">A local-first behavior report for you and your AI agents.</p><p className="landing-coming-soon">coming soon</p></div></main>;
 }
 
 export default function App() {
