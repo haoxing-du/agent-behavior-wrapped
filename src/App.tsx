@@ -708,7 +708,7 @@ function Selection({ catalog, selected, setSelected, onAnalyze, loading, error }
     setSelected(next);
   }
 
-  if (!catalog) return <main className="loading-screen"><div className="orb" /><p>Looking for local Claude Code and Codex sessions…</p></main>;
+  if (!catalog) return <main className="loading-screen"><div className="orb" /><p>Looking for local Claude Code, Cowork, and Codex sessions…</p></main>;
 
   return <main>
     <section className="hero">
