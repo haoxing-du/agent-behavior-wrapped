@@ -177,45 +177,37 @@ function SessionTurnChart({ values, median }: { values: number[]; median: number
   const top = 30;
   const baseline = 137;
   const axis = 192;
-  const maximumLog = Math.max(1, Math.log1p(longest));
-  const xFor = (value: number) => left + Math.log1p(value) / maximumLog * (right - left);
-  const logs = turns.map((value) => Math.log1p(value));
-  const bandwidth = Math.max(.18, maximumLog / 11);
+  const roughTickStep = Math.max(1, longest / 4);
+  const tickMagnitude = 10 ** Math.floor(Math.log10(roughTickStep));
+  const normalizedTickStep = roughTickStep / tickMagnitude;
+  const tickFactor = normalizedTickStep <= 1 ? 1 : normalizedTickStep <= 2 ? 2 : normalizedTickStep <= 2.5 ? 2.5 : normalizedTickStep <= 4 ? 4 : normalizedTickStep <= 5 ? 5 : 10;
+  const tickStep = tickFactor * tickMagnitude;
+  const domainMaximum = Math.max(tickStep, Math.ceil(longest / tickStep) * tickStep);
+  const xFor = (value: number) => left + value / domainMaximum * (right - left);
+  const bandwidth = Math.max(1, domainMaximum / 18);
   const density = Array.from({ length: 73 }, (_, index) => {
-    const logValue = maximumLog * index / 72;
-    const value = logs.reduce((sum, point) => sum + Math.exp(-.5 * ((logValue - point) / bandwidth) ** 2), 0);
+    const turnValue = domainMaximum * index / 72;
+    const value = turns.reduce((sum, point) => sum + Math.exp(-.5 * ((turnValue - point) / bandwidth) ** 2), 0);
     return { x: left + (right - left) * index / 72, value };
   });
   const maximumDensity = Math.max(1, ...density.map((point) => point.value));
   const densityPoints = density.map((point) => ({ x: point.x, y: baseline - point.value / maximumDensity * (baseline - top) }));
   const areaPath = `M ${left} ${baseline} ${densityPoints.map((point) => `L ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(" ")} L ${right} ${baseline} Z`;
   const linePath = `M ${densityPoints.map((point) => `${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(" L ")}`;
-  const candidates = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1_000, 2_000, 5_000, 10_000].filter((value) => value <= longest);
-  if (!candidates.includes(longest)) candidates.push(longest);
-  const ticks: number[] = [];
-  candidates.sort((leftValue, rightValue) => leftValue - rightValue).forEach((value) => {
-    if (!ticks.length || xFor(value) - xFor(ticks[ticks.length - 1]) >= 38 || value === longest) {
-      if (value === longest && ticks.length > 1 && xFor(value) - xFor(ticks[ticks.length - 1]) < 38) ticks.pop();
-      ticks.push(value);
-    }
-  });
+  const ticks = Array.from({ length: Math.round(domainMaximum / tickStep) + 1 }, (_, index) => index * tickStep);
   const dotPositions: { value: number; x: number; y: number }[] = [];
-  const xOffsets = [0, -6, 6, -12, 12, -18, 18, -24, 24, -30, 30, -36, 36];
+  const dotRows = Array.from({ length: 29 }, (_, index) => axis - 7 - index * 5.5);
   for (const value of turns) {
-    const baseX = xFor(value);
-    let placed = false;
-    for (let row = 0; row < 6 && !placed; row++) {
-      for (const offset of xOffsets) {
-        const x = Math.max(left + 3, Math.min(right - 3, baseX + offset));
-        const y = 151 + row * 6.5;
-        if (dotPositions.every((point) => Math.hypot(point.x - x, point.y - y) >= 5.8)) {
-          dotPositions.push({ value, x, y });
-          placed = true;
-          break;
-        }
-      }
+    const x = xFor(value);
+    const y = dotRows.find((candidateY) => (
+      dotPositions.every((point) => Math.hypot(point.x - x, point.y - candidateY) >= 5.2)
+    ));
+    if (y !== undefined) {
+      dotPositions.push({ value, x, y });
+    } else {
+      const overflowIndex = dotPositions.filter((point) => point.value === value).length - dotRows.length;
+      dotPositions.push({ value, x, y: Math.max(top, dotRows[dotRows.length - 1] - Math.max(1, overflowIndex) * 3) });
     }
-    if (!placed) dotPositions.push({ value, x: baseX, y: 187 });
   }
   const medianLabel = median.toLocaleString(undefined, { maximumFractionDigits: 1 });
   return <figure className="session-turn-chart">
@@ -225,9 +217,9 @@ function SessionTurnChart({ values, median }: { values: number[]; median: number
       <path className="turn-density-area" d={areaPath} />
       <path className="turn-density-line" d={linePath} />
       <line className="turn-median-line" x1={xFor(median)} x2={xFor(median)} y1={top + 1} y2={axis - 7} />
-      {dotPositions.map((point, index) => <circle className="turn-session-dot" key={`${point.value}-${index}`} cx={point.x} cy={point.y} r="2.5"><title>{`${point.value} turn${point.value === 1 ? "" : "s"}`}</title></circle>)}
+      {dotPositions.map((point, index) => <circle className="turn-session-dot" key={`${point.value}-${index}`} cx={point.x} cy={point.y} r="2.2"><title>{`${point.value} turn${point.value === 1 ? "" : "s"}`}</title></circle>)}
       <line className="turn-axis" x1={left} x2={right} y1={axis} y2={axis} />
-      {ticks.map((value) => <g className="turn-tick" key={value}><line x1={xFor(value)} x2={xFor(value)} y1={axis - 4} y2={axis + 4} /><text x={xFor(value)} y={211} textAnchor={value === 1 ? "start" : value === longest ? "end" : "middle"}>{fmtAxisCompact(value)}</text></g>)}
+      {ticks.map((value) => <g className="turn-tick" key={value}><line x1={xFor(value)} x2={xFor(value)} y1={axis - 4} y2={axis + 4} /><text x={xFor(value)} y={211} textAnchor={value === 0 ? "start" : value === domainMaximum ? "end" : "middle"}>{fmtAxisCompact(value)}</text></g>)}
     </svg>
   </figure>;
 }
