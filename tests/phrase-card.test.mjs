@@ -39,7 +39,7 @@ test("builds a deterministic local phrase card without a judge call", () => {
   assert.equal(card.phrase, candidates[0].phrase);
   assert.equal(card.occurrences, candidates[0].occurrences);
   assert.equal(card.distinctSessions, candidates[0].distinct_sessions);
-  assert.equal(card.provider, "Local test mode");
+  assert.equal(card.provider, "Local deterministic analysis");
   assert.equal(card.latencyMs, 0);
   assert.equal(buildLocalPhraseCard([]), null);
 });

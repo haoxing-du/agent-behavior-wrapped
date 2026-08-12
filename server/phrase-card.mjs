@@ -202,9 +202,9 @@ export function buildLocalPhraseCard(candidates) {
   if (!candidates.length) return null;
   return phraseCardFromSelection(candidates, candidates[0].candidate_id, {
     model: "Local deterministic selection",
-    provider: "Local test mode",
+    provider: "Local deterministic analysis",
     latencyMs: 0,
-    method: "Test mode selected the highest-ranked locally counted phrase without an LLM call.",
+    method: "Selected the highest-ranked locally counted phrase without an LLM call.",
   });
 }
 
