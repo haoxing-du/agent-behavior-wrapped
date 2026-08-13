@@ -698,7 +698,6 @@ function SavedDonationRoute({ id }: { id: string }) {
   if (!catalog || !selection || !report) return <main className="shared-loading"><div className="orb" /><p>Preparing the private redaction review…</p></main>;
   const backUrl = report.publicUrl || `/w/${id}`;
   return <div className="app-shell donation-shell">
-    <Header stage="donate" setStage={() => { window.location.href = backUrl; }} />
     <DonationView reportId={id} mode={mode} sessions={catalog.sessions} initialSelected={selection} onBack={() => { window.location.href = backUrl; }} />
     <footer><span>Behavior Wrapped</span><span>Local donation review · Encrypted on this Mac before transmission</span></footer>
   </div>;
@@ -997,7 +996,15 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
   const [error, setError] = useState("");
   const [acceptedId, setAcceptedId] = useState("");
   const [deletionStatus, setDeletionStatus] = useState("");
+  const selectableSessions = useMemo(() => sessions.filter((session) => initialSelected.has(session.id)), [sessions, initialSelected]);
   const reviewSummaryBySession = useMemo(() => new Map(reviewSessions.map((session) => [session.sessionId, session.summary])), [reviewSessions]);
+  const selectedSessionCount = selectableSessions.filter((session) => chosen.has(session.id)).length;
+  const allSessionsSelected = selectableSessions.length > 0 && selectedSessionCount === selectableSessions.length;
+  const modeDescription = mode === "standard"
+    ? "Automatic safeguards with a quick final review."
+    : mode === "advanced"
+      ? "Choose sessions and fine-tune what is hidden."
+      : "No automatic redactions. Review every line before donating.";
 
   async function preview(ids = [...chosen], disabledRedactions = [...disabledAutomatic], disabledMatches = [...disabledAutomaticMatches]) {
     setLoading(true); setError(""); setConsent(false);
@@ -1043,6 +1050,17 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
   function toggleDonationSession(sessionId: string) {
     const next = new Set(chosen);
     next.has(sessionId) ? next.delete(sessionId) : next.add(sessionId);
+    setChosen(next); setConsent(false); setOpenSession(null);
+    if (!next.size) {
+      setBundle((current) => current ? { ...current, detectionCount: 0, redactions: [], sessions: [] } : current);
+      setCustomRules([]); setCustomStatus("");
+      return;
+    }
+    void preview([...next]);
+  }
+
+  function toggleAllDonationSessions() {
+    const next = allSessionsSelected ? new Set<string>() : new Set(selectableSessions.map((session) => session.id));
     setChosen(next); setConsent(false); setOpenSession(null);
     if (!next.size) {
       setBundle((current) => current ? { ...current, detectionCount: 0, redactions: [], sessions: [] } : current);
@@ -1168,11 +1186,15 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
 
   return <main className="donation-page">
     <button className="back-link" onClick={onBack}>← Back to Wrapped</button>
-    <section className="donation-hero"><span className="eyebrow">Research donation · local review</span><h1>Redact transcripts before sharing</h1><p>Nothing is transmitted before final consent. After you press Donate, this localhost helper encrypts the reviewed bundle on your Mac; the storage service receives ciphertext, not readable transcripts.</p><div className="donation-mode-links"><a className={mode === "standard" ? "active" : ""} href={`/donate/${reportId}?mode=standard`}>Standard redactions</a><a className={mode === "advanced" ? "active" : ""} href={`/donate/${reportId}?mode=advanced`}>Review and customize</a><a className={`unredacted ${unredacted ? "active" : ""}`} href={`/donate/${reportId}?mode=unredacted`}>Unredacted copy</a></div></section>
+    <section className="donation-hero">
+      <aside className="local-review-notice"><span className="pulse" aria-hidden="true" /><div><strong>This review is running locally on your Mac</strong><p>Nothing from this review is transmitted until you press Donate.</p></div></aside>
+      <span className="eyebrow">Research donation · local review</span><h1>Redact transcripts before sharing</h1><p>After you press Donate, this localhost helper encrypts the reviewed bundle on your Mac; the storage service receives ciphertext, not readable transcripts.</p>
+      <label className="donation-mode-control"><span>Donation mode</span><select value={mode} onChange={(event) => { window.location.href = `/donate/${reportId}?mode=${event.target.value}`; }}><option value="standard">Standard redactions</option><option value="advanced">Select sessions or customize redactions</option><option value="unredacted">Unredacted copy</option></select><small>{modeDescription}</small></label>
+    </section>
     <div className="donation-layout">
       <section className="donation-controls">
         <div className="donation-step"><span>1</span><div><h2>{detailedReview ? "Choose what to include" : "Standard redactions applied"}</h2><p>{unredacted ? "No automatic redactions are applied. Credentials, personal details, private code, URLs, and file paths may all be included." : "High-confidence secrets and personal details are removed locally. Code, URLs, and paths remain so the transcript keeps its context; home-directory usernames are masked."}</p></div></div>
-        {detailedReview && <><div className="donation-sessions">{sessions.filter((session) => initialSelected.has(session.id)).map((session) => <label key={session.id}><input type="checkbox" checked={chosen.has(session.id)} disabled={loading} onChange={() => toggleDonationSession(session.id)} /><span>{session.label}<small className="donation-session-meta">{session.projectName} · {fmtDate(session.startedAt)}</small>{bundle && <small className="donation-session-summary">{reviewSummaryBySession.get(session.id) || "No summary available"}</small>}</span></label>)}</div><button className="primary full" disabled={!chosen.size || loading} onClick={() => preview()}>{loading ? "Building preview…" : bundle ? `Refresh ${unredacted ? "unredacted " : "redacted "}preview` : `Build ${unredacted ? "unredacted " : "redacted "}preview`}</button></>}
+        {detailedReview && <><div className="donation-session-picker"><div className="donation-session-select-all"><label><input type="checkbox" checked={allSessionsSelected} ref={(input) => { if (input) input.indeterminate = selectedSessionCount > 0 && !allSessionsSelected; }} disabled={loading} onChange={toggleAllDonationSessions} /><strong>Select all sessions</strong></label><span>{selectedSessionCount} of {selectableSessions.length} selected</span></div><div className="donation-sessions">{selectableSessions.map((session) => <label key={session.id}><input type="checkbox" checked={chosen.has(session.id)} disabled={loading} onChange={() => toggleDonationSession(session.id)} /><span>{session.label}<small className="donation-session-meta">{session.projectName} · {fmtDate(session.startedAt)}</small>{bundle && <small className="donation-session-summary">{reviewSummaryBySession.get(session.id) || "No summary available"}</small>}</span></label>)}</div></div><button className="primary full" disabled={!chosen.size || loading} onClick={() => preview()}>{loading ? "Building preview…" : bundle ? `Refresh ${unredacted ? "unredacted " : "redacted "}preview` : `Build ${unredacted ? "unredacted " : "redacted "}preview`}</button></>}
         {mode === "standard" && <div className="donation-summary"><strong>{bundle ? `${bundle.sessions.length} sessions · ${messageCount} messages` : "Preparing your redacted donation…"}</strong><span>{bundle?.detectionCount || 0} sensitive items automatically removed</span><a href={`/donate/${reportId}?mode=advanced`}>Want more control? Review every message.</a></div>}
         {error && <p className="error">{error}</p>}
       </section>

@@ -565,9 +565,6 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
   .leader-opt-out { align-items: stretch; flex-direction: column; }
 }
 
-.donation-mode-links { display:flex; gap:10px; margin-top:24px; flex-wrap:wrap; }
-.donation-mode-links a { color:#1a1520; border:1px solid #393244; border-radius:999px; padding:10px 16px; text-decoration:none; font-weight:750; }
-.donation-mode-links a.active { color:#12101f; background:#c9f24b; border-color:#c9f24b; font-weight:800; }
 .donation-summary { display:grid; gap:10px; padding:20px; border-radius:18px; background:#17131e; border:1px solid #332b3d; }
 .donation-summary strong { font-size:20px; color:#f8f5ff; }
 .donation-summary span { color:#aaa3ba; }
@@ -599,11 +596,15 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .donation-hero .eyebrow { color: #587120; font-size: 10px; letter-spacing: .15em; }
 .donation-hero h1 { margin: 10px 0 12px; font-size: clamp(42px, 6vw, 72px); line-height: .9; letter-spacing: -.055em; }
 .donation-hero p { max-width: 760px; margin: 0; color: var(--donation-muted, #6f6873); font-size: 13px; line-height: 1.5; }
-.donation-mode-links { margin-top: 22px; }
-.donation-mode-links a { border-color: #bcb3c0; color: #514956; font-size: 11px; }
-.donation-mode-links a.active { border-color: #627c25; background: #627c25; color: white; }
-.donation-mode-links a.unredacted { border-color: #c98b78; color: #8a3f2c; }
-.donation-mode-links a.unredacted.active { border-color: #9d3f29; background: #9d3f29; color: white; }
+.local-review-notice { max-width: 760px; margin-bottom: 30px; padding: 17px 19px; border: 1px solid #b5c78a; border-radius: 15px; background: rgba(225,239,191,.62); display: flex; align-items: flex-start; gap: 13px; }
+.local-review-notice .pulse { flex: none; margin-top: 5px; background: #82a42d; box-shadow: 0 0 0 6px rgba(130,164,45,.13); }
+.local-review-notice div { display: grid; gap: 4px; }
+.local-review-notice strong { color: #3f5318; font-size: 13px; }
+.local-review-notice p { color: #62723e; font-size: 11px; }
+.donation-mode-control { width: min(440px, 100%); margin-top: 24px; display: grid; grid-template-columns: 1fr; gap: 7px; color: #514956; }
+.donation-mode-control > span { font-size: 9px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
+.donation-mode-control select { width: 100%; min-height: 46px; border: 1px solid #bcb3c0; border-radius: 12px; padding: 0 42px 0 14px; background: rgba(255,255,255,.76); color: #29232d; font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; }
+.donation-mode-control small { color: #7a727e; font-size: 10.5px; line-height: 1.4; }
 .donation-layout { grid-template-columns: minmax(280px, .72fr) minmax(480px, 1.28fr); gap: 20px; max-width: 1120px; margin: 0 auto; }
 .donation-controls, .donation-preview { border: 1px solid #d4cdd6; border-radius: 20px; background: rgba(255,255,255,.68); box-shadow: none; }
 .donation-controls { position: sticky; top: 20px; }
@@ -648,6 +649,13 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .donation-summary strong { font-size: 16px; line-height: 1.25; }
 .donation-summary span { font-size: 12px; line-height: 1.35; }
 .donation-summary a { margin-top: 3px; font-size: 11px; line-height: 1.35; }
+.donation-session-picker { margin: 20px 0; overflow: hidden; border: 1px solid #d6cfd8; border-radius: 14px; background: rgba(255,255,255,.55); }
+.donation-session-select-all { min-height: 46px; padding: 11px 13px; border-bottom: 1px solid #cbc3ce; background: rgba(233,221,245,.46); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.donation-session-select-all label { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.donation-session-select-all input, .donation-sessions input { flex: none; width: 16px; height: 16px; margin: 0; accent-color: #754ba8; }
+.donation-session-select-all strong { font-size: 11px; }
+.donation-session-select-all > span { color: #716977; font-size: 9.5px; font-weight: 700; white-space: nowrap; }
+.donation-session-picker .donation-sessions { margin: 0; border: 0; border-radius: 0; }
 .donation-sessions label { font-size: 13px; }
 .donation-sessions small { font-size: 10.5px; }
 .donation-sessions .donation-session-summary { margin-top: 2px; color: #635b68; font-weight: 600; line-height: 1.35; }
