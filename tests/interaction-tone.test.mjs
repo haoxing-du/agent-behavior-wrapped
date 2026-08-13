@@ -31,6 +31,8 @@ test("builds a strict interaction classifier request", () => {
   assert.deepEqual(request.provider, { data_collection: "deny", zdr: true });
   assert.equal(request.seed, 1729);
   assert.equal(request.messages[0].content.includes("word \"dude\" used warmly"), true);
+  assert.equal(request.messages[0].content.includes("clear anger, frustration, exasperation, blame, sharp pushback, or dissatisfaction"), true);
+  assert.equal(request.messages[0].content.includes("when a case is borderline or ambiguous, set frustrated to false"), true);
   assert.equal(request.messages[0].content.includes("Return exactly one classification for every candidate"), true);
   const classifications = request.response_format.json_schema.schema.properties.classifications;
   assert.equal(classifications.minItems, candidates.length);
