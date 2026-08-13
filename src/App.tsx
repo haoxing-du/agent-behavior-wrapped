@@ -176,54 +176,45 @@ function GiftbotMark() {
 function SessionTurnChart({ values, median }: { values: number[]; median: number }) {
   const turns = values.filter((value) => Number.isFinite(value) && value >= 1).sort((left, right) => left - right);
   const longest = Math.max(0, ...turns);
-  const left = 18;
-  const right = 542;
-  const top = 30;
-  const baseline = 137;
-  const axis = 192;
-  const roughTickStep = Math.max(1, longest / 4);
-  const tickMagnitude = 10 ** Math.floor(Math.log10(roughTickStep));
-  const normalizedTickStep = roughTickStep / tickMagnitude;
-  const tickFactor = normalizedTickStep <= 1 ? 1 : normalizedTickStep <= 2 ? 2 : normalizedTickStep <= 2.5 ? 2.5 : normalizedTickStep <= 4 ? 4 : normalizedTickStep <= 5 ? 5 : 10;
-  const tickStep = tickFactor * tickMagnitude;
-  const domainMaximum = Math.max(tickStep, Math.ceil(longest / tickStep) * tickStep);
-  const xFor = (value: number) => left + value / domainMaximum * (right - left);
-  const bandwidth = Math.max(1, domainMaximum / 18);
-  const density = Array.from({ length: 73 }, (_, index) => {
-    const turnValue = domainMaximum * index / 72;
-    const value = turns.reduce((sum, point) => sum + Math.exp(-.5 * ((turnValue - point) / bandwidth) ** 2), 0);
-    return { x: left + (right - left) * index / 72, value };
-  });
-  const maximumDensity = Math.max(1, ...density.map((point) => point.value));
-  const densityPoints = density.map((point) => ({ x: point.x, y: baseline - point.value / maximumDensity * (baseline - top) }));
-  const areaPath = `M ${left} ${baseline} ${densityPoints.map((point) => `L ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(" ")} L ${right} ${baseline} Z`;
-  const linePath = `M ${densityPoints.map((point) => `${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(" L ")}`;
-  const ticks = Array.from({ length: Math.round(domainMaximum / tickStep) + 1 }, (_, index) => index * tickStep);
+  const left = 22;
+  const right = 538;
+  const plotTop = 37;
+  const plotBottom = 164;
+  const center = (plotTop + plotBottom) / 2;
+  const axis = 184;
+  const niceMaximums = [5, 10, 20, 50, 100, 200, 500, 1_000, 2_000, 5_000, 10_000, 20_000, 50_000, 100_000, 1_000_000];
+  const domainMaximum = niceMaximums.find((value) => value >= longest) || Math.max(1, longest);
+  const xFor = (value: number) => left + Math.log1p(Math.max(0, value)) / Math.log1p(domainMaximum) * (right - left);
+  const tickCandidates = [0, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1_000, 2_000, 5_000, 10_000, 20_000, 50_000, 100_000, 1_000_000].filter((value) => value <= domainMaximum);
+  const ticks = tickCandidates.reduce<number[]>((selected, value, index) => {
+    const previous = selected.at(-1);
+    if (index === 0 || index === tickCandidates.length - 1 || previous === undefined || xFor(value) - xFor(previous) >= 44) selected.push(value);
+    return selected;
+  }, []);
+  const radius = turns.length > 80 ? 2.8 : turns.length > 45 ? 3.25 : 3.8;
+  const spacing = radius * 2 + 1.4;
   const dotPositions: { value: number; x: number; y: number }[] = [];
-  const dotRows = Array.from({ length: 29 }, (_, index) => axis - 7 - index * 5.5);
-  for (const value of turns) {
+  turns.forEach((value, index) => {
     const x = xFor(value);
-    const y = dotRows.find((candidateY) => (
-      dotPositions.every((point) => Math.hypot(point.x - x, point.y - candidateY) >= 5.2)
-    ));
-    if (y !== undefined) {
-      dotPositions.push({ value, x, y });
-    } else {
-      const overflowIndex = dotPositions.filter((point) => point.value === value).length - dotRows.length;
-      dotPositions.push({ value, x, y: Math.max(top, dotRows[dotRows.length - 1] - Math.max(1, overflowIndex) * 3) });
-    }
-  }
+    const offsets = [0];
+    for (let offset = spacing; offset <= 60; offset += spacing) offsets.push(offset, -offset);
+    const offset = offsets.find((candidate) => dotPositions.every((point) => Math.hypot(point.x - x, center + candidate - point.y) >= spacing)) ?? Math.sin(index * 2.399) * 60;
+    dotPositions.push({ value, x, y: center + offset });
+  });
   const medianLabel = median.toLocaleString(undefined, { maximumFractionDigits: 1 });
+  const longestPoint = [...dotPositions].reverse().find((point) => point.value === longest);
   return <figure className="session-turn-chart">
-    <figcaption><span>{turns.length.toLocaleString()} sessions</span><strong>Median <b>{medianLabel}</b> turns</strong></figcaption>
-    <svg viewBox="0 0 560 222" role="img" aria-label={`Session lengths range from ${turns[0] || 0} to ${longest} turns, with a median of ${medianLabel} turns. Every session is shown as a dot.`}>
-      <defs><linearGradient id="turn-density-fill" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stopColor="#f3c5b8" /><stop offset=".58" stopColor="#c86e57" /><stop offset="1" stopColor="#8f3f31" /></linearGradient></defs>
-      <path className="turn-density-area" d={areaPath} />
-      <path className="turn-density-line" d={linePath} />
-      <line className="turn-median-line" x1={xFor(median)} x2={xFor(median)} y1={top + 1} y2={axis - 7} />
-      {dotPositions.map((point, index) => <circle className="turn-session-dot" key={`${point.value}-${index}`} cx={point.x} cy={point.y} r="2.2"><title>{`${point.value} turn${point.value === 1 ? "" : "s"}`}</title></circle>)}
+    <figcaption><span>{turns.length.toLocaleString()} sessions<small>Each dot is one session</small></span><strong>Median <b>{medianLabel}</b> turns</strong></figcaption>
+    <svg viewBox="0 0 560 218" role="img" aria-label={`Session lengths range from ${turns[0] || 0} to ${longest} turns, with a median of ${medianLabel} turns. Every session is shown as a dot on a compressed scale.`}>
+      <rect className="turn-plot-bg" x={left} y={plotTop - 9} width={right - left} height={plotBottom - plotTop + 18} rx="13" />
+      {ticks.filter((value) => value > 0).map((value) => <line className="turn-grid-line" key={`grid-${value}`} x1={xFor(value)} x2={xFor(value)} y1={plotTop - 2} y2={plotBottom + 2} />)}
+      <line className="turn-median-line" x1={xFor(median)} x2={xFor(median)} y1={plotTop - 5} y2={plotBottom + 5} />
+      <g className="turn-median-label" transform={`translate(${xFor(median)} ${plotTop - 8})`}><rect x="-27" y="-10" width="54" height="18" rx="9" /><text y="3" textAnchor="middle">MEDIAN</text></g>
+      {dotPositions.map((point, index) => <circle className={point === longestPoint ? "turn-session-dot longest" : "turn-session-dot"} key={`${point.value}-${index}`} cx={point.x} cy={point.y} r={point === longestPoint ? radius + 1.5 : radius}><title>{`${point.value} turn${point.value === 1 ? "" : "s"}`}</title></circle>)}
+      {longestPoint && <g className="turn-longest-label" transform={`translate(${longestPoint.x} ${Math.max(plotTop + 8, longestPoint.y - 13)})`}><text x="-7" textAnchor="end">LONGEST</text><text x="7">{longest.toLocaleString()}</text></g>}
       <line className="turn-axis" x1={left} x2={right} y1={axis} y2={axis} />
-      {ticks.map((value) => <g className="turn-tick" key={value}><line x1={xFor(value)} x2={xFor(value)} y1={axis - 4} y2={axis + 4} /><text x={xFor(value)} y={211} textAnchor={value === 0 ? "start" : value === domainMaximum ? "end" : "middle"}>{fmtAxisCompact(value)}</text></g>)}
+      {ticks.map((value) => <g className="turn-tick" key={value}><line x1={xFor(value)} x2={xFor(value)} y1={axis - 4} y2={axis + 4} /><text x={xFor(value)} y="204" textAnchor={value === 0 ? "start" : value === domainMaximum ? "end" : "middle"}>{fmtAxisCompact(value)}</text></g>)}
+      <text className="turn-axis-label" x={right} y="216" textAnchor="end">TURNS · COMPRESSED SCALE</text>
     </svg>
   </figure>;
 }
