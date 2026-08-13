@@ -14,6 +14,8 @@ import { deletePublicReport, publishPublicReport, PUBLIC_REPORT_ORIGIN } from ".
 import { createReportId, deleteReport, getOrCreateClientId, listReports, saveReport, storeRoot } from "./store.mjs";
 import { judgeErrorDetails } from "./judge-debug.mjs";
 import { createCliProgress } from "./progress.mjs";
+import { helperHealthMatches, stopVerifiedStaleHelper } from "./local-helper-runtime.mjs";
+import { APP_VERSION, LOCAL_DONATION_PROTOCOL } from "./runtime-version.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.dirname(here);
@@ -68,21 +70,31 @@ function printJudgeDebug(label, error) {
   console.error(JSON.stringify(judgeErrorDetails(error), null, 2));
 }
 
-async function serverReady(expectedDemo = false) {
+async function helperStatus(expectedDemo = false) {
   try {
     const response = await fetch(`${loopbackUrl}/api/health`);
     const body = await response.json();
-    return response.ok && body.app === "behavior-wrapped" && Boolean(body.demo) === expectedDemo;
-  } catch { return false; }
+    const recognized = response.ok && body.app === "behavior-wrapped" && body.local === true && body.purpose === "research-donation";
+    return { recognized, compatible: recognized && helperHealthMatches(body, { version: APP_VERSION, protocol: LOCAL_DONATION_PROTOCOL, demo: expectedDemo }), pid: Number(body.pid) || null };
+  } catch { return { recognized: false, compatible: false, pid: null }; }
 }
 
 async function ensureServer(demo = false) {
-  if (await serverReady(demo)) return;
+  const current = await helperStatus(demo);
+  if (current.compatible) return;
+  if (current.recognized) {
+    const stopped = await stopVerifiedStaleHelper(port, current.pid);
+    if (!stopped) throw new Error(`An older Behavior Wrapped helper is using port ${port}. Stop it, then run this command again.`);
+    for (let attempt = 0; attempt < 30; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      if (!(await helperStatus(demo)).recognized) break;
+    }
+  }
   const child = spawn(process.execPath, [path.join(here, "launcher.mjs"), `--port=${port}`, "--no-open", ...(demo ? ["--demo"] : [])], { detached: true, stdio: "ignore", env: { ...process.env, BEHAVIOR_WRAPPED_DAEMON: "1" } });
   child.unref();
   for (let attempt = 0; attempt < 30; attempt++) {
     await new Promise((resolve) => setTimeout(resolve, 100));
-    if (await serverReady(demo)) return;
+    if ((await helperStatus(demo)).compatible) return;
   }
   throw new Error(`Could not start the local donation helper on port ${port}.`);
 }

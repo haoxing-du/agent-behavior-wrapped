@@ -9,6 +9,7 @@ import { discoverAllSessionsAsync, readRecordsAsync, defaultDateRange, DEFAULT_W
 import { makeDonationPreview } from "./analysis.mjs";
 import { deleteDonationReceipt, getOrCreateClientId, loadDonationReceipt, loadReport, saveDonationReceipt } from "./store.mjs";
 import { deleteResearchDonation, RESEARCH_DONATION_URL, submitResearchDonation } from "./research-donation.mjs";
+import { APP_VERSION, LOCAL_DONATION_PROTOCOL } from "./runtime-version.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.dirname(here);
@@ -90,7 +91,7 @@ const server = http.createServer(async (request, response) => {
   try {
     if (!new Set([`127.0.0.1:${port}`, `localhost:${port}`]).has(request.headers.host || "")) return json(response, 403, { error: "Local access only" });
     const url = new URL(request.url || "/", `http://${request.headers.host}`);
-    if (request.method === "GET" && url.pathname === "/api/health") return json(response, 200, { app: "behavior-wrapped", local: true, purpose: "research-donation", demo });
+    if (request.method === "GET" && url.pathname === "/api/health") return json(response, 200, { app: "behavior-wrapped", version: APP_VERSION, local: true, purpose: "research-donation", donationProtocol: LOCAL_DONATION_PROTOCOL, pid: process.pid, demo });
     if (request.method === "GET" && url.pathname === "/api/discover") {
       catalog = await loadCatalog();
       return json(response, 200, publicCatalog());
