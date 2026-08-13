@@ -463,7 +463,8 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .leader-relationship-figure { --figure-accent: #754ba8; }
 .leader-workaround-figure { --figure-accent: #26798b; }
 .leader-phrase-figure { --figure-accent: #a34d72; }
-.leader-session-figure { --figure-accent: #754ba8; border-bottom: 1px solid #d6cfd8; }
+.leader-session-figure { --figure-accent: #754ba8; }
+.leader-phrase-figure { border-bottom: 1px solid #d6cfd8; }
 .leader-figure-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 28px; align-items: end; margin-bottom: 22px; }
 .leader-figure-head span { color: var(--figure-accent); font-size: 10px; font-weight: 850; letter-spacing: .14em; text-transform: uppercase; }
 .leader-figure-head h2 { max-width: 780px; margin: 8px 0 0; font-size: clamp(28px, 4vw, 48px); line-height: 1; letter-spacing: -.045em; text-wrap: balance; }

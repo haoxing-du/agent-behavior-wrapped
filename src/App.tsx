@@ -570,7 +570,7 @@ function WorkaroundFigure({ metric, participantId, included }: { metric: Leaderb
 
 function PhraseWallFigure({ entries, participantId }: { entries: PhraseWallEntry[]; participantId?: number }) {
   return <section className="leader-figure leader-phrase-figure">
-    <div className="leader-figure-head"><div><span>04 · Favorite phrase wall</span><h2>What do everyone’s agents keep saying?</h2></div><div className="leader-result"><strong>{entries.length.toLocaleString()}</strong><small>phrases shared</small></div></div>
+    <div className="leader-figure-head"><div><span>05 · Favorite phrase wall</span><h2>What do everyone’s agents keep saying?</h2></div><div className="leader-result"><strong>{entries.length.toLocaleString()}</strong><small>phrases shared</small></div></div>
     {entries.length ? <div className="leader-phrase-wall">{entries.map((entry) => <article className={entry.participant_id === participantId ? "is-you" : ""} key={`${entry.participant_id}-${entry.phrase}`}>
       {entry.participant_id === participantId && <b>Yours</b>}
       <blockquote>“{entry.phrase}”</blockquote>
@@ -599,7 +599,7 @@ function SessionLengthFigure({ metric, participantId, included }: { metric: Lead
   const median = quantile(cohortSamples.map((sample) => sample.value), .5);
   const longest = Math.max(0, ...currentValues);
   return <section className="leader-figure leader-session-figure">
-    <div className="leader-figure-head"><div><span>05 · Session lengths</span><h2>How long does everyone keep the conversation going?</h2></div><div className="leader-result"><strong>{longest.toLocaleString()}</strong><small>your longest · turns</small></div></div>
+    <div className="leader-figure-head"><div><span>04 · Session lengths</span><h2>How long does everyone keep the conversation going?</h2></div><div className="leader-result"><strong>{longest.toLocaleString()}</strong><small>your longest · turns</small></div></div>
     <div className="leader-session-legend"><span><i className="all" />Everyone’s sessions</span><span><i className="you" />Your sessions</span></div>
     <div className="leader-plot" ref={ref}>
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Session length distribution for ${cohortSamples.length} sessions. Your ${currentValues.length} sessions are highlighted.`}>
@@ -680,8 +680,8 @@ function LeaderboardView({ id }: { id: string }) {
       <TokenUsageFigure metric={snapshot.tokens} participantId={snapshot.participation.participant_id} included={snapshot.participation.joined} />
       <RelationshipFigure ratio={ratio} appreciation={snapshot.good_human_score.value} points={snapshot.relationship.points} participantId={snapshot.participation.participant_id} included={snapshot.participation.joined} />
       <WorkaroundFigure metric={snapshot.instrumental_workarounds} participantId={snapshot.participation.participant_id} included={snapshot.participation.joined} />
-      <PhraseWallFigure entries={snapshot.phrases.entries} participantId={snapshot.participation.participant_id} />
       <SessionLengthFigure metric={snapshot.session_lengths} participantId={snapshot.participation.participant_id} included={snapshot.participation.joined} />
+      <PhraseWallFigure entries={snapshot.phrases.entries} participantId={snapshot.participation.participant_id} />
     </div>
     {snapshot.can_manage && <section className="leader-donation"><div><span className="eyebrow">Optional research donation</span><h2>Will you contribute your data to the research?</h2><p>Separate from the anonymous leaderboard, you can contribute your agent transcripts to the research corpus. You’ll review the redactions and explicitly consent before any transcript data is sent.</p></div><a className="primary" href={`${report.donationHelperUrl || `http://localhost:4317/donate/${report.id}`}?mode=standard`}>Review and donate your data <span>→</span></a></section>}
     {snapshot.can_manage ? <section className="leader-opt-out" id="join-leaderboard">
