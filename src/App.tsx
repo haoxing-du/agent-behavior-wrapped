@@ -457,7 +457,7 @@ function TokenUsageFigure({ metric, participantId, included }: { metric: Leaderb
   const ticks = compactLogTicks(10 ** minimum, 10 ** maximum, width);
   const median = quantile(values, .5);
   return <section className="leader-figure leader-token-figure">
-    <div className="leader-figure-head"><div><span>01 · Token usage</span><h2>How much did your agents say?</h2></div><div className="leader-result"><strong>{fmtCompact(metric.value)}</strong><small>{percentileCopy(metric.percentile)}</small></div></div>
+    <div className="leader-figure-head"><div><span>01 · Token usage</span><h2>How many tokens did your agents process?</h2></div><div className="leader-result"><strong>{fmtCompact(metric.value)}</strong><small>{percentileCopy(metric.percentile)}</small></div></div>
     <div className="leader-plot" ref={ref}>
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Token usage distribution for ${values.length} anonymous participants on a logarithmic axis. Your value is ${fmtCompact(metric.value)} tokens.`}>
         <rect className="leader-chart-frame" x={left} y="38" width={right - left} height="180" />
@@ -667,8 +667,12 @@ function LeaderboardView({ id }: { id: string }) {
 
   const ratio = snapshot.word_ratio.value;
   return <main className="leaderboard-page">
-    <a className="leader-back" href={`/w/${id}`}>← Back to your Wrapped</a>
-    <header className="leader-hero"><span className="eyebrow">Behavior Wrapped · Leaderboard</span><h1>How you compare</h1><p>{snapshot.cohort_size.toLocaleString()} participant{snapshot.cohort_size === 1 ? "" : "s"}</p></header>
+    <div className="page-chrome leader-chrome">
+      <a className="leader-back" href={`/w/${id}`}>← Back to your Wrapped</a>
+      <div className="page-wordmark" aria-label="Behavior Wrapped"><strong><span>Behavior</span><span>Wrapped</span></strong></div>
+      <span className="page-status">Anonymous cohort</span>
+    </div>
+    <header className="leader-hero"><div><span className="eyebrow">The collective view · 2026</span><h1>How you compare</h1></div><p><strong>{snapshot.cohort_size.toLocaleString()}</strong><span>participant{snapshot.cohort_size === 1 ? "" : "s"}<br />in the cohort</span></p></header>
     <div className="leader-figures">
       <TokenUsageFigure metric={snapshot.tokens} participantId={snapshot.participation.participant_id} included={snapshot.participation.joined} />
       <RelationshipFigure ratio={ratio} appreciation={snapshot.good_human_score.value} points={snapshot.relationship.points} participantId={snapshot.participation.participant_id} included={snapshot.participation.joined} />
@@ -1192,11 +1196,17 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
   </section></main>;
 
   return <main className="donation-page">
-    <button className="back-link" onClick={onBack}>← Back to Wrapped</button>
+    <div className="page-chrome donation-chrome">
+      <button className="back-link" onClick={onBack}>← Back to Wrapped</button>
+      <div className="page-wordmark" aria-label="Behavior Wrapped"><strong><span>Behavior</span><span>Wrapped</span></strong></div>
+      <span className="page-status local"><i aria-hidden="true" />Local review</span>
+    </div>
     <section className="donation-hero">
-      <aside className="local-review-notice"><span className="pulse" aria-hidden="true" /><div><strong>This review is running locally on your Mac</strong><p>Nothing from this review is transmitted until you press Donate.</p></div></aside>
-      <span className="eyebrow">Research donation · local review</span><h1>Redact transcripts before sharing</h1><p>After you press Donate, this localhost helper encrypts the reviewed bundle on your Mac; the storage service receives ciphertext, not readable transcripts.</p>
-      <label className="donation-mode-control"><span>Donation mode</span><select value={mode} onChange={(event) => { window.location.href = `/donate/${reportId}?mode=${event.target.value}`; }}><option value="standard">All sessions and standard redactions</option><option value="advanced">Select sessions and customize redactions</option><option value="unredacted">Unredacted</option></select><small>{modeDescription}</small></label>
+      <div className="donation-hero-copy"><span className="eyebrow">Research donation · private review</span><h1>Redact before you share.</h1><p>Review the exact data you want to contribute. Your bundle is encrypted on this Mac before the storage service receives it.</p></div>
+      <div className="donation-hero-aside">
+        <aside className="local-review-notice"><span className="pulse" aria-hidden="true" /><div><strong>Nothing has left this Mac</strong><p>This review stays local until you press Donate.</p></div></aside>
+        <label className="donation-mode-control"><span>Donation mode</span><select value={mode} onChange={(event) => { window.location.href = `/donate/${reportId}?mode=${event.target.value}`; }}><option value="standard">All sessions and standard redactions</option><option value="advanced">Select sessions and customize redactions</option><option value="unredacted">Unredacted</option></select><small>{modeDescription}</small></label>
+      </div>
     </section>
     <div className="donation-layout">
       <section className="donation-controls">
