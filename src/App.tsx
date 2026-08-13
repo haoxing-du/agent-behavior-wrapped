@@ -1001,7 +1001,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
   const selectedSessionCount = selectableSessions.filter((session) => chosen.has(session.id)).length;
   const allSessionsSelected = selectableSessions.length > 0 && selectedSessionCount === selectableSessions.length;
   const modeDescription = mode === "standard"
-    ? "Automatic safeguards with a quick final review."
+    ? "Donate all sessions with automatic safeguards and a quick final review."
     : mode === "advanced"
       ? "Choose sessions and fine-tune what is hidden."
       : "No automatic redactions. Review every line before donating.";
@@ -1192,7 +1192,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
     <section className="donation-hero">
       <aside className="local-review-notice"><span className="pulse" aria-hidden="true" /><div><strong>This review is running locally on your Mac</strong><p>Nothing from this review is transmitted until you press Donate.</p></div></aside>
       <span className="eyebrow">Research donation · local review</span><h1>Redact transcripts before sharing</h1><p>After you press Donate, this localhost helper encrypts the reviewed bundle on your Mac; the storage service receives ciphertext, not readable transcripts.</p>
-      <label className="donation-mode-control"><span>Donation mode</span><select value={mode} onChange={(event) => { window.location.href = `/donate/${reportId}?mode=${event.target.value}`; }}><option value="standard">Standard redactions</option><option value="advanced">Select sessions or customize redactions</option><option value="unredacted">Unredacted copy</option></select><small>{modeDescription}</small></label>
+      <label className="donation-mode-control"><span>Donation mode</span><select value={mode} onChange={(event) => { window.location.href = `/donate/${reportId}?mode=${event.target.value}`; }}><option value="standard">All sessions and standard redactions</option><option value="advanced">Select sessions and customize redactions</option><option value="unredacted">Unredacted</option></select><small>{modeDescription}</small></label>
     </section>
     <div className="donation-layout">
       <section className="donation-controls">

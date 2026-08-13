@@ -603,7 +603,7 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .local-review-notice p { color: #62723e; font-size: 11px; }
 .donation-mode-control { width: min(440px, 100%); margin-top: 24px; display: grid; grid-template-columns: 1fr; gap: 7px; color: #514956; }
 .donation-mode-control > span { font-size: 9px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
-.donation-mode-control select { width: 100%; min-height: 46px; border: 1px solid #bcb3c0; border-radius: 12px; padding: 0 42px 0 14px; background: rgba(255,255,255,.76); color: #29232d; font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; }
+.donation-mode-control select { width: 100%; min-height: 46px; appearance: none; -webkit-appearance: none; border: 1px solid #bcb3c0; border-radius: 12px; padding: 0 54px 0 14px; background-color: rgba(255,255,255,.76); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 10'%3E%3Cpath d='M2 2l6 6 6-6' fill='none' stroke='%2329232d' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-position: right 20px center; background-repeat: no-repeat; background-size: 14px 9px; color: #29232d; font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; }
 .donation-mode-control small { color: #7a727e; font-size: 10.5px; line-height: 1.4; }
 .donation-layout { grid-template-columns: minmax(280px, .72fr) minmax(480px, 1.28fr); gap: 20px; max-width: 1120px; margin: 0 auto; }
 .donation-controls, .donation-preview { border: 1px solid #d4cdd6; border-radius: 20px; background: rgba(255,255,255,.68); box-shadow: none; }
