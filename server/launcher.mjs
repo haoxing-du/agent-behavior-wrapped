@@ -119,8 +119,7 @@ const server = http.createServer(async (request, response) => {
       const ids = Array.isArray(body.sessionIds) ? body.sessionIds.filter((id) => allowed.has(id) && catalog.index.has(id)).slice(0, 250) : [];
       const records = await chosenRecords(ids);
       if (!records.length) return json(response, 400, { error: "Choose at least one available session." });
-      const summaries = new Map((report.sessionSummaries || []).flatMap((item) => typeof item?.sessionId === "string" && typeof item?.summary === "string" ? [[item.sessionId, item.summary]] : []));
-      const labels = new Map(publicCatalog().sessions.map((session) => [session.id, { ...session, summary: summaries.get(session.id) }]));
+      const labels = new Map(publicCatalog().sessions.map((session) => [session.id, session]));
       const disabledRedactions = Array.isArray(body.disabledRedactions) ? body.disabledRedactions.filter((kind) => typeof kind === "string" && /^[a-z0-9-]{1,64}$/.test(kind)).slice(0, 20) : [];
       const disabledMatches = Array.isArray(body.disabledMatches) ? body.disabledMatches.filter((id) => typeof id === "string" && /^[a-f0-9]{24}$/.test(id)).slice(0, 5_000) : [];
       const unredacted = body.previewMode === "unredacted";

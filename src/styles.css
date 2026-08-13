@@ -658,7 +658,8 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .donation-session-picker .donation-sessions { margin: 0; border: 0; border-radius: 0; }
 .donation-sessions label { font-size: 13px; }
 .donation-sessions small { font-size: 10.5px; }
-.donation-sessions .donation-session-summary { margin-top: 2px; color: #635b68; font-weight: 600; line-height: 1.35; }
+.donation-sessions .donation-session-summary { margin-top: 3px; color: #635b68; font-weight: 600; line-height: 1.35; }
+.donation-session-summary b, .bundle-session-include small b { margin-right: 7px; color: #857d89; font-size: 8px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
 .redaction-list-heading, .automatic-redaction-row summary strong, .broad-redaction-options strong { font-size: 12px; }
 .automatic-redaction-help, .automatic-redaction-row summary code, .automatic-match summary code, .automatic-match summary span, .broad-redaction-options span { font-size: 10px; }
 .bundle-session { padding: 0; }

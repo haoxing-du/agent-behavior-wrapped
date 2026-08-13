@@ -479,10 +479,33 @@ function donationRedactionInventory(detections) {
   }).sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
 }
 
+function localOpeningPrompt(value) {
+  let prompt = String(value || "");
+  const explicitRequest = prompt.match(/(?:^|\n)## My request:\s*([\s\S]*)$/i);
+  if (explicitRequest) prompt = explicitRequest[1];
+  prompt = prompt
+    .replace(/<recommended_plugins>[\s\S]*?<\/recommended_plugins>/gi, " ")
+    .replace(/<environment_context>[\s\S]*?<\/environment_context>/gi, " ")
+    .replace(/<skills_instructions>[\s\S]*?<\/skills_instructions>/gi, " ")
+    .replace(/<permissions instructions>[\s\S]*?<\/permissions instructions>/gi, " ")
+    .replace(/<collaboration_mode>[\s\S]*?<\/collaboration_mode>/gi, " ")
+    .replace(/<apps_instructions>[\s\S]*?<\/apps_instructions>/gi, " ")
+    .replace(/<plugins_instructions>[\s\S]*?<\/plugins_instructions>/gi, " ")
+    .replace(/<multi_agent_mode>[\s\S]*?<\/multi_agent_mode>/gi, " ")
+    .replace(/<INSTRUCTIONS>[\s\S]*?<\/INSTRUCTIONS>/gi, " ")
+    .replace(/^\s*# AGENTS\.md instructions\s*$/gim, " ")
+    .replace(/<image\b[^>]*>[\s\S]*?<\/image>/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return prompt;
+}
+
 function donationSessionSummary(messages, suppliedSummary) {
   const provided = String(suppliedSummary || "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
   if (provided) return provided.slice(0, 140);
-  const opening = messages.find((message) => message.role === "user")?.text || messages[0]?.text || "Session transcript";
+  const opening = messages.filter((message) => message.role === "user").map((message) => localOpeningPrompt(message.text)).find(Boolean)
+    || localOpeningPrompt(messages[0]?.text)
+    || "Session transcript";
   const compact = opening.replace(/\[(?:REDACTED|REMOVED)[^\]]*\]/g, "private detail").replace(/\s+/g, " ").trim();
   if (compact.length <= 110) return compact;
   const shortened = compact.slice(0, 109);

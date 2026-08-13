@@ -357,6 +357,17 @@ test("donation preview uses a supplied privacy-safe session summary", () => {
   assert.equal(bundle.sessions[0].summary, "Debugging checkout form validation");
 });
 
+test("local opening prompts omit Codex workspace metadata", () => {
+  const bundle = makeDonationPreview([{ sessionId: "codex-session", records: [
+    { type: "user", message: { content: `<recommended_plugins>Plugin catalog</recommended_plugins>
+# AGENTS.md instructions
+<INSTRUCTIONS>Keep responses short.</INSTRUCTIONS>
+<environment_context><cwd>/private/project</cwd></environment_context>
+Please improve the donation review session picker.` } },
+  ] }], new Map([["codex-session", { label: "Session 1" }]]));
+  assert.equal(bundle.sessions[0].summary, "Please improve the donation review session picker.");
+});
+
 test("donation preview can keep an unchecked automatic redaction category", () => {
   const records = [{ sessionId: "review-session", records: [
     { type: "user", message: { content: 'Email demo.person@example.com with password: "hunter2"' } },

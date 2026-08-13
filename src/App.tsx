@@ -981,6 +981,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
   const [chosen, setChosen] = useState(new Set(initialSelected));
   const [bundle, setBundle] = useState<Donation | null>(null);
   const [reviewSessions, setReviewSessions] = useState<DonationSession[]>([]);
+  const [openingPrompts, setOpeningPrompts] = useState(new Map<string, string>());
   const [disabledAutomatic, setDisabledAutomatic] = useState(new Set<string>());
   const [disabledAutomaticMatches, setDisabledAutomaticMatches] = useState(new Set<string>());
   const [customRules, setCustomRules] = useState<CustomRedactionRule[]>([]);
@@ -997,7 +998,6 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
   const [acceptedId, setAcceptedId] = useState("");
   const [deletionStatus, setDeletionStatus] = useState("");
   const selectableSessions = useMemo(() => sessions.filter((session) => initialSelected.has(session.id)), [sessions, initialSelected]);
-  const reviewSummaryBySession = useMemo(() => new Map(reviewSessions.map((session) => [session.sessionId, session.summary])), [reviewSessions]);
   const selectedSessionCount = selectableSessions.filter((session) => chosen.has(session.id)).length;
   const allSessionsSelected = selectableSessions.length > 0 && selectedSessionCount === selectableSessions.length;
   const modeDescription = mode === "standard"
@@ -1013,10 +1013,11 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
       if (!response.ok) throw new Error((await response.json()).error || "Preview failed");
       const nextBundle = await response.json() as Donation;
       setBundle(nextBundle);
-      setReviewSessions((current) => {
-        const byId = new Map(current.map((session) => [session.sessionId, session]));
-        for (const session of nextBundle.sessions) byId.set(session.sessionId, session);
-        return sessions.filter((session) => initialSelected.has(session.id)).flatMap((session) => byId.has(session.id) ? [byId.get(session.id)!] : []);
+      setReviewSessions(nextBundle.sessions);
+      setOpeningPrompts((current) => {
+        const next = new Map(current);
+        for (const session of nextBundle.sessions) next.set(session.sessionId, session.summary);
+        return next;
       });
       setDisabledAutomatic(new Set(disabledRedactions));
       setDisabledAutomaticMatches(new Set(disabledMatches));
@@ -1053,6 +1054,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
     setChosen(next); setConsent(false); setOpenSession(null);
     if (!next.size) {
       setBundle((current) => current ? { ...current, detectionCount: 0, redactions: [], sessions: [] } : current);
+      setReviewSessions([]);
       setCustomRules([]); setCustomStatus("");
       return;
     }
@@ -1064,6 +1066,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
     setChosen(next); setConsent(false); setOpenSession(null);
     if (!next.size) {
       setBundle((current) => current ? { ...current, detectionCount: 0, redactions: [], sessions: [] } : current);
+      setReviewSessions([]);
       setCustomRules([]); setCustomStatus("");
       return;
     }
@@ -1194,7 +1197,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
     <div className="donation-layout">
       <section className="donation-controls">
         <div className="donation-step"><span>1</span><div><h2>{detailedReview ? "Choose what to include" : "Standard redactions applied"}</h2><p>{unredacted ? "No automatic redactions are applied. Credentials, personal details, private code, URLs, and file paths may all be included." : "High-confidence secrets and personal details are removed locally. Code, URLs, and paths remain so the transcript keeps its context; home-directory usernames are masked."}</p></div></div>
-        {detailedReview && <><div className="donation-session-picker"><div className="donation-session-select-all"><label><input type="checkbox" checked={allSessionsSelected} ref={(input) => { if (input) input.indeterminate = selectedSessionCount > 0 && !allSessionsSelected; }} disabled={loading} onChange={toggleAllDonationSessions} /><strong>Select all sessions</strong></label><span>{selectedSessionCount} of {selectableSessions.length} selected</span></div><div className="donation-sessions">{selectableSessions.map((session) => <label key={session.id}><input type="checkbox" checked={chosen.has(session.id)} disabled={loading} onChange={() => toggleDonationSession(session.id)} /><span>{session.label}<small className="donation-session-meta">{session.projectName} · {fmtDate(session.startedAt)}</small>{bundle && <small className="donation-session-summary">{reviewSummaryBySession.get(session.id) || "No summary available"}</small>}</span></label>)}</div></div><button className="primary full" disabled={!chosen.size || loading} onClick={() => preview()}>{loading ? "Building preview…" : bundle ? `Refresh ${unredacted ? "unredacted " : "redacted "}preview` : `Build ${unredacted ? "unredacted " : "redacted "}preview`}</button></>}
+        {detailedReview && <><div className="donation-session-picker"><div className="donation-session-select-all"><label><input type="checkbox" checked={allSessionsSelected} ref={(input) => { if (input) input.indeterminate = selectedSessionCount > 0 && !allSessionsSelected; }} disabled={loading} onChange={toggleAllDonationSessions} /><strong>Select all sessions</strong></label><span>{selectedSessionCount} of {selectableSessions.length} selected</span></div><div className="donation-sessions">{selectableSessions.map((session) => <label key={session.id}><input type="checkbox" checked={chosen.has(session.id)} disabled={loading} onChange={() => toggleDonationSession(session.id)} /><span>{session.label}<small className="donation-session-meta">{session.agentName} · {fmtDate(session.startedAt)}</small>{bundle && <small className="donation-session-summary"><b>Opening prompt</b>{openingPrompts.get(session.id) || "No opening prompt available"}</small>}</span></label>)}</div></div><button className="primary full" disabled={!chosen.size || loading} onClick={() => preview()}>{loading ? "Building preview…" : bundle ? `Refresh ${unredacted ? "unredacted " : "redacted "}preview` : `Build ${unredacted ? "unredacted " : "redacted "}preview`}</button></>}
         {mode === "standard" && <div className="donation-summary"><strong>{bundle ? `${bundle.sessions.length} sessions · ${messageCount} messages` : "Preparing your redacted donation…"}</strong><span>{bundle?.detectionCount || 0} sensitive items automatically removed</span><a href={`/donate/${reportId}?mode=advanced`}>Want more control? Review every message.</a></div>}
         {error && <p className="error">{error}</p>}
       </section>
@@ -1223,7 +1226,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
               const included = chosen.has(listedSession.sessionId) && sessionIndex >= 0;
               const session = included ? bundle.sessions[sessionIndex] : listedSession;
               return <div className={`bundle-session ${included ? "" : "excluded"}`} key={session.sessionId}>
-                <div className="bundle-session-heading"><label className="bundle-session-include"><input type="checkbox" checked={included} disabled={loading} onChange={() => toggleDonationSession(session.sessionId)} /><span><strong>{session.label}</strong><small>{session.summary}</small></span></label><span className="bundle-session-count">{included ? `${session.messages.length} messages` : "Excluded"}</span><button type="button" disabled={!included} onClick={() => setOpenSession(openSession === reviewIndex ? null : reviewIndex)}>{included ? openSession === reviewIndex ? "Hide" : "Review" : "Re-include to review"}</button></div>
+                <div className="bundle-session-heading"><label className="bundle-session-include"><input type="checkbox" checked={included} disabled={loading} onChange={() => toggleDonationSession(session.sessionId)} /><span><strong>{session.label}</strong><small><b>Opening prompt</b>{session.summary}</small></span></label><span className="bundle-session-count">{included ? `${session.messages.length} messages` : "Excluded"}</span><button type="button" disabled={!included} onClick={() => setOpenSession(openSession === reviewIndex ? null : reviewIndex)}>{included ? openSession === reviewIndex ? "Hide" : "Review" : "Re-include to review"}</button></div>
                 {included && openSession === reviewIndex && <div className="bundle-chat">{session.messages.map((message, messageIndex) => <div className={`donation-message-row ${message.role === "assistant" ? "assistant" : "user"}`} key={messageIndex}><DonationMessageEditor message={message} rules={customRules} onChange={(text) => editMessage(sessionIndex, messageIndex, text)} /><button className="remove-message" onClick={() => removeMessage(sessionIndex, messageIndex)}>Exclude</button></div>)}</div>}
               </div>;
             })}</div>
