@@ -126,6 +126,9 @@ async function createWrapped() {
   console.log(`\n  ${bright}behavior-wrapped${reset}  ${muted}·  the wrapped for your AI agents${reset}\n`);
   const demo = process.argv.includes("--demo");
   const testMode = process.argv.includes("--test") || process.argv.includes("--no-llm");
+  progress.start("Preparing local donation helper", `localhost:${port}`);
+  await ensureServer(demo);
+  progress.succeed("Local donation helper ready");
   const daysArgument = process.argv.find((argument) => argument.startsWith("--days="));
   const windowDays = daysArgument ? Number(daysArgument.split("=")[1]) : DEFAULT_WINDOW_DAYS;
   if (!Number.isInteger(windowDays) || windowDays < 1 || windowDays > 3650) throw new Error("--days must be a whole number from 1 to 3650.");
@@ -262,9 +265,6 @@ async function createWrapped() {
     }
   }
   saveReport(report);
-  progress.start("Starting local donation helper", `localhost:${port}`);
-  await ensureServer(demo);
-  progress.succeed("Local donation helper ready");
   const localUrl = `${baseUrl}/w/${id}`;
   const url = localOnly ? localUrl : report.managementUrl || publicUrl || localUrl;
   const tokenLabel = formatNumber(report.stats.tokens || 0);

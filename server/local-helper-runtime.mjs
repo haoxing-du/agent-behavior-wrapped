@@ -11,7 +11,7 @@ export function helperHealthMatches(value, { version, protocol, demo }) {
 
 export function isVerifiedLauncherCommand(command, port) {
   const escapedPort = String(port).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`/(?:agent-)?behavior-wrapped/server/launcher\\.mjs(?:\\s|$)`, "i").test(command || "")
+  return new RegExp(`(?:/(?:agent-)?behavior-wrapped/|(?:^|\\s))server/launcher\\.mjs(?:\\s|$)`, "i").test(command || "")
     && new RegExp(`(?:^|\\s)--port=${escapedPort}(?:\\s|$)`).test(command || "");
 }
 
@@ -23,7 +23,8 @@ async function listeningPids(port, runCommand) {
 }
 
 export async function stopVerifiedStaleHelper(port, advertisedPid, { runCommand = run, kill = process.kill } = {}) {
-  const candidates = Number.isInteger(advertisedPid) && advertisedPid > 1 ? [advertisedPid] : await listeningPids(port, runCommand);
+  const listeners = await listeningPids(port, runCommand);
+  const candidates = Number.isInteger(advertisedPid) && advertisedPid > 1 ? listeners.filter((pid) => pid === advertisedPid) : listeners;
   let stopped = false;
   for (const pid of candidates) {
     let command;
