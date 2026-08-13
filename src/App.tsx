@@ -1152,7 +1152,18 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
   const messageCount = bundle?.sessions.reduce((sum, session) => sum + session.messages.length, 0) || 0;
   const detailedReview = mode !== "standard";
   const unredacted = mode === "unredacted";
-  if (acceptedId) return <main className="donation-page"><section className="donation-hero donation-success"><span className="eyebrow">Donation received</span><h1>Thank you for contributing.</h1><p>Your reviewed {unredacted ? "unredacted " : ""}data was encrypted on this Mac before transmission. Only ciphertext is stored. Donation reference: {acceptedId}</p>{/^[0-9a-f-]{36}$/.test(acceptedId) && !deletionStatus && <button className="leader-remove" disabled={loading} onClick={deleteAcceptedDonation}>{loading ? "Deleting…" : "Delete my donation"}</button>}{deletionStatus && <p>{deletionStatus}</p>}<button className="primary" onClick={onBack}>Back to your Wrapped</button></section></main>;
+  if (acceptedId) return <main className="donation-page donation-success-page"><section className="donation-success">
+    <div className="donation-success-mark" aria-hidden="true">✓</div>
+    <span className="eyebrow">Donation received</span>
+    <h1>Thank you for contributing.</h1>
+    <p>Your reviewed {unredacted ? "unredacted " : ""}data was encrypted on this Mac before transmission. Only ciphertext is stored.</p>
+    <div className="donation-reference"><span>Donation reference</span><code>{acceptedId}</code></div>
+    {deletionStatus && <p className="donation-deletion-status">{deletionStatus}</p>}
+    <div className="donation-success-actions">
+      <button className="primary" onClick={onBack}>Back to your Wrapped</button>
+      {/^[0-9a-f-]{36}$/.test(acceptedId) && !deletionStatus && <button className="leader-remove" disabled={loading} onClick={deleteAcceptedDonation}>{loading ? "Deleting…" : "Delete my donation"}</button>}
+    </div>
+  </section></main>;
 
   return <main className="donation-page">
     <button className="back-link" onClick={onBack}>← Back to Wrapped</button>
