@@ -650,6 +650,7 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .donation-summary a { margin-top: 3px; font-size: 11px; line-height: 1.35; }
 .donation-sessions label { font-size: 13px; }
 .donation-sessions small { font-size: 10.5px; }
+.donation-sessions .donation-session-summary { margin-top: 2px; color: #635b68; font-weight: 600; line-height: 1.35; }
 .redaction-list-heading, .automatic-redaction-row summary strong, .broad-redaction-options strong { font-size: 12px; }
 .automatic-redaction-help, .automatic-redaction-row summary code, .automatic-match summary code, .automatic-match summary span, .broad-redaction-options span { font-size: 10px; }
 .bundle-session { padding: 0; }

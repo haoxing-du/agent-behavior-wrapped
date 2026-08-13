@@ -997,6 +997,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
   const [error, setError] = useState("");
   const [acceptedId, setAcceptedId] = useState("");
   const [deletionStatus, setDeletionStatus] = useState("");
+  const reviewSummaryBySession = useMemo(() => new Map(reviewSessions.map((session) => [session.sessionId, session.summary])), [reviewSessions]);
 
   async function preview(ids = [...chosen], disabledRedactions = [...disabledAutomatic], disabledMatches = [...disabledAutomaticMatches]) {
     setLoading(true); setError(""); setConsent(false);
@@ -1171,7 +1172,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
     <div className="donation-layout">
       <section className="donation-controls">
         <div className="donation-step"><span>1</span><div><h2>{detailedReview ? "Choose what to include" : "Standard redactions applied"}</h2><p>{unredacted ? "No automatic redactions are applied. Credentials, personal details, private code, URLs, and file paths may all be included." : "High-confidence secrets and personal details are removed locally. Code, URLs, and paths remain so the transcript keeps its context; home-directory usernames are masked."}</p></div></div>
-        {detailedReview && <><div className="donation-sessions">{sessions.filter((session) => initialSelected.has(session.id)).map((session) => <label key={session.id}><input type="checkbox" checked={chosen.has(session.id)} disabled={loading} onChange={() => toggleDonationSession(session.id)} /><span>{session.label}<small>{session.projectName} · {fmtDate(session.startedAt)}</small></span></label>)}</div><button className="primary full" disabled={!chosen.size || loading} onClick={() => preview()}>{loading ? "Building preview…" : bundle ? `Refresh ${unredacted ? "unredacted " : "redacted "}preview` : `Build ${unredacted ? "unredacted " : "redacted "}preview`}</button></>}
+        {detailedReview && <><div className="donation-sessions">{sessions.filter((session) => initialSelected.has(session.id)).map((session) => <label key={session.id}><input type="checkbox" checked={chosen.has(session.id)} disabled={loading} onChange={() => toggleDonationSession(session.id)} /><span>{session.label}<small className="donation-session-meta">{session.projectName} · {fmtDate(session.startedAt)}</small>{bundle && <small className="donation-session-summary">{reviewSummaryBySession.get(session.id) || "No summary available"}</small>}</span></label>)}</div><button className="primary full" disabled={!chosen.size || loading} onClick={() => preview()}>{loading ? "Building preview…" : bundle ? `Refresh ${unredacted ? "unredacted " : "redacted "}preview` : `Build ${unredacted ? "unredacted " : "redacted "}preview`}</button></>}
         {mode === "standard" && <div className="donation-summary"><strong>{bundle ? `${bundle.sessions.length} sessions · ${messageCount} messages` : "Preparing your redacted donation…"}</strong><span>{bundle?.detectionCount || 0} sensitive items automatically removed</span><a href={`/donate/${reportId}?mode=advanced`}>Want more control? Review every message.</a></div>}
         {error && <p className="error">{error}</p>}
       </section>
