@@ -174,7 +174,7 @@ function GiftbotMark() {
 }
 
 function SusanCalvinCredit() {
-  return <span className="susan-calvin-credit">Made by the <a href="https://susancalvin.org" target="_blank" rel="noreferrer">Susan Calvin Project <span aria-hidden="true">↗</span></a></span>;
+  return <span className="susan-calvin-credit">An experiment from the <a href="https://susancalvin.org" target="_blank" rel="noreferrer">Susan Calvin Project <span aria-hidden="true">↗</span></a></span>;
 }
 
 function SessionTurnChart({ values, median }: { values: number[]; median: number }) {
