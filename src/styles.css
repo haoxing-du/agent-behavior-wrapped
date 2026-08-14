@@ -20,6 +20,7 @@ body { margin: 0; min-width: 320px; min-height: 100vh; background: #f7f5ee; }
 button, input, textarea { font: inherit; }
 button { cursor: pointer; }
 button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 3px solid var(--lime); outline-offset: 3px; }
+a:focus-visible { outline: 3px solid var(--lime); outline-offset: 3px; }
 
 .app-shell { min-height: 100vh; overflow: hidden; }
 .topbar { height: 76px; display: flex; align-items: center; padding: 0 clamp(20px, 5vw, 76px); border-bottom: 1px solid rgba(255,255,255,.1); background: rgba(13,11,27,.9); backdrop-filter: blur(16px); position: relative; z-index: 20; }
@@ -580,6 +581,9 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .landing-page h1 { margin: 0 0 22px; font-size: clamp(58px, 10vw, 132px); line-height: .82; letter-spacing: -.075em; text-wrap: balance; }
 .landing-description { margin: 0 auto clamp(28px, 4vw, 40px); color: #89838d; font-size: clamp(16px, 2vw, 20px); line-height: 1.45; text-wrap: balance; }
 .landing-coming-soon { margin: 0; color: #756a7e; font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 15px; font-weight: 500; letter-spacing: .04em; }
+.landing-credit { position: absolute; inset: auto 24px 28px; margin: 0; color: #8a838d; font-size: 12px; letter-spacing: .01em; }
+.susan-calvin-credit a { color: inherit; font-weight: 750; text-decoration-color: rgba(117, 91, 128, .35); text-underline-offset: 3px; transition: color 150ms ease, text-decoration-color 150ms ease; }
+.susan-calvin-credit a:hover { color: #4f3c5b; text-decoration-color: currentColor; }
 
 /* Donation review, aligned with the cohort leaderboard. */
 .donation-shell { --donation-bg: #f7f4ed; --donation-text: #19151e; --donation-muted: #6f6873; background: var(--donation-bg); color: var(--donation-text); }
@@ -590,6 +594,9 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .donation-shell .topbar nav button { color: #756d79; }
 .donation-shell .topbar nav button.active { background: #19151e; color: white; }
 .donation-shell footer { border-color: #d6cfd8; background: var(--donation-bg); color: #756d79; }
+.donation-footer-meta { display: flex; align-items: center; gap: 9px; }
+.donation-footer-meta > .susan-calvin-credit::before { content: "·"; margin-right: 9px; color: #b1a9b4; }
+.donation-shell footer .susan-calvin-credit a { color: #5f4b6b; }
 .donation-page { min-height: calc(100vh - 76px); padding: 26px clamp(18px, 5vw, 72px) 96px; background: radial-gradient(circle at 72% -12%, #e9ddf5 0, #f2ecf2 24%, var(--donation-bg, #f7f4ed) 58%); color: var(--donation-text, #19151e); }
 .donation-page .back-link { color: #655e69; }
 .donation-hero { max-width: 1120px; margin: 0 auto; padding: 38px 0 34px; }

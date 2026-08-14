@@ -173,6 +173,10 @@ function GiftbotMark() {
   </svg>;
 }
 
+function SusanCalvinCredit() {
+  return <span className="susan-calvin-credit">Made by the <a href="https://susancalvin.org" target="_blank" rel="noreferrer">Susan Calvin Project <span aria-hidden="true">↗</span></a></span>;
+}
+
 function SessionTurnChart({ values, median }: { values: number[]; median: number }) {
   const turns = values.filter((value) => Number.isFinite(value) && value >= 1).sort((left, right) => left - right);
   const longest = Math.max(0, ...turns);
@@ -707,7 +711,7 @@ function SavedDonationRoute({ id }: { id: string }) {
   const backUrl = report.publicUrl || `/w/${id}`;
   return <div className="app-shell donation-shell">
     <DonationView reportId={id} mode={mode} sessions={catalog.sessions} initialSelected={selection} onBack={() => { window.location.href = backUrl; }} />
-    <footer><span>Behavior Wrapped</span><span>Local donation review · Encrypted on this Mac before transmission</span></footer>
+    <footer><span>Behavior Wrapped</span><span className="donation-footer-meta"><span>Local donation review · Encrypted on this Mac before transmission</span><SusanCalvinCredit /></span></footer>
   </div>;
 }
 
@@ -1255,7 +1259,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
 }
 
 function LandingPage() {
-  return <main className="landing-page"><div><h1>Behavior Wrapped</h1><p className="landing-description">A local-first behavior report for you and your AI agents.</p><p className="landing-coming-soon">coming soon</p></div></main>;
+  return <main className="landing-page"><div><h1>Behavior Wrapped</h1><p className="landing-description">A local-first behavior report for you and your AI agents.</p><p className="landing-coming-soon">coming soon</p></div><p className="landing-credit"><SusanCalvinCredit /></p></main>;
 }
 
 export default function App() {
