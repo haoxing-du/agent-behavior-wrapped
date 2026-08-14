@@ -3,6 +3,7 @@ import { MAX_DONATION_BYTES } from "./research-donation-schema.mjs";
 export const DONATION_ENVELOPE_FORMAT = "behavior-wrapped-encrypted-donation-v1";
 export const DONATION_ENCRYPTION_ALGORITHM = "RSA-OAEP-256+A256GCM";
 export const DONATION_KEY_ID = "research-donation-rsa-2026-08";
+export const DONATION_CONSENT_VERSION = 2;
 export const MAX_ENCRYPTED_DONATION_BYTES = 2_500_000;
 
 const base64url = /^[A-Za-z0-9_-]+$/;
@@ -39,7 +40,7 @@ export function sanitizeEncryptedDonationEnvelope(value) {
   if (!/^[A-Za-z0-9_-]{8,32}$/.test(metadata.reportId || "")) return null;
   if (!new Set(["standard", "custom", "unredacted"]).has(metadata.redactionMode)) return null;
   if (!timestamp.test(metadata.createdAt || "") || !timestamp.test(metadata.consentedAt || "")) return null;
-  if (metadata.consentVersion !== 1 || typeof metadata.unredactedData !== "boolean" || metadata.unredactedData !== (metadata.redactionMode === "unredacted")) return null;
+  if (!new Set([1, DONATION_CONSENT_VERSION]).has(metadata.consentVersion) || typeof metadata.unredactedData !== "boolean" || metadata.unredactedData !== (metadata.redactionMode === "unredacted")) return null;
   if (!boundedInteger(metadata.automatedDetections, 1_000_000) || !boundedInteger(metadata.sessions, 250) || metadata.sessions < 1 || !boundedInteger(metadata.messages, 50_000) || metadata.messages < 1) return null;
   return value;
 }

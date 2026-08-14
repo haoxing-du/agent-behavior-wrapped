@@ -577,7 +577,7 @@ function invalidJudgeError(judgeKind) {
 }
 
 function isHostedAppPath(pathname) {
-  return pathname === "/" || /^\/(?:w|leaderboard|donate)\/[A-Za-z0-9_-]{8,32}$/.test(pathname);
+  return pathname === "/" || pathname === "/data-policy" || /^\/(?:w|leaderboard|donate)\/[A-Za-z0-9_-]{8,32}$/.test(pathname);
 }
 
 export async function handleRequest(request, env, fetchImpl = fetch) {

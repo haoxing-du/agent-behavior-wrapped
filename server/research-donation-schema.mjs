@@ -44,8 +44,8 @@ export function sanitizeResearchDonation(value) {
       researchDonation: true,
       ...(unredacted ? { unredactedData: true } : {}),
       statement: unredacted
-        ? "I understand this donation is not automatically redacted and may contain credentials, personal details, private code, URLs, and file paths. I consent to transmit it for research."
-        : "I consent for this reviewed data to be transmitted and used for research.",
+        ? "I understand this donation is not automatically redacted and may contain credentials, personal details, private code, URLs, and file paths. I consent to transmit it to the Susan Calvin Project for research under the data policy."
+        : "I consent for this reviewed data to be transmitted to the Susan Calvin Project and used for research under the data policy.",
       consentedAt: /^\d{4}-\d{2}-\d{2}T/.test(value.consent.consentedAt || "") ? value.consent.consentedAt : new Date().toISOString(),
     },
   };

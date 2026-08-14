@@ -39,7 +39,7 @@ test("research donation schema requires consent and removes local identifiers", 
   assert.ok(donation);
   assert.equal(donation.sessions[0].label, "Session 1");
   assert.equal("sessionId" in donation.sessions[0], false);
-  assert.equal(donation.consent.statement, "I consent for this reviewed data to be transmitted and used for research.");
+  assert.equal(donation.consent.statement, "I consent for this reviewed data to be transmitted to the Susan Calvin Project and used for research under the data policy.");
 });
 
 test("unredacted donations require a separate explicit acknowledgement", () => {
@@ -57,6 +57,7 @@ test("unredacted donations require a separate explicit acknowledgement", () => {
 test("reviewed transcript text is encrypted locally and authenticated", () => {
   const envelope = encryptedFixture();
   assert.ok(envelope);
+  assert.equal(envelope.metadata.consentVersion, 2);
   assert.equal(JSON.stringify(envelope).includes("Reviewed text"), false);
   assert.equal(envelope.metadata.reportId, "researchReport1");
   assert.deepEqual(decryptResearchDonation(envelope, keys().privateKey), sanitizeResearchDonation(fixture()));

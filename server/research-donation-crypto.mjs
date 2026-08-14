@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { DONATION_ENCRYPTION_ALGORITHM, DONATION_ENVELOPE_FORMAT, DONATION_KEY_ID, encryptedDonationAAD, sanitizeEncryptedDonationEnvelope } from "./encrypted-donation-schema.mjs";
+import { DONATION_CONSENT_VERSION, DONATION_ENCRYPTION_ALGORITHM, DONATION_ENVELOPE_FORMAT, DONATION_KEY_ID, encryptedDonationAAD, sanitizeEncryptedDonationEnvelope } from "./encrypted-donation-schema.mjs";
 import { sanitizeResearchDonation } from "./research-donation-schema.mjs";
 
 export const RESEARCH_DONATION_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
@@ -32,7 +32,7 @@ export function encryptResearchDonation(value, publicKey = RESEARCH_DONATION_PUB
       redactionMode: donation.redactionMode,
       createdAt: donation.createdAt,
       consentedAt: donation.consent.consentedAt,
-      consentVersion: 1,
+      consentVersion: DONATION_CONSENT_VERSION,
       unredactedData: donation.redactionMode === "unredacted",
       automatedDetections: donation.redactionSummary.automatedDetections,
       sessions: donation.redactionSummary.sessions,

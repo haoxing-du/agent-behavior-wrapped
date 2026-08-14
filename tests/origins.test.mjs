@@ -45,5 +45,6 @@ test("Cloudflare routes both domain forms through the Worker", async () => {
   ]);
   assert.equal(config.workers_dev, true);
   assert.equal(config.assets.run_worker_first.includes("/"), true);
+  assert.equal(config.assets.run_worker_first.includes("/data-policy"), true);
   assert.equal(config.assets.run_worker_first.includes("/w/*"), true);
 });

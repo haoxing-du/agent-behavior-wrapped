@@ -46,6 +46,9 @@ type LeaderboardSnapshot = {
   opted_out?: boolean;
 };
 
+const SUSAN_CALVIN_PROJECT_URL = "https://susancalvin.org";
+const SUSAN_CALVIN_CONTACT_URL = "https://docs.google.com/document/d/1pCpNFNyNGVWxAq5-t38iFf5JqyMHM78ohl6DRD0ymJU/edit?usp=sharing";
+
 function reportManagementToken(id: string) {
   const key = `behavior-wrapped:manage:${id}`;
   const fragmentToken = new URLSearchParams(window.location.hash.slice(1)).get("manage") || "";
@@ -174,7 +177,7 @@ function GiftbotMark() {
 }
 
 function SusanCalvinCredit() {
-  return <span className="susan-calvin-credit">An experiment from the <a href="https://susancalvin.org" target="_blank" rel="noreferrer">Susan Calvin Project <span aria-hidden="true">↗</span></a></span>;
+  return <span className="susan-calvin-credit">An experiment from the <a href={SUSAN_CALVIN_PROJECT_URL} target="_blank" rel="noreferrer">Susan Calvin Project <span aria-hidden="true">↗</span></a></span>;
 }
 
 function SessionTurnChart({ values, median }: { values: number[]; median: number }) {
@@ -1190,7 +1193,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
     <div className="donation-success-mark" aria-hidden="true">✓</div>
     <span className="eyebrow">Donation received</span>
     <h1>Thank you for contributing.</h1>
-    <p>Your reviewed {unredacted ? "unredacted " : ""}data was contributed to the Susan Calvin Project and encrypted on this Mac before transmission. Only ciphertext is stored.</p>
+    <p>Your reviewed {unredacted ? "unredacted " : ""}data was contributed to the Susan Calvin Project and encrypted on this Mac before transmission. The transcript is stored only as ciphertext; a separate record holds operational metadata.</p><p className="donation-success-policy"><a href="/data-policy" target="_blank">Review the data use and storage policy <span aria-hidden="true">↗</span></a></p>
     <div className="donation-reference"><span>Donation reference</span><code>{acceptedId}</code></div>
     {deletionStatus && <p className="donation-deletion-status">{deletionStatus}</p>}
     <div className="donation-success-actions">
@@ -1208,7 +1211,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
     <section className="donation-hero">
       <div className="donation-hero-copy">
         <span className="eyebrow">Research donation · private review</span><h1>Redact before you share.</h1><p>Review the exact data you want to contribute. Your bundle is encrypted on this Mac before the storage service receives it.</p>
-        <aside className="donation-project-notice"><span>Where your data goes</span><strong>Your donation contributes to the Susan Calvin Project.</strong><p>The project studies how people and AI agents work together. If you choose to donate, your reviewed bundle becomes part of its research corpus.</p><a href="https://susancalvin.org" target="_blank" rel="noreferrer">Learn about the project <span aria-hidden="true">↗</span></a></aside>
+        <aside className="donation-project-notice"><span>Where your data goes</span><strong>Your donation contributes to the Susan Calvin Project.</strong><p>The project studies how people and AI agents work together. If you choose to donate, your reviewed bundle becomes part of its research corpus.</p><div className="donation-project-links"><a href="/data-policy" target="_blank">How your data is stored and used <span aria-hidden="true">↗</span></a><a href={SUSAN_CALVIN_PROJECT_URL} target="_blank" rel="noreferrer">About the project <span aria-hidden="true">↗</span></a></div></aside>
       </div>
       <div className="donation-hero-aside">
         <aside className="local-review-notice"><span className="pulse" aria-hidden="true" /><div><strong>Nothing has left this Mac</strong><p>This review stays local until you press Donate.</p></div></aside>
@@ -1253,7 +1256,8 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
             })}</div>
           </>}
           <div className="donation-step consent-step"><span>3</span><div><h2>Consent separately</h2><p>This consent applies only to the reviewed bundle above. It is protected with authenticated AES-256-GCM encryption before leaving localhost.</p></div></div>
-          <label className={`consent ${unredacted ? "unredacted-consent" : ""}`}><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /><span>{unredacted ? "I understand this donation is not automatically redacted and may contain credentials, personal details, private code, URLs, and file paths. I consent to transmit it to the Susan Calvin Project for research." : "I consent for this reviewed data to be transmitted to the Susan Calvin Project and used for research."}</span></label>
+          <p className="consent-policy-link">Before consenting, please read <a href="/data-policy" target="_blank">how the Susan Calvin Project stores and may use donated data <span aria-hidden="true">↗</span></a>.</p>
+          <label className={`consent ${unredacted ? "unredacted-consent" : ""}`}><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /><span>{unredacted ? "I understand this donation is not automatically redacted and may contain credentials, personal details, private code, URLs, and file paths. I consent to transmit it to the Susan Calvin Project for research under the data policy." : "I consent for this reviewed data to be transmitted to the Susan Calvin Project and used for research under the data policy."}</span></label>
           <button className={`export-button ${unredacted ? "unredacted" : ""}`} disabled={!consent || loading || !messageCount} onClick={donate}>{loading ? "Transmitting…" : unredacted ? "Donate unredacted data" : "Donate reviewed data"} <span>→</span></button>
         </>}
       </section>
@@ -1278,7 +1282,24 @@ function LandingPage() {
   return <main className="landing-page"><div><h1>Behavior Wrapped</h1><p className="landing-description">A local-first behavior report for you and your AI agents.</p><div className="landing-command"><code><span aria-hidden="true">$</span>{command}</code><button type="button" onClick={copyCommand} aria-label="Copy npx command">{copied ? "Copied!" : "Copy"}</button></div><aside className="landing-alpha"><span>Alpha</span><p>Behavior Wrapped is still early. You may run into bugs, rough edges, or results that need a little interpretation.</p></aside></div><p className="landing-credit"><SusanCalvinCredit /></p></main>;
 }
 
+function DataPolicyPage() {
+  return <main className="data-policy-page">
+    <div className="page-chrome data-policy-chrome"><a className="back-link" href="/">← Behavior Wrapped</a><div className="page-wordmark" aria-label="Behavior Wrapped"><strong><span>Behavior</span><span>Wrapped</span></strong></div><span className="page-status">Data policy</span></div>
+    <article className="data-policy-article">
+      <header className="data-policy-hero"><span className="eyebrow">Data use &amp; storage · August 14, 2026</span><h1>An honest account of the current setup.</h1><p>I’m still figuring out the right long-term structure for this research. This page is my best current account of how donated data is handled and the commitments I think are responsible to make now—not a claim that the system or my thinking will never change.</p><aside><strong>The commitment I can make:</strong> you can withdraw permission for future use and ask me to delete your stored donation at any time.</aside></header>
+      <div className="data-policy-sections">
+        <section><span>01</span><div><h2>What is stored</h2><p>You choose the sessions and review the exact messages before anything is sent. Standard mode automatically masks likely secrets and personal details; advanced mode lets you change those redactions; unredacted mode deliberately does neither. Local session IDs and project names are removed, session labels become “Session 1,” “Session 2,” and so on, and timestamps are omitted unless you turn them on.</p><p>The reviewed bundle is encrypted on your Mac with a new encryption key before transmission. A private Cloudflare R2 bucket stores the encrypted envelope—not readable transcript text. A separate Cloudflare D1 database stores operational metadata such as the donation and report references, a pseudonymous owner hash, encryption version, byte size, redaction mode, session and message counts, consent version, and timestamps. The application does not put your name or email in the donation record. Cloudflare still handles the network request and may process ordinary network metadata under its own service terms.</p></div></section>
+        <section><span>02</span><div><h2>Who can read it</h2><p>The decryption key is not in the website, npm package, Worker, database, or storage bucket. At present, access to that key and to decrypted donations is limited to me, the project maintainer. When I analyze a donation, I download the encrypted object and decrypt it on a maintainer-controlled Mac; decrypted copies are not uploaded back to the research bucket. Encryption reduces the risk of a storage breach, but it is not a promise that any system can be perfectly secure.</p></div></section>
+        <section><span>03</span><div><h2>How I may use it</h2><p>The current purpose is Susan Calvin Project research on how AI agents behave in real-world use: developing analysis methods, finding recurring behavioral patterns, and publishing aggregate or carefully redacted findings. I do not currently sell donated transcripts or provide them to AI labs for model training.</p><p>I am not making a categorical promise that a safety-motivated training use could never be worthwhile. If I later want to make a materially different use of existing donations—such as sharing data with an AI lab for training—I will explain that specific use and ask for fresh consent rather than treating today’s donation as blanket permission.</p></div></section>
+        <section><span>04</span><div><h2>Retention and withdrawal</h2><p>There is no automatic retention deadline today. Until I adopt one, an encrypted donation remains stored unless you delete it, ask me to delete it, or I wind down the collection. Immediately after donating, the receipt screen offers a deletion button; the secret deletion credential is saved only on that Mac, while the server keeps only its hash. Deletion removes both the encrypted object and its database record.</p><p>If you want to withdraw later, <a href={SUSAN_CALVIN_CONTACT_URL} target="_blank" rel="noreferrer">contact the Susan Calvin Project <span aria-hidden="true">↗</span></a> and include the donation reference shown on your receipt. I will delete the stored donation and exclude it from future analysis. Withdrawal cannot necessarily undo aggregate analysis or public findings already produced, but I will not use the withdrawn donation in new work. Accounts and a durable self-service data-management page are planned; they do not exist yet.</p></div></section>
+      </div>
+      <footer className="data-policy-footer"><div><strong>Questions or withdrawal requests?</strong><a href={SUSAN_CALVIN_CONTACT_URL} target="_blank" rel="noreferrer">Contact the Susan Calvin Project <span aria-hidden="true">↗</span></a></div><SusanCalvinCredit /></footer>
+    </article>
+  </main>;
+}
+
 export default function App() {
+  if (window.location.pathname === "/data-policy") return <DataPolicyPage />;
   const leaderboardId = window.location.pathname.match(/^\/leaderboard\/([A-Za-z0-9_-]{8,32})$/)?.[1];
   if (leaderboardId) return <LeaderboardView id={leaderboardId} />;
   const donationId = window.location.pathname.match(/^\/donate\/([A-Za-z0-9_-]{8,32})$/)?.[1];
