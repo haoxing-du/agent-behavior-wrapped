@@ -1644,6 +1644,21 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
   text-wrap: balance;
 }
 .donation-hero-copy > p { max-width: 610px; color: var(--folio-muted); font-size: 15px; line-height: 1.55; }
+.donation-project-notice {
+  max-width: 620px;
+  margin-top: 28px;
+  padding: 20px 22px;
+  border: 1px solid rgba(114,91,128,.28);
+  border-radius: 18px;
+  background: linear-gradient(125deg, rgba(255,255,255,.78), rgba(232,222,236,.58));
+  box-shadow: 0 12px 30px rgba(72,48,78,.07), inset 0 1px 0 rgba(255,255,255,.96);
+  display: grid;
+  gap: 7px;
+}
+.donation-project-notice > span { color: var(--folio-violet); font-size: 9px; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; }
+.donation-project-notice strong { color: var(--folio-ink); font-family: Georgia, "Times New Roman", serif; font-size: clamp(20px, 2vw, 25px); font-weight: 500; line-height: 1.12; letter-spacing: -.02em; }
+.donation-project-notice p { max-width: 540px; margin: 2px 0 3px; color: var(--folio-muted); font-size: 12px; line-height: 1.5; }
+.donation-project-notice a { width: fit-content; color: var(--folio-violet-deep); font-size: 11px; font-weight: 800; text-underline-offset: 3px; }
 .donation-hero-aside { display: grid; gap: 20px; }
 .local-review-notice {
   max-width: none;

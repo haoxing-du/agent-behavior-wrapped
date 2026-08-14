@@ -1190,7 +1190,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
     <div className="donation-success-mark" aria-hidden="true">✓</div>
     <span className="eyebrow">Donation received</span>
     <h1>Thank you for contributing.</h1>
-    <p>Your reviewed {unredacted ? "unredacted " : ""}data was encrypted on this Mac before transmission. Only ciphertext is stored.</p>
+    <p>Your reviewed {unredacted ? "unredacted " : ""}data was contributed to the Susan Calvin Project and encrypted on this Mac before transmission. Only ciphertext is stored.</p>
     <div className="donation-reference"><span>Donation reference</span><code>{acceptedId}</code></div>
     {deletionStatus && <p className="donation-deletion-status">{deletionStatus}</p>}
     <div className="donation-success-actions">
@@ -1206,7 +1206,10 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
       <span className="page-status local"><i aria-hidden="true" />Local review</span>
     </div>
     <section className="donation-hero">
-      <div className="donation-hero-copy"><span className="eyebrow">Research donation · private review</span><h1>Redact before you share.</h1><p>Review the exact data you want to contribute. Your bundle is encrypted on this Mac before the storage service receives it.</p></div>
+      <div className="donation-hero-copy">
+        <span className="eyebrow">Research donation · private review</span><h1>Redact before you share.</h1><p>Review the exact data you want to contribute. Your bundle is encrypted on this Mac before the storage service receives it.</p>
+        <aside className="donation-project-notice"><span>Where your data goes</span><strong>Your donation contributes to the Susan Calvin Project.</strong><p>The project studies how people and AI agents work together. If you choose to donate, your reviewed bundle becomes part of its research corpus.</p><a href="https://susancalvin.org" target="_blank" rel="noreferrer">Learn about the project <span aria-hidden="true">↗</span></a></aside>
+      </div>
       <div className="donation-hero-aside">
         <aside className="local-review-notice"><span className="pulse" aria-hidden="true" /><div><strong>Nothing has left this Mac</strong><p>This review stays local until you press Donate.</p></div></aside>
         <label className="donation-mode-control"><span>Donation mode</span><select value={mode} onChange={(event) => { window.location.href = `/donate/${reportId}?mode=${event.target.value}`; }}><option value="standard">All sessions and standard redactions</option><option value="advanced">Select sessions and customize redactions</option><option value="unredacted">Unredacted</option></select><small>{modeDescription}</small></label>
@@ -1250,7 +1253,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
             })}</div>
           </>}
           <div className="donation-step consent-step"><span>3</span><div><h2>Consent separately</h2><p>This consent applies only to the reviewed bundle above. It is protected with authenticated AES-256-GCM encryption before leaving localhost.</p></div></div>
-          <label className={`consent ${unredacted ? "unredacted-consent" : ""}`}><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /><span>{unredacted ? "I understand this donation is not automatically redacted and may contain credentials, personal details, private code, URLs, and file paths. I consent to transmit it for research." : "I consent for this reviewed data to be transmitted and used for research."}</span></label>
+          <label className={`consent ${unredacted ? "unredacted-consent" : ""}`}><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /><span>{unredacted ? "I understand this donation is not automatically redacted and may contain credentials, personal details, private code, URLs, and file paths. I consent to transmit it to the Susan Calvin Project for research." : "I consent for this reviewed data to be transmitted to the Susan Calvin Project and used for research."}</span></label>
           <button className={`export-button ${unredacted ? "unredacted" : ""}`} disabled={!consent || loading || !messageCount} onClick={donate}>{loading ? "Transmitting…" : unredacted ? "Donate unredacted data" : "Donate reviewed data"} <span>→</span></button>
         </>}
       </section>
