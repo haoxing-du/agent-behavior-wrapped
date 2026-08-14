@@ -577,11 +577,14 @@ function invalidJudgeError(judgeKind) {
 }
 
 function isHostedAppPath(pathname) {
-  return pathname === "/" || pathname === "/data-policy" || /^\/(?:w|leaderboard|donate)\/[A-Za-z0-9_-]{8,32}$/.test(pathname);
+  return pathname === "/" || /^\/(?:w|leaderboard|donate)\/[A-Za-z0-9_-]{8,32}$/.test(pathname);
 }
 
 export async function handleRequest(request, env, fetchImpl = fetch) {
   const url = new URL(request.url);
+  if (url.pathname === "/data-policy" && new Set(["GET", "HEAD"]).has(request.method)) {
+    return Response.redirect("https://susancalvin.org/data-policy", 308);
+  }
   const hostedAppPath = isHostedAppPath(url.pathname);
   if (hostedAppPath && new Set(["GET", "HEAD"]).has(request.method)
     && (url.hostname === LEGACY_BEHAVIOR_WRAPPED_HOST || url.hostname === BEHAVIOR_WRAPPED_WWW_HOST)) {

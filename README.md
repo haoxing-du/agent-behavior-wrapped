@@ -57,7 +57,7 @@ For hosted-page UI development, run `npm run dev`. The normal end-to-end develop
 - Browser payloads never include source file paths or raw tool outputs.
 - Share-card PNG exports contain only aggregates and generalized findings.
 - Donation discovery, default redaction, preview, exclusion, editing, schema validation, and authenticated AES-256-GCM encryption happen on localhost. A fresh content key protects each donation and is wrapped with a rotation-versioned RSA-OAEP public key. The private key is not present in the npm package, Worker, D1, or R2. An optional unredacted mode applies no automatic redactions and requires a mode-specific acknowledgement before encryption.
-- The receiving Worker accepts only encrypted protocol-2 envelopes. A private R2 bucket stores ciphertext; a separate D1 database stores pseudonymous consent, size, count, encryption-key, and object-location metadata—never transcript text. No automatic retention policy is currently configured; a locally retained deletion receipt lets the donor delete both records. The public data-use and storage policy is available at `https://behaviorwrapped.com/data-policy`.
+- The receiving Worker accepts only encrypted protocol-2 envelopes. A private R2 bucket stores ciphertext; a separate D1 database stores pseudonymous consent, size, count, encryption-key, and object-location metadata—never transcript text. No automatic retention policy is currently configured; a locally retained deletion receipt lets the donor delete both records. The public data-use and storage policy is available at `https://susancalvin.org/data-policy`.
 
 Heuristics are deliberately explainable and uncertain findings are labeled with confidence. They are signals for review, not factual judgments.
 

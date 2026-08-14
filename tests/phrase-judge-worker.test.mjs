@@ -176,7 +176,11 @@ test("worker redirects human pages to the canonical domain", async () => {
 
   const policyResponse = await handleRequest(new Request("https://www.behaviorwrapped.com/data-policy"), env());
   assert.equal(policyResponse.status, 308);
-  assert.equal(policyResponse.headers.get("location"), "https://behaviorwrapped.com/data-policy");
+  assert.equal(policyResponse.headers.get("location"), "https://susancalvin.org/data-policy");
+
+  const canonicalPolicyResponse = await handleRequest(new Request("https://behaviorwrapped.com/data-policy"), env());
+  assert.equal(canonicalPolicyResponse.status, 308);
+  assert.equal(canonicalPolicyResponse.headers.get("location"), "https://susancalvin.org/data-policy");
 });
 
 test("worker serves the landing page from assets on the canonical domain", async () => {
