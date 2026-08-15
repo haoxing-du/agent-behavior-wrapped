@@ -479,7 +479,7 @@ function donationRedactionInventory(detections) {
   }).sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
 }
 
-function localOpeningPrompt(value) {
+export function localOpeningPrompt(value) {
   let prompt = String(value || "");
   const explicitRequest = prompt.match(/(?:^|\n)## My request:\s*([\s\S]*)$/i);
   if (explicitRequest) prompt = explicitRequest[1];

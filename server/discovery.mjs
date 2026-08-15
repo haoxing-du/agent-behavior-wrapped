@@ -414,7 +414,7 @@ function restrictionErrorSummary(value) {
   return rules.find(([pattern]) => pattern.test(text))?.[1] || null;
 }
 
-function normalizeCodexRecords(records) {
+function normalizeCodexRecords(records, { includePrivateToolDetails = false } = {}) {
   const normalized = [];
   const firstDeclaredModel = records.find((record) => record?.type === "turn_context" && typeof record?.payload?.model === "string" && record.payload.model)?.payload.model;
   const isForkedSession = records.some((record) => record?.type === "session_meta" && (record?.payload?.forked_from_id || record?.payload?.parent_thread_id));
@@ -436,7 +436,8 @@ function normalizeCodexRecords(records) {
       const semantics = semanticToolUse({ name: toolName, argumentsValue: payload.arguments, inputValue: payload.input });
       if (typeof payload.call_id === "string" && payload.call_id) pendingTools.set(payload.call_id, semantics);
       else anonymousTools.push(semantics);
-      normalized.push({ type: "assistant", timestamp: record.timestamp, message: { model: currentModel, content: [{ type: "tool_use", name: toolName, action_hint: semantics.action, method_hint: semantics.method }] } });
+      const privateInput = payload.arguments ?? payload.input;
+      normalized.push({ type: "assistant", timestamp: record.timestamp, message: { model: currentModel, content: [{ type: "tool_use", name: toolName, action_hint: semantics.action, method_hint: semantics.method, ...(includePrivateToolDetails && privateInput !== undefined ? { input: privateInput } : {}) }] } });
     } else if (record.type === "response_item" && (payload.type === "function_call_output" || payload.type === "custom_tool_call_output")) {
       const callId = typeof payload.call_id === "string" && payload.call_id ? payload.call_id : null;
       const semantics = callId ? pendingTools.get(callId) : anonymousTools.shift();
@@ -446,7 +447,7 @@ function normalizeCodexRecords(records) {
       const unwrappedFailure = !status.wrapped && /(?:^|\b)(?:error|failed|failure)(?:\b|:)/i.test(output);
       const canSummarizeRestriction = status.failed || (!status.wrapped && restrictionEligibleActions.has(semantics?.action));
       const errorSummary = canSummarizeRestriction ? restrictionErrorSummary(output) : null;
-      normalized.push({ type: "user", isMeta: true, timestamp: record.timestamp, message: { content: [{ type: "tool_result", is_error: Boolean(errorSummary) || status.failed || unwrappedFailure, error_summary: errorSummary }] } });
+      normalized.push({ type: "user", isMeta: true, timestamp: record.timestamp, message: { content: [{ type: "tool_result", is_error: Boolean(errorSummary) || status.failed || unwrappedFailure, error_summary: errorSummary, ...(includePrivateToolDetails && output ? { content: output } : {}) }] } });
     } else if (record.type === "event_msg" && payload.type === "turn_aborted") {
       normalized.push({ type: "system", subtype: "interrupt", timestamp: record.timestamp, content: "interrupt" });
     } else if (record.type === "event_msg" && payload.type === "token_count" && payload.info?.total_token_usage) {
@@ -506,16 +507,16 @@ function normalizeCoworkRecords(records) {
   return normalized;
 }
 
-export function readRecords(file, agent = "claude") {
+export function readRecords(file, agent = "claude", options = {}) {
   const { records } = recordsFromFileSync(file);
-  if (agent === "codex") return normalizeCodexRecords(records);
+  if (agent === "codex") return normalizeCodexRecords(records, options);
   if (agent === "cowork") return normalizeCoworkRecords(records);
   return records;
 }
 
-export async function readRecordsAsync(file, agent = "claude") {
+export async function readRecordsAsync(file, agent = "claude", options = {}) {
   const { records } = await recordsFromFile(file);
-  if (agent === "codex") return normalizeCodexRecords(records);
+  if (agent === "codex") return normalizeCodexRecords(records, options);
   if (agent === "cowork") return normalizeCoworkRecords(records);
   return records;
 }

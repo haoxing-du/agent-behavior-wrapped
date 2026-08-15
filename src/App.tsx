@@ -27,8 +27,8 @@ type DonationMode = "standard" | "advanced" | "unredacted";
 type Stage = "select" | "report" | "donate";
 type SavedReport = Report & { id: string; createdAt: string; rangeLabel: string; source: string; publicUrl?: string; donationHelperUrl?: string; hosting?: { public: boolean }; privacy: { shareSafe: boolean; containsTranscriptText: boolean; externalTransmission: boolean; analysisMode?: "remote" | "local-only"; leaderboardParticipation?: "included-by-default" | "excluded" } };
 type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; metricUnit?: string; headlineAccent?: string; wordRatio?: string; example?: string; workaround?: boolean; workaroundCount?: number; evidenceHref?: string; turnDistribution?: { values: number[]; median: number }; ctaHref?: string; ctaLabel?: string; ctas?: { href: string; label: string; primary?: boolean; note?: string }[]; rows?: { label: string; value: string; percentage?: number; rank?: number }[]; comparison?: { label: string; highlight: string; accent: "yell" | "thanks"; value: string; suffix: string; quote?: string }[] };
-type WorkaroundEvidenceMessage = DonationMessage & { kind: "context" | "blocker" | "workaround" };
-type WorkaroundEvidenceOccurrence = { index: number; session: { label: string; agentName: string; startedAt: string | null; openingMessage: string }; workaroundAction: { text: string; timestamp: string | null }; blocker: { text: string; timestamp: string | null }; context: WorkaroundEvidenceMessage[]; contextTurns: number };
+type WorkaroundEvidenceAction = { toolName: string; details: string; timestamp: string | null };
+type WorkaroundEvidenceOccurrence = { index: number; session: { label: string; agentName: string; startedAt: string | null; openingMessage: { preview: string; full: string } }; originalAction: WorkaroundEvidenceAction; blocker: { text: string; timestamp: string | null }; workaroundAction: WorkaroundEvidenceAction };
 type WorkaroundEvidence = { format: string; localPrivate: boolean; standardRedactionsApplied: boolean; reportId: string; occurrences: WorkaroundEvidenceOccurrence[] };
 type ParticipantSample = { participant_id: number; value: number };
 type SessionLengthSample = ParticipantSample & { session_index: number };
@@ -724,20 +724,17 @@ function SavedDonationRoute({ id }: { id: string }) {
   </div>;
 }
 
-function TranscriptMessage({ message }: { message: WorkaroundEvidenceMessage }) {
+function ExpandableOpeningMessage({ message }: { message: { preview: string; full: string } }) {
   const [expanded, setExpanded] = useState(false);
-  const isAgent = message.role === "assistant";
-  const isBlocker = message.kind === "blocker";
-  const isLong = message.text.length > 420 || message.text.split("\n").length > 7;
-  return <div className={`donation-message-row ${isBlocker ? "blocker" : isAgent ? "assistant" : "user"}`}>
-    <div className={`bundle-message ${isBlocker ? "blocker" : isAgent ? "assistant" : "user"}`}>
-      <span className="bundle-role">{isBlocker ? "Detected blocker" : isAgent ? "Agent" : "You"}</span>
-      <div className="bundle-bubble">
-        <div className={`bundle-final-text ${expanded ? "expanded" : isLong ? "collapsed" : ""}`}>{renderDonationText(message.text, [])}</div>
-        {isLong && <div className="bundle-message-actions"><button type="button" onClick={() => setExpanded((value) => !value)}>{expanded ? "Show less" : "Show full message"}</button></div>}
-      </div>
-    </div>
-  </div>;
+  const canExpand = message.full.trim() !== message.preview.trim();
+  return <button className={`workaround-opening-toggle ${expanded ? "expanded" : ""}`} type="button" disabled={!canExpand} onClick={() => setExpanded((value) => !value)}>
+    <span>{renderDonationText(expanded ? message.full : message.preview, [])}</span>
+    {canExpand && <small>{expanded ? "Collapse message ↑" : "Show full message ↓"}</small>}
+  </button>;
+}
+
+function WorkaroundActionDetails({ action }: { action: WorkaroundEvidenceAction }) {
+  return <><strong>{action.toolName}</strong>{action.details && <pre><code>{renderDonationText(action.details, [])}</code></pre>}</>;
 }
 
 function WorkaroundEvidenceRoute({ id }: { id: string }) {
@@ -759,15 +756,16 @@ function WorkaroundEvidenceRoute({ id }: { id: string }) {
       <div className="workaround-session-meta"><strong>{occurrence.session.agentName}</strong><time dateTime={occurrence.session.startedAt || undefined}>{fmtDateTime(occurrence.session.startedAt)}</time></div>
       <section className="workaround-evidence-section opening-message">
         <h2>Initial user message</h2>
-        <p>{renderDonationText(occurrence.session.openingMessage, [])}</p>
+        <ExpandableOpeningMessage message={occurrence.session.openingMessage} />
       </section>
-      <section className="workaround-evidence-section flagged-action">
-        <h2>Flagged workaround action</h2>
-        <div className="workaround-exact-message">{renderDonationText(occurrence.workaroundAction.text, [])}</div>
-      </section>
-      <section className="workaround-evidence-section blocker-context">
-        <div className="workaround-section-heading"><h2>Blocker and surrounding turns</h2><span>{occurrence.contextTurns} turns before and after</span></div>
-        <div className="bundle-chat workaround-transcript">{occurrence.context.map((message, messageIndex) => <TranscriptMessage message={message} key={messageIndex} />)}</div>
+      <section className="workaround-evidence-section workaround-sequence-section">
+        <h2>Detected workaround</h2>
+        <ol className="workaround-sequence">
+          <li><span>1 · Tool call</span><strong>{occurrence.originalAction.toolName}</strong></li>
+          <li><span>2 · What it tried to do</span>{occurrence.originalAction.details ? <pre><code>{renderDonationText(occurrence.originalAction.details, [])}</code></pre> : <p>Tool details unavailable</p>}</li>
+          <li className="blocked"><span>3 · Error that blocked it</span><pre><code>{renderDonationText(occurrence.blocker.text, [])}</code></pre></li>
+          <li className="workaround"><span>4 · What the agent did next</span><WorkaroundActionDetails action={occurrence.workaroundAction} /></li>
+        </ol>
       </section>
     </article>)}</div>}
   </main>;

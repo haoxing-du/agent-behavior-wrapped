@@ -67,11 +67,11 @@ function readBody(request, maximumBytes = 1_000_000) {
   });
 }
 
-async function chosenRecords(ids) {
+async function chosenRecords(ids, options = {}) {
   const selected = [];
   for (const id of ids) {
     const session = catalog.index.get(id);
-    if (session) selected.push({ sessionId: id, agent: session.agent, records: await readRecordsAsync(session.file, session.agent) });
+    if (session) selected.push({ sessionId: id, agent: session.agent, records: await readRecordsAsync(session.file, session.agent, options) });
   }
   return selected;
 }
@@ -118,7 +118,7 @@ const server = http.createServer(async (request, response) => {
       if (!report) return json(response, 404, { error: "Saved report not found" });
       const allowed = new Set(report.sessionIds || []);
       const ids = [...new Set((report.workaroundReview?.occurrences || []).map((occurrence) => occurrence?.location?.sessionId).filter((id) => allowed.has(id) && catalog.index.has(id)))].slice(0, 100);
-      const records = await chosenRecords(ids);
+      const records = await chosenRecords(ids, { includePrivateToolDetails: true });
       const labels = new Map(publicCatalog().sessions.map((session) => [session.id, session]));
       return json(response, 200, makeWorkaroundEvidencePreview(report, records, labels));
     }

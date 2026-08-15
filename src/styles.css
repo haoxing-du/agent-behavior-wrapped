@@ -709,31 +709,33 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .workaround-evidence-section { padding: 20px; border-bottom: 1px solid #e4dfe6; }
 .workaround-evidence-section:last-child { border-bottom: 0; }
 .workaround-evidence-section h2 { margin: 0 0 10px; color: #7b727e; font-size: 9px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
-.workaround-evidence-section.opening-message p { margin: 0; color: #363039; font-size: 14px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
-.workaround-evidence-section.flagged-action { background: rgba(233,221,245,.23); }
-.workaround-exact-message { padding-left: 15px; border-left: 3px solid #8c62a2; color: #2e2731; font-size: 14px; font-weight: 650; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
-.workaround-section-heading { margin-bottom: 12px; display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
-.workaround-section-heading h2 { margin: 0; }
-.workaround-section-heading span { color: #8a838d; font-size: 10px; }
-.workaround-transcript { padding: 16px; border: 1px solid #d8d1da; border-radius: 13px; background: rgba(247,244,237,.76); }
-.workaround-transcript .donation-message-row { display: flex; }
-.workaround-transcript .donation-message-row.blocker { justify-content: stretch; }
-.workaround-transcript .bundle-message { width: min(84%, 700px); }
-.workaround-transcript .bundle-message.blocker { width: 100%; }
-.workaround-transcript .bundle-message.blocker .bundle-role { color: #9a4f39; }
-.workaround-transcript .bundle-message.blocker .bundle-bubble { border-color: #deb6a9; background: #fff1ec; }
-.workaround-transcript .bundle-final-text { min-height: 0; font-size: 12px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.workaround-opening-toggle { width: 100%; padding: 0; border: 0; background: transparent; color: #363039; text-align: left; cursor: pointer; }
+.workaround-opening-toggle:disabled { cursor: default; }
+.workaround-opening-toggle:focus-visible { outline: 2px solid #8c62a2; outline-offset: 4px; border-radius: 4px; }
+.workaround-opening-toggle > span { display: block; font-size: 14px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.workaround-opening-toggle > small { display: inline-block; margin-top: 10px; color: #754ba8; font-size: 10px; font-weight: 850; }
+.workaround-opening-toggle:not(:disabled):hover > small { text-decoration: underline; }
+.workaround-sequence-section { background: rgba(247,244,237,.42); }
+.workaround-sequence { margin: 0; padding: 0; display: grid; gap: 10px; list-style: none; counter-reset: none; }
+.workaround-sequence li { min-width: 0; padding: 15px 16px; border: 1px solid #d8d1da; border-radius: 12px; background: #fffdf9; }
+.workaround-sequence li.blocked { border-color: #deb6a9; background: #fff1ec; }
+.workaround-sequence li.workaround { border-color: #c9b6d2; background: #f6eff9; }
+.workaround-sequence li > span { display: block; margin-bottom: 8px; color: #7b727e; font-size: 8px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
+.workaround-sequence li.blocked > span { color: #9a4f39; }
+.workaround-sequence li > strong { display: inline-block; color: #2c2630; font-size: 14px; }
+.workaround-sequence pre { max-height: 320px; margin: 0; overflow: auto; border-radius: 8px; background: rgba(31,26,34,.055); white-space: pre-wrap; overflow-wrap: anywhere; }
+.workaround-sequence strong + pre { margin-top: 10px; }
+.workaround-sequence code { display: block; padding: 12px 13px; color: #332d36; font: 11.5px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+.workaround-sequence p { margin: 0; color: #756e78; font-size: 12px; }
 .workaround-evidence-empty { padding: 40px; border: 1px solid #d4cdd6; border-radius: 16px; background: rgba(255,255,255,.68); text-align: center; }
 .workaround-evidence-empty h2 { margin: 0 0 8px; }
 .workaround-evidence-empty p { margin: 0; color: #746d78; }
 @media (max-width: 760px) {
   .workaround-evidence-page { width: min(100% - 24px, 900px); padding-top: 22px; }
   .workaround-page-title { margin-top: 32px; }
-  .workaround-session-meta, .workaround-section-heading { align-items: flex-start; flex-direction: column; gap: 5px; }
+  .workaround-session-meta { align-items: flex-start; flex-direction: column; gap: 5px; }
   .workaround-evidence-section { padding: 16px; }
-  .workaround-transcript { padding: 12px; }
-  .workaround-transcript .bundle-message { width: 94%; }
-  .workaround-transcript .bundle-message.blocker { width: 100%; }
+  .workaround-sequence li { padding: 13px; }
 }
 .donation-success-page { display: grid; place-items: center; padding-block: clamp(42px, 9vh, 96px); }
 .donation-success { width: min(680px, 100%); padding: clamp(32px, 5vw, 58px); border: 1px solid #d4cbd7; border-radius: 28px; background: rgba(255,255,255,.72); box-shadow: 0 28px 80px rgba(55,39,66,.1); text-align: center; }
