@@ -27,7 +27,8 @@ type DonationMode = "standard" | "advanced" | "unredacted";
 type Stage = "select" | "report" | "donate";
 type SavedReport = Report & { id: string; createdAt: string; rangeLabel: string; source: string; publicUrl?: string; donationHelperUrl?: string; hosting?: { public: boolean }; privacy: { shareSafe: boolean; containsTranscriptText: boolean; externalTransmission: boolean; analysisMode?: "remote" | "local-only"; leaderboardParticipation?: "included-by-default" | "excluded" } };
 type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; metricUnit?: string; headlineAccent?: string; wordRatio?: string; example?: string; workaround?: boolean; workaroundCount?: number; evidenceHref?: string; turnDistribution?: { values: number[]; median: number }; ctaHref?: string; ctaLabel?: string; ctas?: { href: string; label: string; primary?: boolean; note?: string }[]; rows?: { label: string; value: string; percentage?: number; rank?: number }[]; comparison?: { label: string; highlight: string; accent: "yell" | "thanks"; value: string; suffix: string; quote?: string }[] };
-type WorkaroundEvidenceOccurrence = { index: number; summary: string; confidence: string; disclosure: string; originalMethod: string; blocker: string; alternativeMethod: string; session: { label: string; agentName: string }; messages: DonationMessage[]; contextTurns: number; reconstructedFromTranscript: boolean };
+type WorkaroundEvidenceMessage = DonationMessage & { kind: "context" | "blocker" | "workaround" };
+type WorkaroundEvidenceOccurrence = { index: number; session: { label: string; agentName: string; startedAt: string | null; openingMessage: string }; workaroundAction: { text: string; timestamp: string | null }; blocker: { text: string; timestamp: string | null }; context: WorkaroundEvidenceMessage[]; contextTurns: number };
 type WorkaroundEvidence = { format: string; localPrivate: boolean; standardRedactionsApplied: boolean; reportId: string; occurrences: WorkaroundEvidenceOccurrence[] };
 type ParticipantSample = { participant_id: number; value: number };
 type SessionLengthSample = ParticipantSample & { session_index: number };
@@ -66,8 +67,10 @@ function reportManagementToken(id: string) {
 }
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" });
+const dateTimeFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 
 function fmtDate(value: string) { return dateFormat.format(new Date(value)); }
+function fmtDateTime(value: string | null) { return value ? dateTimeFormat.format(new Date(value)) : "Time unavailable"; }
 function fmtDuration(minutes: number) {
   if (minutes < 60) return `${minutes}m`;
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
@@ -726,13 +729,14 @@ function SavedDonationRoute({ id }: { id: string }) {
   </div>;
 }
 
-function TranscriptMessage({ message }: { message: DonationMessage }) {
+function TranscriptMessage({ message }: { message: WorkaroundEvidenceMessage }) {
   const [expanded, setExpanded] = useState(false);
   const isAgent = message.role === "assistant";
+  const isBlocker = message.kind === "blocker";
   const isLong = message.text.length > 420 || message.text.split("\n").length > 7;
-  return <div className={`donation-message-row ${isAgent ? "assistant" : "user"}`}>
-    <div className={`bundle-message ${isAgent ? "assistant" : "user"}`}>
-      <span className="bundle-role">{isAgent ? "Agent" : "You"}</span>
+  return <div className={`donation-message-row ${isBlocker ? "blocker" : isAgent ? "assistant" : "user"}`}>
+    <div className={`bundle-message ${isBlocker ? "blocker" : isAgent ? "assistant" : "user"}`}>
+      <span className="bundle-role">{isBlocker ? "Detected blocker" : isAgent ? "Agent" : "You"}</span>
       <div className="bundle-bubble">
         <div className={`bundle-final-text ${expanded ? "expanded" : isLong ? "collapsed" : ""}`}>{renderDonationText(message.text, [])}</div>
         {isLong && <div className="bundle-message-actions"><button type="button" onClick={() => setExpanded((value) => !value)}>{expanded ? "Show less" : "Show full message"}</button></div>}
@@ -753,37 +757,25 @@ function WorkaroundEvidenceRoute({ id }: { id: string }) {
   }, [id]);
   if (error) return <main className="shared-error"><h1>Private evidence unavailable</h1><p>{error}</p><a href={`/w/${id}`}>Back to Wrapped</a></main>;
   if (!evidence) return <main className="shared-loading"><div className="orb" /><p>Rebuilding the local transcript excerpts…</p></main>;
-  return <div className="app-shell donation-shell workaround-evidence-shell">
-    <main className="donation-page workaround-evidence-page">
-      <div className="page-chrome donation-chrome">
-        <a className="back-link" href={`/w/${id}`}>← Back to Wrapped</a>
-        <div className="page-wordmark" aria-label="Behavior Wrapped"><strong><span>Behavior</span><span>Wrapped</span></strong></div>
-        <span className="page-status local"><i aria-hidden="true" />Local evidence</span>
-      </div>
-      <section className="workaround-evidence-hero">
-        <span className="eyebrow">Instrumental workarounds · private receipts</span>
-        <h1>See the detours.</h1>
-        <p>These short transcript excerpts were rebuilt from the session files on this Mac. Likely secrets and personal details are redacted locally; nothing on this page is part of the public Wrapped.</p>
+  return <main className="workaround-evidence-page">
+    <a className="workaround-back-link" href={`/w/${id}`}>← Back to Wrapped</a>
+    <div className="workaround-page-title"><h1>Workaround details</h1><p>Private, local transcript excerpts. Likely secrets and personal details are redacted.</p></div>
+    {!evidence.occurrences.length ? <section className="workaround-evidence-empty"><h2>No local excerpts are available.</h2><p>The source sessions may have moved, or this report predates private evidence storage.</p></section> : <div className="workaround-evidence-list">{evidence.occurrences.map((occurrence) => <article className="workaround-evidence-card" key={occurrence.index}>
+      <div className="workaround-session-meta"><strong>{occurrence.session.agentName}</strong><time dateTime={occurrence.session.startedAt || undefined}>{fmtDateTime(occurrence.session.startedAt)}</time></div>
+      <section className="workaround-evidence-section opening-message">
+        <h2>Initial user message</h2>
+        <p>{renderDonationText(occurrence.session.openingMessage, [])}</p>
       </section>
-      <aside className="local-review-notice workaround-local-notice"><span className="pulse" aria-hidden="true" /><div><strong>Private and local</strong><p>The page reads the saved sessions directly and does not send these excerpts anywhere.</p></div></aside>
-      {!evidence.occurrences.length ? <section className="workaround-evidence-empty"><h2>No local excerpts are available.</h2><p>The source sessions may have moved, or this report predates private evidence storage.</p></section> : <div className="workaround-evidence-list">{evidence.occurrences.map((occurrence, index) => <details className="workaround-evidence-card" open={index === 0} key={occurrence.index}>
-        <summary><span><small>Workaround {String(occurrence.index).padStart(2, "0")} · {occurrence.session.agentName}</small><strong>{occurrence.summary}</strong></span><b>{occurrence.confidence} confidence</b></summary>
-        <div className="workaround-evidence-body">
-          <div className="workaround-path" aria-label="Detected workaround sequence">
-            <div><span>1 · Original route</span><p>{occurrence.originalMethod}</p></div>
-            <i aria-hidden="true">→</i>
-            <div className="blocked"><span>2 · Blocked</span><p>{occurrence.blocker}</p></div>
-            <i aria-hidden="true">→</i>
-            <div><span>3 · Different route</span><p>{occurrence.alternativeMethod}</p></div>
-          </div>
-          <div className="workaround-transcript-head"><div><span>Transcript excerpt</span><strong>{occurrence.session.label}</strong></div><small>{occurrence.reconstructedFromTranscript ? `Up to ${occurrence.contextTurns} surrounding turns on each side` : "Safe event summary; full turn mapping unavailable"}</small></div>
-          <div className="bundle-chat workaround-transcript">{occurrence.messages.map((message, messageIndex) => <TranscriptMessage message={message} key={messageIndex} />)}</div>
-          <p className="workaround-disclosure">Agent disclosure: <strong>{occurrence.disclosure}</strong></p>
-        </div>
-      </details>)}</div>}
-    </main>
-    <footer><span>Behavior Wrapped</span><span className="donation-footer-meta"><span>Private transcript evidence · Standard local redactions applied</span><SusanCalvinCredit /></span></footer>
-  </div>;
+      <section className="workaround-evidence-section flagged-action">
+        <h2>Flagged workaround action</h2>
+        <div className="workaround-exact-message">{renderDonationText(occurrence.workaroundAction.text, [])}</div>
+      </section>
+      <section className="workaround-evidence-section blocker-context">
+        <div className="workaround-section-heading"><h2>Blocker and surrounding turns</h2><span>{occurrence.contextTurns} turns before and after</span></div>
+        <div className="bundle-chat workaround-transcript">{occurrence.context.map((message, messageIndex) => <TranscriptMessage message={message} key={messageIndex} />)}</div>
+      </section>
+    </article>)}</div>}
+  </main>;
 }
 
 function Header({ setStage }: { stage: Stage; setStage: (stage: Stage) => void }) {
