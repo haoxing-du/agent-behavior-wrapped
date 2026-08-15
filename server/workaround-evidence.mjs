@@ -1,5 +1,4 @@
 import { localOpeningPrompt, makeDonationPreview } from "./analysis.mjs";
-import { redactText } from "./privacy.mjs";
 
 const MAX_OCCURRENCES = 100;
 
@@ -18,8 +17,8 @@ function visibleText(record) {
   return contentBlocks(record).filter((block) => block?.type === "text").map((block) => block.text || "").join("\n").trim();
 }
 
-function locallyRedacted(value) {
-  return redactText(String(value || ""), [], { includeHeuristicSecrets: false }).text.trim();
+function exactLocalText(value) {
+  return String(value || "").trim();
 }
 
 function toolResultText(record) {
@@ -58,14 +57,25 @@ function toolAction(record, fallbackText) {
   const block = contentBlocks(record).find((item) => item?.type === "tool_use");
   if (block) return {
     toolName: String(block.name || "Tool"),
-    details: locallyRedacted(formattedToolInput(block.input) || fallbackText),
+    details: exactLocalText(formattedToolInput(block.input) || fallbackText),
     timestamp: record?.timestamp || null,
   };
   return {
     toolName: "Agent message",
-    details: locallyRedacted(visibleText(record) || fallbackText),
+    details: exactLocalText(visibleText(record) || fallbackText),
     timestamp: record?.timestamp || null,
   };
+}
+
+function isUserTurn(record) {
+  return record?.type === "user" && !record?.isMeta && Boolean(localOpeningPrompt(visibleText(record)));
+}
+
+function turnsBetweenOpeningAndAction(records, actionIndex) {
+  if (actionIndex === null) return 0;
+  const openingIndex = records.findIndex((record) => record?.type === "user" && !record?.isMeta && localOpeningPrompt(visibleText(record)));
+  if (openingIndex < 0 || actionIndex <= openingIndex) return 0;
+  return records.slice(openingIndex + 1, actionIndex).filter(isUserTurn).length;
 }
 
 function matchingEvidenceText(occurrence, kind) {
@@ -90,8 +100,8 @@ export function makeWorkaroundEvidencePreview(report, sessionRecords, metadataBy
     const records = recordsById.get(sessionId);
     if (!records) return [];
     const metadata = metadataById.get(sessionId);
-    const donationSession = makeDonationPreview([{ sessionId, records }], metadataById).sessions[0];
-    const fullOpeningMessage = donationSession?.messages?.filter((message) => message.role === "user").map((message) => locallyRedacted(localOpeningPrompt(message.text))).find(Boolean)
+    const donationSession = makeDonationPreview([{ sessionId, records }], metadataById, { unredacted: true }).sessions[0];
+    const fullOpeningMessage = donationSession?.messages?.filter((message) => message.role === "user").map((message) => exactLocalText(localOpeningPrompt(message.text))).find(Boolean)
       || donationSession?.summary
       || "Opening message unavailable";
     const originalIndex = occurrenceRecordIndex(occurrence, records, "originalRecordIndex", "tool_use");
@@ -100,7 +110,7 @@ export function makeWorkaroundEvidencePreview(report, sessionRecords, metadataBy
     const originalRecord = originalIndex === null ? null : records[originalIndex];
     const blockerRecord = blockerIndex === null ? null : records[blockerIndex];
     const alternativeRecord = alternativeIndex === null ? null : records[alternativeIndex];
-    const blockerText = locallyRedacted(toolResultText(blockerRecord) || matchingEvidenceText(occurrence, "tool_result") || occurrence.blocker || "The original method was blocked.");
+    const blockerText = exactLocalText(toolResultText(blockerRecord) || matchingEvidenceText(occurrence, "tool_result") || occurrence.blocker || "The original method was blocked.");
     return [{
       index: index + 1,
       session: {
@@ -111,6 +121,7 @@ export function makeWorkaroundEvidencePreview(report, sessionRecords, metadataBy
           preview: donationSession?.summary || fullOpeningMessage,
           full: fullOpeningMessage,
         },
+        turnsBeforeWorkaround: turnsBetweenOpeningAndAction(records, originalIndex),
       },
       originalAction: toolAction(originalRecord, occurrence.originalMethod || matchingEvidenceText(occurrence, "tool_use") || "Original tool call unavailable"),
       blocker: { text: blockerText, timestamp: blockerRecord?.timestamp || null },
@@ -118,9 +129,9 @@ export function makeWorkaroundEvidencePreview(report, sessionRecords, metadataBy
     }];
   });
   return {
-    format: "behavior-wrapped-workaround-evidence-v3",
+    format: "behavior-wrapped-workaround-evidence-v4",
     localPrivate: true,
-    standardRedactionsApplied: true,
+    standardRedactionsApplied: false,
     reportId: report?.id,
     occurrences,
   };

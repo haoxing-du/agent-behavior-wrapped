@@ -28,7 +28,7 @@ type Stage = "select" | "report" | "donate";
 type SavedReport = Report & { id: string; createdAt: string; rangeLabel: string; source: string; publicUrl?: string; donationHelperUrl?: string; hosting?: { public: boolean }; privacy: { shareSafe: boolean; containsTranscriptText: boolean; externalTransmission: boolean; analysisMode?: "remote" | "local-only"; leaderboardParticipation?: "included-by-default" | "excluded" } };
 type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; metricUnit?: string; headlineAccent?: string; wordRatio?: string; example?: string; workaround?: boolean; workaroundCount?: number; evidenceHref?: string; turnDistribution?: { values: number[]; median: number }; ctaHref?: string; ctaLabel?: string; ctas?: { href: string; label: string; primary?: boolean; note?: string }[]; rows?: { label: string; value: string; percentage?: number; rank?: number }[]; comparison?: { label: string; highlight: string; accent: "yell" | "thanks"; value: string; suffix: string; quote?: string }[] };
 type WorkaroundEvidenceAction = { toolName: string; details: string; timestamp: string | null };
-type WorkaroundEvidenceOccurrence = { index: number; session: { label: string; agentName: string; startedAt: string | null; openingMessage: { preview: string; full: string } }; originalAction: WorkaroundEvidenceAction; blocker: { text: string; timestamp: string | null }; workaroundAction: WorkaroundEvidenceAction };
+type WorkaroundEvidenceOccurrence = { index: number; session: { label: string; agentName: string; startedAt: string | null; openingMessage: { preview: string; full: string }; turnsBeforeWorkaround: number }; originalAction: WorkaroundEvidenceAction; blocker: { text: string; timestamp: string | null }; workaroundAction: WorkaroundEvidenceAction };
 type WorkaroundEvidence = { format: string; localPrivate: boolean; standardRedactionsApplied: boolean; reportId: string; occurrences: WorkaroundEvidenceOccurrence[] };
 type ParticipantSample = { participant_id: number; value: number };
 type SessionLengthSample = ParticipantSample & { session_index: number };
@@ -751,20 +751,20 @@ function WorkaroundEvidenceRoute({ id }: { id: string }) {
   if (!evidence) return <main className="shared-loading"><div className="orb" /><p>Rebuilding the local transcript excerpts…</p></main>;
   return <main className="workaround-evidence-page">
     <a className="workaround-back-link" href={`/w/${id}`}>← Back to Wrapped</a>
-    <div className="workaround-page-title"><h1>Workaround details</h1><p>Private, local transcript excerpts. Likely secrets and personal details are redacted.</p></div>
+    <div className="workaround-page-title"><h1>Workaround details</h1><p>Private transcript evidence. Nothing on this page leaves this Mac.</p></div>
     {!evidence.occurrences.length ? <section className="workaround-evidence-empty"><h2>No local excerpts are available.</h2><p>The source sessions may have moved, or this report predates private evidence storage.</p></section> : <div className="workaround-evidence-list">{evidence.occurrences.map((occurrence) => <article className="workaround-evidence-card" key={occurrence.index}>
       <div className="workaround-session-meta"><strong>{occurrence.session.agentName}</strong><time dateTime={occurrence.session.startedAt || undefined}>{fmtDateTime(occurrence.session.startedAt)}</time></div>
       <section className="workaround-evidence-section opening-message">
         <h2>Initial user message</h2>
         <ExpandableOpeningMessage message={occurrence.session.openingMessage} />
       </section>
+      <div className="workaround-turn-gap" aria-label={`${occurrence.session.turnsBeforeWorkaround} transcript turns omitted`}><b>⋯</b><span>{occurrence.session.turnsBeforeWorkaround.toLocaleString()} {occurrence.session.turnsBeforeWorkaround === 1 ? "turn" : "turns"} later</span></div>
       <section className="workaround-evidence-section workaround-sequence-section">
         <h2>Detected workaround</h2>
         <ol className="workaround-sequence">
-          <li><span>1 · Tool call</span><strong>{occurrence.originalAction.toolName}</strong></li>
-          <li><span>2 · What it tried to do</span>{occurrence.originalAction.details ? <pre><code>{renderDonationText(occurrence.originalAction.details, [])}</code></pre> : <p>Tool details unavailable</p>}</li>
-          <li className="blocked"><span>3 · Error that blocked it</span><pre><code>{renderDonationText(occurrence.blocker.text, [])}</code></pre></li>
-          <li className="workaround"><span>4 · What the agent did next</span><WorkaroundActionDetails action={occurrence.workaroundAction} /></li>
+          <li className="tool-call"><WorkaroundActionDetails action={occurrence.originalAction} /></li>
+          <li className="blocked"><pre><code>{renderDonationText(occurrence.blocker.text, [])}</code></pre></li>
+          <li className="workaround"><WorkaroundActionDetails action={occurrence.workaroundAction} /></li>
         </ol>
       </section>
     </article>)}</div>}
