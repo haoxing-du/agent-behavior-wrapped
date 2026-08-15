@@ -1161,10 +1161,9 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .shared-page .story-workaround .story-copy p.story-workaround-count { display: flex; gap: 9px; align-items: baseline; margin-top: 13px; color: rgba(43,33,47,.72); font-size: var(--type-row); font-weight: 700; }
 .shared-page .story-workaround .story-workaround-count strong { color: var(--deck-emphasis); font-size: clamp(43px, 4.5vw, 54px); line-height: .8; letter-spacing: -.06em; }
 .shared-page .story-workaround .story-workaround-count + p { margin-top: 12px; }
-.shared-page .story-workaround-term { display: block; margin-top: 10px; color: rgba(43,33,47,.48); font-size: 11px; font-weight: 650; letter-spacing: .02em; }
 .shared-page .story-workaround .story-data-rows { padding: 0; box-shadow: none; }
 .shared-page .story-workaround .story-example { margin-top: 22px; padding-left: 22px; border-left-width: 1px; }
-.shared-page .story-workaround .story-evidence-link { display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; align-items: center; margin-top: 2px; padding-top: 15px; border-top: 1px solid rgba(45,33,49,.13); color: #4f3c5b; font-size: 13px; font-weight: 800; text-decoration: none; }
+.shared-page .story-workaround .story-evidence-link { position: relative; z-index: 2; display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; align-items: center; align-self: stretch; margin: 2px 0 7px; padding-top: 15px; border-top: 1px solid rgba(45,33,49,.13); color: #4f3c5b; font-size: 13px; font-weight: 800; text-decoration: none; }
 .shared-page .story-workaround .story-evidence-link > span { color: var(--deck-emphasis); font-size: 18px; }
 .shared-page .story-workaround .story-evidence-link small { grid-column: 1 / -1; color: rgba(43,33,47,.5); font-size: 9px; font-weight: 650; letter-spacing: .02em; }
 
