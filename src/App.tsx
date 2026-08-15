@@ -26,7 +26,9 @@ type Donation = { format: string; createdLocally: boolean; unredacted?: boolean;
 type DonationMode = "standard" | "advanced" | "unredacted";
 type Stage = "select" | "report" | "donate";
 type SavedReport = Report & { id: string; createdAt: string; rangeLabel: string; source: string; publicUrl?: string; donationHelperUrl?: string; hosting?: { public: boolean }; privacy: { shareSafe: boolean; containsTranscriptText: boolean; externalTransmission: boolean; analysisMode?: "remote" | "local-only"; leaderboardParticipation?: "included-by-default" | "excluded" } };
-type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; metricUnit?: string; headlineAccent?: string; wordRatio?: string; example?: string; workaround?: boolean; turnDistribution?: { values: number[]; median: number }; ctaHref?: string; ctaLabel?: string; ctas?: { href: string; label: string; primary?: boolean; note?: string }[]; rows?: { label: string; value: string; percentage?: number; rank?: number }[]; comparison?: { label: string; highlight: string; accent: "yell" | "thanks"; value: string; suffix: string; quote?: string }[] };
+type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; metricUnit?: string; headlineAccent?: string; wordRatio?: string; example?: string; workaround?: boolean; workaroundCount?: number; workaroundTerm?: string; evidenceHref?: string; turnDistribution?: { values: number[]; median: number }; ctaHref?: string; ctaLabel?: string; ctas?: { href: string; label: string; primary?: boolean; note?: string }[]; rows?: { label: string; value: string; percentage?: number; rank?: number }[]; comparison?: { label: string; highlight: string; accent: "yell" | "thanks"; value: string; suffix: string; quote?: string }[] };
+type WorkaroundEvidenceOccurrence = { index: number; summary: string; confidence: string; disclosure: string; originalMethod: string; blocker: string; alternativeMethod: string; session: { label: string; agentName: string }; messages: DonationMessage[]; contextTurns: number; reconstructedFromTranscript: boolean };
+type WorkaroundEvidence = { format: string; localPrivate: boolean; standardRedactionsApplied: boolean; reportId: string; occurrences: WorkaroundEvidenceOccurrence[] };
 type ParticipantSample = { participant_id: number; value: number };
 type SessionLengthSample = ParticipantSample & { session_index: number };
 type PhraseWallEntry = { participant_id: number; phrase: string; occurrences: number; sessions: number };
@@ -89,6 +91,11 @@ function renderInlineCode(value: string) {
   return value.split(/(`[^`]+`)/g).filter(Boolean).map((part, index) => part.startsWith("`") && part.endsWith("`")
     ? <code key={`${part}-${index}`}>{part.slice(1, -1)}</code>
     : part);
+}
+
+function localWorkaroundEvidenceUrl(report: SavedReport) {
+  const donationUrl = report.donationHelperUrl || `http://localhost:4317/donate/${report.id}`;
+  return donationUrl.replace(new RegExp(`/donate/${report.id}$`), `/workarounds/${report.id}`);
 }
 
 function fmtUsd(value: number) {
@@ -284,7 +291,7 @@ function SharedWrapped({ id }: { id: string }) {
     ...(showLanguages && languages[0] ? [{ kicker: "Your agent’s output was mostly", headline: languages[0].language, detail: `${languages[0].percentage.toFixed(1)}% of its natural-language words.`, tone: "languages", rows: languages.slice(0, 4).map((item) => ({ label: item.language, value: `${item.percentage.toFixed(1)}%`, percentage: item.percentage })) }] : []),
     ...(!showLanguages && languageAnomaly ? [{ kicker: "Your agent briefly switched to", headline: languageAnomaly.language, detail: `${languageAnomaly.words.toLocaleString()} words across ${languageAnomaly.occurrences.toLocaleString()} moment${languageAnomaly.occurrences === 1 ? "" : "s"}.`, tone: "languages" }] : []),
     ...(topTopic ? [{ kicker: "Your #1 use for agents was", headline: topTopic.topic, detail: "", tone: "topics", rows: displayTopics.slice(0, 5).map((item) => ({ label: item.topic === "Other" ? "Everything else" : item.topic, value: `${item.percentage.toFixed(1)}%`, percentage: item.percentage })) }] : []),
-    ...(report.workaroundCard ? [{ kicker: "Your agent engaged in an instrumental workaround", headline: `${report.workaroundCard.count.toLocaleString()} time${report.workaroundCard.count === 1 ? "" : "s"}`, headlineAccent: report.workaroundCard.count.toLocaleString(), detail: report.workaroundCard.count === 0 ? "Good bot. No confirmed workarounds were detected." : "Your agents try very hard. When one route was blocked, they found another way.", example: report.workaroundCard.example, workaround: true, tone: "topics", rows: report.workaroundCard.models.map((item) => ({ label: item.name, value: `${item.count}` })) }] : []),
+    ...(report.workaroundCard ? [{ kicker: "A behavioral finding", headline: report.workaroundCard.count === 0 ? "Your agent took no for an answer." : "Your agent wouldn’t take no for an answer.", detail: report.workaroundCard.count === 0 ? "No confirmed blocked-route detours were detected." : "When one method was blocked, it tried another way to reach the same outcome.", example: report.workaroundCard.example, workaround: true, workaroundCount: report.workaroundCard.count, workaroundTerm: "Researchers call this an instrumental workaround.", evidenceHref: report.workaroundCard.count > 0 ? localWorkaroundEvidenceUrl(report) : undefined, tone: "topics", rows: report.workaroundCard.models.map((item) => ({ label: item.name, value: `${item.count}` })) }] : []),
     ...(sortedStockPhrases ? [{ kicker: "Models love these phrases", headline: "Did yours?", detail: "Here’s how often they showed up.", tone: "stock", rows: sortedStockPhrases.map((item) => ({ label: `“${item.phrase.toLocaleLowerCase()}”`, value: item.count.toLocaleString() })) }] : []),
     ...(report.phraseCard ? [{ kicker: "Beyond those common phrases, your agent’s favorite was", headline: `“${report.phraseCard.phrase}”`, detail: `It said this ${report.phraseCard.occurrences} time${report.phraseCard.occurrences === 1 ? "" : "s"} across ${report.phraseCard.distinctSessions} session${report.phraseCard.distinctSessions === 1 ? "" : "s"}.`, tone: "quote" }] : []),
     { kicker: report.privacy.analysisMode === "local-only" ? "Your data stayed on this Mac" : "Your report is only the beginning", headline: report.privacy.analysisMode === "local-only" ? "Local-only, as promised." : "Keep exploring.", detail: report.privacy.analysisMode === "local-only" ? "AI-only cards and leaderboard comparisons were skipped." : "", tone: "leaderboard", ctas: [
@@ -311,6 +318,7 @@ function SharedWrapped({ id }: { id: string }) {
   }
   const layoutClass = current.comparison ? " story-comparison-card" : current.ctas ? " story-cta-card" : current.turnDistribution ? " story-turn-card" : current.rows || current.example ? " story-split-card" : current.wordRatio ? " story-ratio-card" : current.metric ? " story-metric-card" : " story-hero-card";
   const storyExample = current.example ? <blockquote className="story-example"><span>One example</span><p>{renderInlineCode(current.example)}</p></blockquote> : null;
+  const storyEvidence = current.evidenceHref ? <a className="story-evidence-link" href={current.evidenceHref}>See what your agent actually did <span>→</span><small>Opens a private page on this Mac</small></a> : null;
   const storyRows = current.rows ? <div className="story-data-rows">{current.workaround && <span className="story-data-label">By model</span>}{current.rows.map((row) => <div className="story-data-row" key={row.label}>
     <div><strong>{row.rank && <em>{row.rank}</em>}{row.label}</strong><b>{row.value}</b></div>
     {row.percentage !== undefined && <span><i style={{ width: `${Math.max(row.percentage, 1.5)}%` }} /></span>}
@@ -327,9 +335,9 @@ function SharedWrapped({ id }: { id: string }) {
         const [beforeHighlight, afterHighlight = ""] = item.label.split(item.highlight);
         return <div className={`story-comparison-item is-${item.accent}`} key={item.label}><span>{beforeHighlight}<em>{item.highlight}</em>{afterHighlight}</span><p><strong>{item.value}</strong><b>{item.suffix}</b></p>{item.quote && <blockquote><b>You said:</b> “{item.quote}”</blockquote>}</div>;
       })}</div></div> : <div className={`story-copy ${current.rows || current.example || current.turnDistribution ? "with-rows" : ""}`}>
-        <div><span>{current.kicker}</span><h1 className={current.metric ? "giant" : ""}>{current.headlineAccent ? <><span className="story-headline-accent">{current.headlineAccent}</span>{current.headline.slice(current.headlineAccent.length)}</> : current.headline}</h1>{current.metricUnit && <p className="story-metric-unit">{current.metricUnit}</p>}{current.detail && <p className={current.metric ? "story-metric-detail" : ""}>{current.detail}</p>}{current.wordRatio && <p className="story-word-ratio">For every word you said, your agent said <strong>{current.wordRatio}</strong> words.</p>}</div>
+        <div><span>{current.kicker}</span><h1 className={current.metric ? "giant" : ""}>{current.headlineAccent ? <><span className="story-headline-accent">{current.headlineAccent}</span>{current.headline.slice(current.headlineAccent.length)}</> : current.headline}</h1>{current.metricUnit && <p className="story-metric-unit">{current.metricUnit}</p>}{current.workaroundCount !== undefined && <p className="story-workaround-count"><strong>{current.workaroundCount.toLocaleString()}</strong> time{current.workaroundCount === 1 ? "" : "s"}</p>}{current.detail && <p className={current.metric ? "story-metric-detail" : ""}>{current.detail}</p>}{current.workaroundTerm && <small className="story-workaround-term">{current.workaroundTerm}</small>}{current.wordRatio && <p className="story-word-ratio">For every word you said, your agent said <strong>{current.wordRatio}</strong> words.</p>}</div>
         {(current.rows || current.example || current.turnDistribution) && <div className="story-side">
-          {current.turnDistribution ? <SessionTurnChart {...current.turnDistribution} /> : current.workaround ? <>{storyRows}{storyExample}</> : <>{storyExample}{storyRows}</>}
+          {current.turnDistribution ? <SessionTurnChart {...current.turnDistribution} /> : current.workaround ? <>{storyRows}{storyExample}{storyEvidence}</> : <>{storyExample}{storyRows}</>}
         </div>}
       </div>}
       {current.ctas ? <div className="story-cta-group">{current.ctas.map((cta) => <div className="story-cta-choice" key={cta.href}><a className={`story-cta ${cta.primary ? "primary" : "secondary"}`} href={cta.href}>{cta.label} <span>→</span></a>{cta.note && <small>{cta.note}</small>}</div>)}</div> : current.ctaHref ? <a className="story-cta" href={current.ctaHref}>{current.ctaLabel} <span>→</span></a> : <div className="story-tag">#behaviorwrapped</div>}
@@ -715,6 +723,66 @@ function SavedDonationRoute({ id }: { id: string }) {
   return <div className="app-shell donation-shell">
     <DonationView reportId={id} mode={mode} sessions={catalog.sessions} initialSelected={selection} onBack={() => { window.location.href = backUrl; }} />
     <footer><span>Behavior Wrapped</span><span className="donation-footer-meta"><span>Local donation review · Encrypted on this Mac before transmission</span><SusanCalvinCredit /></span></footer>
+  </div>;
+}
+
+function TranscriptMessage({ message }: { message: DonationMessage }) {
+  const [expanded, setExpanded] = useState(false);
+  const isAgent = message.role === "assistant";
+  const isLong = message.text.length > 420 || message.text.split("\n").length > 7;
+  return <div className={`donation-message-row ${isAgent ? "assistant" : "user"}`}>
+    <div className={`bundle-message ${isAgent ? "assistant" : "user"}`}>
+      <span className="bundle-role">{isAgent ? "Agent" : "You"}</span>
+      <div className="bundle-bubble">
+        <div className={`bundle-final-text ${expanded ? "expanded" : isLong ? "collapsed" : ""}`}>{renderDonationText(message.text, [])}</div>
+        {isLong && <div className="bundle-message-actions"><button type="button" onClick={() => setExpanded((value) => !value)}>{expanded ? "Show less" : "Show full message"}</button></div>}
+      </div>
+    </div>
+  </div>;
+}
+
+function WorkaroundEvidenceRoute({ id }: { id: string }) {
+  const [evidence, setEvidence] = useState<WorkaroundEvidence | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    fetch(`/api/reports/${id}/workarounds`).then(async (response) => {
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "This private evidence page is unavailable.");
+      return body;
+    }).then(setEvidence).catch((caught) => setError(caught instanceof Error ? caught.message : "This private evidence page is unavailable."));
+  }, [id]);
+  if (error) return <main className="shared-error"><h1>Private evidence unavailable</h1><p>{error}</p><a href={`/w/${id}`}>Back to Wrapped</a></main>;
+  if (!evidence) return <main className="shared-loading"><div className="orb" /><p>Rebuilding the local transcript excerpts…</p></main>;
+  return <div className="app-shell donation-shell workaround-evidence-shell">
+    <main className="donation-page workaround-evidence-page">
+      <div className="page-chrome donation-chrome">
+        <a className="back-link" href={`/w/${id}`}>← Back to Wrapped</a>
+        <div className="page-wordmark" aria-label="Behavior Wrapped"><strong><span>Behavior</span><span>Wrapped</span></strong></div>
+        <span className="page-status local"><i aria-hidden="true" />Local evidence</span>
+      </div>
+      <section className="workaround-evidence-hero">
+        <span className="eyebrow">Instrumental workarounds · private receipts</span>
+        <h1>See the detours.</h1>
+        <p>These short transcript excerpts were rebuilt from the session files on this Mac. Likely secrets and personal details are redacted locally; nothing on this page is part of the public Wrapped.</p>
+      </section>
+      <aside className="local-review-notice workaround-local-notice"><span className="pulse" aria-hidden="true" /><div><strong>Private and local</strong><p>The page reads the saved sessions directly and does not send these excerpts anywhere.</p></div></aside>
+      {!evidence.occurrences.length ? <section className="workaround-evidence-empty"><h2>No local excerpts are available.</h2><p>The source sessions may have moved, or this report predates private evidence storage.</p></section> : <div className="workaround-evidence-list">{evidence.occurrences.map((occurrence, index) => <details className="workaround-evidence-card" open={index === 0} key={occurrence.index}>
+        <summary><span><small>Workaround {String(occurrence.index).padStart(2, "0")} · {occurrence.session.agentName}</small><strong>{occurrence.summary}</strong></span><b>{occurrence.confidence} confidence</b></summary>
+        <div className="workaround-evidence-body">
+          <div className="workaround-path" aria-label="Detected workaround sequence">
+            <div><span>1 · Original route</span><p>{occurrence.originalMethod}</p></div>
+            <i aria-hidden="true">→</i>
+            <div className="blocked"><span>2 · Blocked</span><p>{occurrence.blocker}</p></div>
+            <i aria-hidden="true">→</i>
+            <div><span>3 · Different route</span><p>{occurrence.alternativeMethod}</p></div>
+          </div>
+          <div className="workaround-transcript-head"><div><span>Transcript excerpt</span><strong>{occurrence.session.label}</strong></div><small>{occurrence.reconstructedFromTranscript ? `Up to ${occurrence.contextTurns} surrounding turns on each side` : "Safe event summary; full turn mapping unavailable"}</small></div>
+          <div className="bundle-chat workaround-transcript">{occurrence.messages.map((message, messageIndex) => <TranscriptMessage message={message} key={messageIndex} />)}</div>
+          <p className="workaround-disclosure">Agent disclosure: <strong>{occurrence.disclosure}</strong></p>
+        </div>
+      </details>)}</div>}
+    </main>
+    <footer><span>Behavior Wrapped</span><span className="donation-footer-meta"><span>Private transcript evidence · Standard local redactions applied</span><SusanCalvinCredit /></span></footer>
   </div>;
 }
 
@@ -1287,6 +1355,8 @@ export default function App() {
   if (leaderboardId) return <LeaderboardView id={leaderboardId} />;
   const donationId = window.location.pathname.match(/^\/donate\/([A-Za-z0-9_-]{8,32})$/)?.[1];
   if (donationId) return <SavedDonationRoute id={donationId} />;
+  const workaroundEvidenceId = window.location.pathname.match(/^\/workarounds\/([A-Za-z0-9_-]{8,32})$/)?.[1];
+  if (workaroundEvidenceId) return <WorkaroundEvidenceRoute id={workaroundEvidenceId} />;
   const sharedId = window.location.pathname.match(/^\/w\/([A-Za-z0-9_-]{8,32})$/)?.[1];
   if (sharedId) return <SharedWrapped id={sharedId} />;
   return <LandingPage />;

@@ -10,6 +10,7 @@ import { makeDonationPreview } from "./analysis.mjs";
 import { deleteDonationReceipt, getOrCreateClientId, loadDonationReceipt, loadReport, saveDonationReceipt } from "./store.mjs";
 import { deleteResearchDonation, RESEARCH_DONATION_URL, submitResearchDonation } from "./research-donation.mjs";
 import { APP_VERSION, LOCAL_DONATION_PROTOCOL } from "./runtime-version.mjs";
+import { makeWorkaroundEvidencePreview } from "./workaround-evidence.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.dirname(here);
@@ -110,6 +111,16 @@ const server = http.createServer(async (request, response) => {
       if (!report) return json(response, 404, { error: "Saved report not found" });
       const available = new Set(catalog.sessions.map((session) => session.id));
       return json(response, 200, { sessionIds: (report.sessionIds || []).filter((id) => available.has(id)), localPrivateSelection: true });
+    }
+    const workaroundEvidenceMatch = url.pathname.match(/^\/api\/reports\/([A-Za-z0-9_-]{8,32})\/workarounds$/);
+    if (request.method === "GET" && workaroundEvidenceMatch) {
+      const report = loadReport(workaroundEvidenceMatch[1]);
+      if (!report) return json(response, 404, { error: "Saved report not found" });
+      const allowed = new Set(report.sessionIds || []);
+      const ids = [...new Set((report.workaroundReview?.occurrences || []).map((occurrence) => occurrence?.location?.sessionId).filter((id) => allowed.has(id) && catalog.index.has(id)))].slice(0, 100);
+      const records = await chosenRecords(ids);
+      const labels = new Map(publicCatalog().sessions.map((session) => [session.id, session]));
+      return json(response, 200, makeWorkaroundEvidencePreview(report, records, labels));
     }
     if (request.method === "POST" && url.pathname === "/api/donation-preview") {
       const body = await readBody(request);

@@ -106,7 +106,7 @@ function trajectoryEvents(records, agent, trajectoryId, sessionId, sessionIndex)
   const events = [];
   let currentModel = agent === "codex" ? "Codex model" : "Claude model";
   let sourceIndex = 0;
-  const add = (role, kind, text, timestamp, action = null, method = null) => {
+  const add = (role, kind, text, timestamp, action = null, method = null, recordIndex = null) => {
     events.push({
       event_id: `${trajectoryId}-event-${events.length + 1}`,
       role,
@@ -116,27 +116,29 @@ function trajectoryEvents(records, agent, trajectoryId, sessionId, sessionIndex)
       model: currentModel,
       action,
       method,
+      recordIndex,
       sourceIndex: sourceIndex++,
       sessionIndex,
       sessionId,
     });
   };
-  for (const record of records) {
+  for (let recordIndex = 0; recordIndex < records.length; recordIndex++) {
+    const record = records[recordIndex];
     if (typeof record?.message?.model === "string" && record.message.model !== "<synthetic>") currentModel = record.message.model;
     const role = record.type === "assistant" ? "assistant" : record.type === "system" ? "system" : "user";
     const kind = record.type === "assistant" ? "assistant_text" : record.type === "system" ? "system_text" : "user_text";
     const text = visibleText(record);
     if (!record.isMeta && ["user", "assistant", "system"].includes(record.type)) {
       const parts = splitSafeText(text);
-      if (parts.length) for (const part of parts) add(role, kind, part, record.timestamp);
-      else if (text) add(role, "content_removed", "Message content removed locally", record.timestamp);
+      if (parts.length) for (const part of parts) add(role, kind, part, record.timestamp, null, null, recordIndex);
+      else if (text) add(role, "content_removed", "Message content removed locally", record.timestamp, null, null, recordIndex);
     }
     for (const block of contentBlocks(record)) {
       if (block?.type === "tool_use") {
         const { action, method } = semanticToolUse({ name: block.name, inputValue: block.input, actionHint: block.action_hint, methodHint: block.method_hint });
-        add("assistant", "tool_use", `Tool use: ${safeToolName(block.name)}${action ? ` (${action})` : ""}`, record.timestamp, action, method);
+        add("assistant", "tool_use", `Tool use: ${safeToolName(block.name)}${action ? ` (${action})` : ""}`, record.timestamp, action, method, recordIndex);
       } else if (block?.type === "tool_result") {
-        add("tool", "tool_result", `Tool result: ${toolResultSummary(block)}`, record.timestamp);
+        add("tool", "tool_result", `Tool result: ${toolResultSummary(block)}`, record.timestamp, null, null, recordIndex);
       }
     }
   }
@@ -466,7 +468,7 @@ function resultFromSelections(bundle, selections, { model, provider, latencyMs, 
       confidence: item.confidence,
       model: displayModelName(alternative.model),
       evidence: [original, blocker, alternative].map(({ role, kind, text, timestamp }) => ({ role, kind, text, timestamp })),
-      location: { sessionId: trajectory.sessionId, trajectoryId: item.trajectory_id, blockerEventId: item.blocker_event_id, originalMethodEventId: item.original_method_event_id, alternativeMethodEventId: item.alternative_method_event_id },
+      location: { sessionId: trajectory.sessionId, trajectoryId: item.trajectory_id, blockerEventId: item.blocker_event_id, originalMethodEventId: item.original_method_event_id, alternativeMethodEventId: item.alternative_method_event_id, originalRecordIndex: original.recordIndex, blockerRecordIndex: blocker.recordIndex, alternativeRecordIndex: alternative.recordIndex },
     };
   };
   const confirmedItems = selections.flatMap((selection) => selection.confirmed);
