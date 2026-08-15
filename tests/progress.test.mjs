@@ -34,3 +34,30 @@ test("non-interactive progress produces stable line-based logs", () => {
   assert.deepEqual(writes, ["◇  Publishing · share-safe report\n", "✓  Published · 0s\n"]);
   assert.equal(elapsedLabel(125_000), "2m 5s");
 });
+
+test("long interactive phases keep their heading separate and clear only the live task line", () => {
+  const writes = [];
+  const terminalCalls = [];
+  let tick;
+  const output = {
+    isTTY: true,
+    write(value) { writes.push(value); },
+    clearLine(direction) { terminalCalls.push(["clearLine", direction]); },
+    cursorTo(column) { terminalCalls.push(["cursorTo", column]); },
+  };
+  const progress = createCliProgress({
+    output,
+    now: () => 0,
+    setIntervalImpl(callback) { tick = callback; return { unref() {} }; },
+    clearIntervalImpl() {},
+  });
+  const tasks = "favorite phrase … · agent interaction … · topics … · workarounds …";
+  progress.start("Running redacted excerpts through LLM Judge", tasks, { separateDetail: true });
+  tick();
+  progress.succeed("LLM Judge complete");
+  assert.equal(writes[0], "◇  Running redacted excerpts through LLM Judge\n");
+  assert.equal(writes.filter((value) => value.includes("Running redacted excerpts")).length, 1);
+  assert.ok(writes.some((value) => value.includes(tasks)));
+  assert.deepEqual(terminalCalls.slice(0, 2), [["clearLine", 0], ["cursorTo", 0]]);
+  assert.match(writes.at(-1), /✓  LLM Judge complete · 0s/);
+});

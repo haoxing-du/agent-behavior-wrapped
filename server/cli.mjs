@@ -181,8 +181,9 @@ async function createWrapped() {
     progress.succeed(`${testMode ? "Local test fallbacks" : "Local-only analysis"} ready; no LLM calls made`);
   } else {
     const judgeStates = { phrase: "waiting", tone: "waiting", topics: "waiting", workarounds: "waiting" };
+    const judgeLabels = { phrase: "favorite phrase", tone: "agent interaction", topics: "topics", workarounds: "workarounds" };
     const judgeStatus = (state) => state === "waiting" ? "queued" : state === "working" ? "…" : state === "done" ? "✓" : state === "failed" ? "skipped" : state;
-    const judgeSummary = () => Object.entries(judgeStates).map(([name, state]) => `${name} ${judgeStatus(state)}`).join(" · ");
+    const judgeSummary = () => Object.entries(judgeStates).map(([name, state]) => `${judgeLabels[name]} ${judgeStatus(state)}`).join(" · ");
     const trackJudge = (name, promise) => {
       judgeStates[name] = "working";
       progress.update(judgeSummary());
@@ -196,7 +197,7 @@ async function createWrapped() {
         throw error;
       });
     };
-    progress.start("Running privacy-safe AI analysis", judgeSummary());
+    progress.start("Running redacted excerpts through LLM Judge", judgeSummary(), { separateDetail: true });
     const phraseCardPromise = process.env.BEHAVIOR_WRAPPED_DIRECT_OPENROUTER === "1"
       ? judgePhraseCard(candidates, process.env.OPENROUTER_API_KEY)
       : judgePhraseCardViaRelay(candidates, { endpoint: process.env.BEHAVIOR_WRAPPED_JUDGE_URL || PHRASE_JUDGE_RELAY_URL, clientId: getOrCreateClientId() });
@@ -225,7 +226,7 @@ async function createWrapped() {
       optionalAnalysis(trackJudge("topics", sessionTopicsPromise), "usage-topic card", analysisWarnings),
       optionalAnalysis(trackJudge("workarounds", workaroundsPromise), "instrumental-workaround card", analysisWarnings),
     ]);
-    progress.succeed("Privacy-safe AI analysis complete");
+    progress.succeed("LLM Judge complete");
   }
   analyzed.phraseCard = phraseCard;
   if (!localOnly) {

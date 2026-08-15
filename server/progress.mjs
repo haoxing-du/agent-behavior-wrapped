@@ -19,6 +19,7 @@ export function createCliProgress({
   let label = "";
   let detail = "";
   let startedAt = 0;
+  let separateDetail = false;
 
   function line(symbol) {
     const extra = detail ? ` · ${detail}` : "";
@@ -27,7 +28,19 @@ export function createCliProgress({
 
   function render() {
     if (!timer) return;
-    output.write(`\r\x1b[2K${line(spinnerFrames[frame++ % spinnerFrames.length])}`);
+    clearLine();
+    output.write(separateDetail
+      ? `${spinnerFrames[frame++ % spinnerFrames.length]}  ${detail}`
+      : line(spinnerFrames[frame++ % spinnerFrames.length]));
+  }
+
+  function clearLine() {
+    if (typeof output.clearLine === "function" && typeof output.cursorTo === "function") {
+      output.clearLine(0);
+      output.cursorTo(0);
+      return;
+    }
+    output.write("\r\x1b[2K");
   }
 
   function stopTimer() {
@@ -37,16 +50,18 @@ export function createCliProgress({
   }
 
   return {
-    start(nextLabel, nextDetail = "") {
+    start(nextLabel, nextDetail = "", options = {}) {
       stopTimer();
       label = nextLabel;
       detail = nextDetail;
+      separateDetail = Boolean(options.separateDetail && detail);
       startedAt = now();
       frame = 0;
       if (!interactive) {
-        output.write(`◇  ${label}${detail ? ` · ${detail}` : ""}\n`);
+        output.write(separateDetail ? `◇  ${label}\n◇  ${detail}\n` : `◇  ${label}${detail ? ` · ${detail}` : ""}\n`);
         return;
       }
+      if (separateDetail) output.write(`◇  ${label}\n`);
       timer = setIntervalImpl(render, intervalMs);
       timer?.unref?.();
       render();
@@ -59,11 +74,12 @@ export function createCliProgress({
     succeed(summary = label) {
       const elapsed = elapsedLabel(now() - startedAt);
       stopTimer();
-      output.write(interactive ? `\r\x1b[2K✓  ${summary} · ${elapsed}\n` : `✓  ${summary} · ${elapsed}\n`);
+      if (interactive) clearLine();
+      output.write(`✓  ${summary} · ${elapsed}\n`);
     },
     stop() {
       stopTimer();
-      if (interactive) output.write("\r\x1b[2K");
+      if (interactive) clearLine();
     },
   };
 }
