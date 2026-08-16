@@ -11,6 +11,9 @@ const stockPhraseDefinitions = [
   { phrase: "Say the word", expression: /\bsay the word\b/giu },
   { phrase: "genuinely", expression: /\bgenuinely\b/giu },
   { phrase: "one wrinkle", expression: /\bone wrinkle\b/giu },
+  { phrase: "load bearing", expression: /\bload(?:\s+|-)bearing\b/giu },
+  { phrase: "the full picture", expression: /\bthe full picture\b/giu },
+  { phrase: "delve", expression: /\bdelve\b/giu },
 ];
 const agentDefinitions = [
   { agent: "claude", name: "Claude Code" },
