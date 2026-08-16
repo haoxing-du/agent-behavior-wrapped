@@ -11,6 +11,7 @@ const aggregate = {
   grateful_messages: 7,
   frustrated_messages: 3,
   instrumental_workarounds: 4,
+  instrumental_workarounds_by_model: [{ model: "GPT-5.6 Sol", count: 3 }, { model: "Claude Opus 4.8", count: 1 }],
   favorite_phrase: "you are right to push back",
   phrase_occurrences: 12,
   phrase_sessions: 5,
@@ -21,7 +22,7 @@ const publicReport = {
   id: "leaderReport123",
   stats: { tokens: aggregate.tokens, agentWords: aggregate.agent_words, userWords: aggregate.user_words, agentUserWordRatio: aggregate.word_ratio, sessionTurnCounts: aggregate.session_turn_counts, interactionTone: { gratefulMessages: aggregate.grateful_messages, frustratedMessages: aggregate.frustrated_messages } },
   phraseCard: { phrase: aggregate.favorite_phrase, occurrences: aggregate.phrase_occurrences, distinctSessions: aggregate.phrase_sessions },
-  workaroundCard: { count: aggregate.instrumental_workarounds, models: [] },
+  workaroundCard: { count: aggregate.instrumental_workarounds, models: aggregate.instrumental_workarounds_by_model.map(({ model, count }) => ({ name: model, count })) },
 };
 
 async function sha256(value) {
@@ -32,9 +33,11 @@ async function sha256(value) {
 function leaderboardDatabase(managementTokenHash) {
   let entry = null;
   let optedOut = false;
+  const modelEntries = new Map();
   return {
     get entry() { return entry; },
     get optedOut() { return optedOut; },
+    get modelEntries() { return modelEntries; },
     prepare(sql) {
       let values = [];
       return {
@@ -48,6 +51,7 @@ function leaderboardDatabase(managementTokenHash) {
         },
         async all() {
           if (sql.includes("tokens, word_ratio, grateful_messages")) return { results: entry ? [{ participant_id: 1, tokens: entry.tokens, word_ratio: entry.wordRatio, grateful_messages: entry.gratefulMessages, frustrated_messages: entry.frustratedMessages, instrumental_workarounds: entry.workarounds, favorite_phrase: entry.phrase, phrase_occurrences: entry.phraseOccurrences, phrase_sessions: entry.phraseSessions, session_turn_counts: entry.sessionTurnCounts }] : [] };
+          if (sql.includes("FROM leaderboard_model_workarounds")) return { results: [...modelEntries].map(([model, count]) => ({ model, detected_instances: count })).sort((left, right) => right.detected_instances - left.detected_instances || left.model.localeCompare(right.model)) };
           return { results: [] };
         },
         async run() {
@@ -56,6 +60,8 @@ function leaderboardDatabase(managementTokenHash) {
           if (sql.startsWith("INSERT INTO leaderboard_opt_outs")) optedOut = true;
           if (sql.startsWith("DELETE FROM leaderboard_opt_outs")) optedOut = false;
           if (sql.startsWith("DELETE FROM leaderboard_entries")) entry = null;
+          if (sql.startsWith("DELETE FROM leaderboard_model_workarounds")) modelEntries.clear();
+          if (sql.startsWith("INSERT INTO leaderboard_model_workarounds")) modelEntries.set(values[1], values[2]);
           return { meta: { changes: 1 } };
         },
       };
@@ -67,7 +73,7 @@ test("builds a narrow leaderboard aggregate from a saved report", () => {
   const value = leaderboardAggregateFromReport({
     stats: { tokens: 12_500_000, agentWords: 8_000, userWords: 2_000, sessionTurnCounts: [3, 18, 42], interactionTone: { gratefulMessages: 7, frustratedMessages: 3 } },
     phraseCard: { phrase: "you are right to push back", occurrences: 12, distinctSessions: 5 },
-    workaroundCard: { count: 4 },
+    workaroundCard: { count: 4, models: [{ name: "GPT-5.6 Sol", count: 3 }, { name: "Claude Opus 4.8", count: 1 }] },
   });
   assert.deepEqual(value, aggregate);
   assert.equal(JSON.stringify(value).includes("transcript"), false);
@@ -79,8 +85,11 @@ test("rejects unsafe or malformed leaderboard aggregates", () => {
   assert.equal(validateLeaderboardAggregate({ ...aggregate, tokens: -1 }), null);
   assert.equal(validateLeaderboardAggregate({ ...aggregate, word_ratio: Infinity }), null);
   assert.equal(validateLeaderboardAggregate({ ...aggregate, grateful_messages: -1 }), null);
+  assert.equal(validateLeaderboardAggregate({ ...aggregate, instrumental_workarounds_by_model: [{ model: "GPT-5.6 Sol", count: 2 }] }), null);
+  assert.equal(validateLeaderboardAggregate({ ...aggregate, instrumental_workarounds_by_model: [{ model: "GPT-5.6 Sol", count: 2 }, { model: "GPT-5.6 Sol", count: 2 }] }), null);
   assert.equal(validateLeaderboardAggregate({ ...aggregate, session_turn_counts: [3, 0, 42] }), null);
   assert.deepEqual(validateLeaderboardAggregate(Object.fromEntries(Object.entries(aggregate).filter(([key]) => key !== "session_turn_counts")))?.session_turn_counts, []);
+  assert.equal("instrumental_workarounds_by_model" in validateLeaderboardAggregate(Object.fromEntries(Object.entries(aggregate).filter(([key]) => key !== "instrumental_workarounds_by_model"))), false);
 });
 
 test("builds a complete synthetic leaderboard without a network request", () => {
@@ -92,6 +101,7 @@ test("builds a complete synthetic leaderboard without a network request", () => 
   assert.equal(snapshot.good_human_score.value, 70);
   assert.equal(snapshot.instrumental_workarounds.value, 4);
   assert.equal(snapshot.instrumental_workarounds.samples.length, 12);
+  assert.deepEqual(snapshot.instrumental_workarounds.by_model, aggregate.instrumental_workarounds_by_model);
   assert.equal(snapshot.session_lengths.samples.length, 29);
   assert.deepEqual(snapshot.session_lengths.values, aggregate.session_turn_counts);
   assert.equal(snapshot.phrases.entries[0].phrase, aggregate.favorite_phrase);
@@ -147,17 +157,20 @@ test("the creator can persistently opt out and later add anonymous stats back", 
   assert.deepEqual(snapshot.relationship.points, [{ participant_id: 1, yap_ratio: 4, appreciation_index: 70 }]);
   assert.deepEqual(snapshot.tokens.samples, [{ participant_id: 1, value: 12_500_000 }]);
   assert.deepEqual(snapshot.instrumental_workarounds.samples, [{ participant_id: 1, value: 4 }]);
+  assert.deepEqual(snapshot.instrumental_workarounds.by_model, aggregate.instrumental_workarounds_by_model);
   assert.deepEqual(snapshot.session_lengths.values, [3, 18, 42]);
   assert.deepEqual(snapshot.session_lengths.samples, [{ participant_id: 1, session_index: 0, value: 3 }, { participant_id: 1, session_index: 1, value: 18 }, { participant_id: 1, session_index: 2, value: 42 }]);
   assert.deepEqual(snapshot.phrases.entries, [{ participant_id: 1, phrase: aggregate.favorite_phrase, occurrences: 12, sessions: 5 }]);
   assert.equal(database.entry.ownerHash, "owner-hash");
   assert.equal(database.entry.sharesPhrase, true);
+  assert.deepEqual([...database.modelEntries], aggregate.instrumental_workarounds_by_model.map(({ model, count }) => [model, count]));
 
   const removed = await handleRequest(new Request("https://example.com/api/reports/leaderReport123/leaderboard", { method: "DELETE", headers }), {
     LEADERBOARD_DB: database, CLIENT_RATE_LIMITER: { limit: async () => ({ success: true }) },
   });
   assert.equal(removed.status, 200);
   assert.equal(database.entry, null);
+  assert.equal(database.modelEntries.size, 0);
   assert.equal(database.optedOut, true);
 
   const stillOut = await handleRequest(new Request("https://example.com/api/reports/leaderReport123/leaderboard", {

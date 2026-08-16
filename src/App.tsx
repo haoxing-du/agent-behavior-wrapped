@@ -41,7 +41,7 @@ type LeaderboardSnapshot = {
   word_ratio: { value: number; percentile: number | null };
   good_human_score: { value: number | null; percentile: number | null };
   relationship: { points: RelationshipPoint[] };
-  instrumental_workarounds: { value: number; percentile: number | null; samples: ParticipantSample[] };
+  instrumental_workarounds: { value: number; percentile: number | null; samples: ParticipantSample[]; by_model?: { model: string; count: number }[] };
   session_lengths: { values: number[]; samples: SessionLengthSample[] };
   phrases: { entries: PhraseWallEntry[] };
   participation: { joined: boolean; participant_id?: number; display_name?: string; public_ranked?: boolean; shares_phrase?: boolean };
@@ -571,6 +571,7 @@ function WorkaroundFigure({ metric, participantId, included }: { metric: Leaderb
       </svg>
       <PlotTooltip value={tooltip} />
     </div>
+    {!!metric.by_model?.length && <div className="leader-model-totals"><span>Detected instances by model</span>{metric.by_model.map((item) => <div key={item.model}><strong>{item.model}</strong><b>{item.count.toLocaleString()}</b></div>)}<small>Descriptive totals only · not adjusted for model usage</small></div>}
   </section>;
 }
 

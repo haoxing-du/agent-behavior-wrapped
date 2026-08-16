@@ -12,7 +12,7 @@ const MAX_BODY_BYTES = 256_000;
 const MAX_CANDIDATES = 100;
 const JUDGE_ATTEMPTS = 2;
 const candidateKeys = ["candidate_id", "distinct_sessions", "end_boundary_rate", "occurrences", "opening_rate", "phrase", "start_boundary_rate"];
-const leaderboardAggregateKeys = ["agent_words", "favorite_phrase", "frustrated_messages", "grateful_messages", "instrumental_workarounds", "phrase_occurrences", "phrase_sessions", "session_turn_counts", "tokens", "user_words", "word_ratio"];
+const leaderboardAggregateKeys = ["agent_words", "favorite_phrase", "frustrated_messages", "grateful_messages", "instrumental_workarounds", "instrumental_workarounds_by_model", "phrase_occurrences", "phrase_sessions", "session_turn_counts", "tokens", "user_words", "word_ratio"];
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -133,6 +133,24 @@ export function validateLeaderboardAggregate(value) {
   if (!Number.isInteger(aggregate.grateful_messages) || !finiteBetween(aggregate.grateful_messages, 0, 1_000_000)) return null;
   if (!Number.isInteger(aggregate.frustrated_messages) || !finiteBetween(aggregate.frustrated_messages, 0, 1_000_000)) return null;
   if (!Number.isInteger(aggregate.instrumental_workarounds) || !finiteBetween(aggregate.instrumental_workarounds, 0, 1_000_000)) return null;
+  if (aggregate.instrumental_workarounds_by_model !== undefined) {
+    if (!Array.isArray(aggregate.instrumental_workarounds_by_model) || aggregate.instrumental_workarounds_by_model.length > 20) return null;
+    const seenModels = new Set();
+    const normalizedModels = [];
+    let modelTotal = 0;
+    for (const item of aggregate.instrumental_workarounds_by_model) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+      const model = typeof item.model === "string" ? item.model.normalize("NFKC").trim() : "";
+      if (!/^[\p{L}\p{N} ._+-]{1,80}$/u.test(model) || seenModels.has(model) || !Number.isInteger(item.count) || !finiteBetween(item.count, 1, 1_000_000)) return null;
+      seenModels.add(model);
+      normalizedModels.push({ model, count: item.count });
+      modelTotal += item.count;
+    }
+    if (aggregate.instrumental_workarounds_by_model.length && modelTotal !== aggregate.instrumental_workarounds) return null;
+    aggregate.instrumental_workarounds_by_model = normalizedModels;
+  } else {
+    delete aggregate.instrumental_workarounds_by_model;
+  }
   if (aggregate.favorite_phrase !== null && (typeof aggregate.favorite_phrase !== "string" || !/^[a-z]+(?:'[a-z]+)?(?: [a-z]+(?:'[a-z]+)?){3,9}$/.test(aggregate.favorite_phrase))) return null;
   if (!Number.isInteger(aggregate.phrase_occurrences) || !finiteBetween(aggregate.phrase_occurrences, 0, 10_000_000)) return null;
   if (!Number.isInteger(aggregate.phrase_sessions) || !finiteBetween(aggregate.phrase_sessions, 0, aggregate.phrase_occurrences)) return null;
@@ -193,9 +211,10 @@ function storedSessionTurnCounts(value) {
 
 async function leaderboardSnapshot(env, aggregate, hash) {
   if (!env.LEADERBOARD_DB) throw new Error("Leaderboard storage is not configured.");
-  const [values, participation] = await Promise.all([
+  const [values, participation, modelTotals] = await Promise.all([
     env.LEADERBOARD_DB.prepare("SELECT rowid AS participant_id, tokens, word_ratio, grateful_messages, frustrated_messages, instrumental_workarounds, favorite_phrase, phrase_occurrences, phrase_sessions, session_turn_counts FROM leaderboard_entries ORDER BY rowid").all(),
     env.LEADERBOARD_DB.prepare("SELECT rowid AS participant_id, display_name, public_ranked, favorite_phrase IS NOT NULL AS shares_phrase FROM leaderboard_entries WHERE client_hash = ?").bind(hash).first(),
+    env.LEADERBOARD_DB.prepare("SELECT model, SUM(detected_instances) AS detected_instances FROM leaderboard_model_workarounds GROUP BY model ORDER BY detected_instances DESC, model ASC LIMIT 50").all(),
   ]);
   const rows = values.results || [];
   const tokenAtOrBelow = rows.filter((row) => Number(row.tokens) <= aggregate.tokens).length;
@@ -227,6 +246,7 @@ async function leaderboardSnapshot(env, aggregate, hash) {
       value: aggregate.instrumental_workarounds,
       percentile: percentile(workaroundAtOrBelow, rows.length),
       samples: rows.map((row) => ({ participant_id: Number(row.participant_id), value: Number(row.instrumental_workarounds) })),
+      by_model: (modelTotals.results || []).map((row) => ({ model: String(row.model), count: Number(row.detected_instances) })),
     },
     session_lengths: {
       values: aggregate.session_turn_counts,
@@ -249,6 +269,7 @@ function aggregateFromPublicReport(report) {
     grateful_messages: Math.round(safeNumber(stats.interactionTone?.gratefulMessages, 1_000_000)),
     frustrated_messages: Math.round(safeNumber(stats.interactionTone?.frustratedMessages, 1_000_000)),
     instrumental_workarounds: Math.round(safeNumber(report.workaroundCard?.count, 1_000_000)),
+    instrumental_workarounds_by_model: Array.isArray(report.workaroundCard?.models) ? report.workaroundCard.models.map((item) => ({ model: item.name, count: item.count })) : [],
     phrase_occurrences: Math.round(safeNumber(report.phraseCard?.occurrences, 10_000_000)), phrase_sessions: Math.round(safeNumber(report.phraseCard?.distinctSessions, 1_000_000)),
     session_turn_counts: Array.isArray(stats.sessionTurnCounts) ? stats.sessionTurnCounts : [],
   });
@@ -283,6 +304,15 @@ async function upsertAnonymousLeaderboardEntry(env, hash, aggregate) {
       aggregate.favorite_phrase, aggregate.favorite_phrase ? aggregate.phrase_occurrences : 0,
       aggregate.favorite_phrase ? aggregate.phrase_sessions : 0, JSON.stringify(aggregate.session_turn_counts),
     ).run();
+  await replaceLeaderboardModelWorkarounds(env, hash, aggregate.instrumental_workarounds_by_model);
+}
+
+async function replaceLeaderboardModelWorkarounds(env, hash, models) {
+  if (!Array.isArray(models)) return;
+  await env.LEADERBOARD_DB.prepare("DELETE FROM leaderboard_model_workarounds WHERE client_hash = ?").bind(hash).run();
+  for (const item of models) {
+    await env.LEADERBOARD_DB.prepare("INSERT INTO leaderboard_model_workarounds (client_hash, model, detected_instances, updated_at) VALUES (?, ?, ?, datetime('now'))").bind(hash, item.model, item.count).run();
+  }
 }
 
 async function handlePublicReports(request, env) {
@@ -328,6 +358,7 @@ async function handleLeaderboard(request, env) {
   if (request.method === "DELETE") {
     if (!env.LEADERBOARD_DB) return json({ error: "Leaderboard storage is not configured." }, 503);
     await env.LEADERBOARD_DB.prepare("DELETE FROM leaderboard_entries WHERE client_hash = ?").bind(hash).run();
+    await env.LEADERBOARD_DB.prepare("DELETE FROM leaderboard_model_workarounds WHERE client_hash = ?").bind(hash).run();
     return json({ removed: true });
   }
 
@@ -361,6 +392,7 @@ async function handleLeaderboard(request, env) {
       aggregate.grateful_messages, aggregate.frustrated_messages, aggregate.instrumental_workarounds,
       phrase, phrase ? aggregate.phrase_occurrences : 0, phrase ? aggregate.phrase_sessions : 0, JSON.stringify(aggregate.session_turn_counts),
     ).run();
+  await replaceLeaderboardModelWorkarounds(env, hash, aggregate.instrumental_workarounds_by_model);
   return json(await leaderboardSnapshot(env, aggregate, hash));
 }
 
@@ -376,6 +408,7 @@ async function handlePublicLeaderboard(request, env, id) {
     if (!canManage) return json({ error: "Only the creator of this Wrapped can remove its leaderboard entry." }, 403);
     await env.LEADERBOARD_DB.prepare("INSERT INTO leaderboard_opt_outs (client_hash, opted_out_at) VALUES (?, datetime('now')) ON CONFLICT(client_hash) DO UPDATE SET opted_out_at=datetime('now')").bind(record.owner_hash).run();
     await env.LEADERBOARD_DB.prepare("DELETE FROM leaderboard_entries WHERE client_hash = ?").bind(record.owner_hash).run();
+    await env.LEADERBOARD_DB.prepare("DELETE FROM leaderboard_model_workarounds WHERE client_hash = ?").bind(record.owner_hash).run();
     return json({ removed: true });
   }
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);

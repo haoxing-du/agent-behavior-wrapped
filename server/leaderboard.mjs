@@ -20,6 +20,19 @@ function sessionTurnCounts(value) {
   });
 }
 
+function workaroundModelCounts(value, total) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  const models = value.slice(0, 20).flatMap((item) => {
+    const model = typeof item?.name === "string" ? item.name.normalize("NFKC").trim() : "";
+    const count = Number(item?.count);
+    if (!model || !/^[\p{L}\p{N} ._+-]{1,80}$/u.test(model) || seen.has(model) || !Number.isInteger(count) || count <= 0 || count > 1_000_000) return [];
+    seen.add(model);
+    return [{ model, count }];
+  });
+  return models.reduce((sum, item) => sum + item.count, 0) === total ? models.sort((left, right) => right.count - left.count || left.model.localeCompare(right.model)) : [];
+}
+
 export function leaderboardAggregateFromReport(report) {
   const stats = report?.stats || {};
   const agentWords = finiteNonNegative(stats.agentWords);
@@ -29,6 +42,7 @@ export function leaderboardAggregateFromReport(report) {
     : 0;
   const ratio = userWords ? agentWords / userWords : finiteNonNegative(stats.agentUserWordRatio) || fallbackRatio;
   const phrase = report?.phraseCard?.phrase;
+  const instrumentalWorkarounds = Math.round(finiteNonNegative(report?.workaroundCard?.count));
   return {
     tokens: Math.round(finiteNonNegative(stats.tokens)),
     agent_words: Math.round(agentWords),
@@ -36,7 +50,8 @@ export function leaderboardAggregateFromReport(report) {
     word_ratio: Number(Math.min(ratio, 10_000).toFixed(2)),
     grateful_messages: Math.round(finiteNonNegative(stats.interactionTone?.gratefulMessages)),
     frustrated_messages: Math.round(finiteNonNegative(stats.interactionTone?.frustratedMessages)),
-    instrumental_workarounds: Math.round(finiteNonNegative(report?.workaroundCard?.count)),
+    instrumental_workarounds: instrumentalWorkarounds,
+    instrumental_workarounds_by_model: workaroundModelCounts(report?.workaroundCard?.models, instrumentalWorkarounds),
     favorite_phrase: typeof phrase === "string" && /^[a-z]+(?:'[a-z]+)?(?: [a-z]+(?:'[a-z]+)?){3,9}$/.test(phrase) ? phrase : null,
     phrase_occurrences: Math.round(finiteNonNegative(report?.phraseCard?.occurrences)),
     phrase_sessions: Math.round(finiteNonNegative(report?.phraseCard?.distinctSessions)),
@@ -69,6 +84,7 @@ export function syntheticLeaderboardSnapshot(aggregate, participation = null) {
       value: aggregate.instrumental_workarounds,
       percentile: Math.round(demoWorkarounds.filter((value) => value <= aggregate.instrumental_workarounds).length / demoWorkarounds.length * 100),
       samples: demoWorkarounds.map((value, index) => ({ participant_id: index + 1, value })),
+      by_model: aggregate.instrumental_workarounds_by_model || [],
     },
     session_lengths: {
       values: aggregate.session_turn_counts,
