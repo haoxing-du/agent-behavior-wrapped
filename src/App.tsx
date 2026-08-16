@@ -122,7 +122,7 @@ function fmtCostEquivalent(value: number, unitCost: number) {
 function costEquivalents(value: number) {
   return [
     { label: "iPhones", value: fmtCostEquivalent(value, 1_000) },
-    { label: "AI subscription months", value: fmtCostEquivalent(value, 200) },
+    { label: "Claude Max subscriptions", value: fmtCostEquivalent(value, 200) },
     { label: "Hardcover books", value: fmtCostEquivalent(value, 20) },
     { label: "Starbucks lattes", value: fmtCostEquivalent(value, 6.5) },
   ];
@@ -1264,12 +1264,14 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
     </div>
     <section className="donation-hero">
       <div className="donation-hero-copy">
-        <span className="eyebrow">Research donation · private review</span><h1>Redact before you share.</h1><p>Review the exact data you want to contribute. Your bundle is encrypted on this Mac before the storage service receives it.</p>
-        <aside className="donation-project-notice"><span>Where your data goes</span><strong>Your donation contributes to the Susan Calvin Project.</strong><p>The project studies how people and AI agents work together. If you choose to donate, your reviewed bundle becomes part of its research corpus.</p><div className="donation-project-links"><a href={SUSAN_CALVIN_DATA_POLICY_URL} target="_blank" rel="noreferrer">How your data is stored and used <span aria-hidden="true">↗</span></a><a href={SUSAN_CALVIN_PROJECT_URL} target="_blank" rel="noreferrer">About the project <span aria-hidden="true">↗</span></a></div></aside>
+        <h1>Donate your data for research.</h1><p>Review the exact data you want to contribute. Your bundle is encrypted on this machine before it is trasmitted to the storage service.</p>
+        <div className="donation-hero-controls">
+          <aside className="local-review-notice"><span className="pulse" aria-hidden="true" /><div><strong>This is a local app.</strong><p> Nothing leaves this machine until you consent and press Donate.</p></div></aside>
+          <label className="donation-mode-control"><span>Donation mode</span><select value={mode} onChange={(event) => { window.location.href = `/donate/${reportId}?mode=${event.target.value}`; }}><option value="standard">All sessions and standard redactions</option><option value="advanced">Select sessions and customize redactions</option><option value="unredacted">Unredacted</option></select><small>{modeDescription}</small></label>
+        </div>
       </div>
       <div className="donation-hero-aside">
-        <aside className="local-review-notice"><span className="pulse" aria-hidden="true" /><div><strong>Nothing has left this Mac</strong><p>This review stays local until you press Donate.</p></div></aside>
-        <label className="donation-mode-control"><span>Donation mode</span><select value={mode} onChange={(event) => { window.location.href = `/donate/${reportId}?mode=${event.target.value}`; }}><option value="standard">All sessions and standard redactions</option><option value="advanced">Select sessions and customize redactions</option><option value="unredacted">Unredacted</option></select><small>{modeDescription}</small></label>
+        <aside className="donation-project-notice"><strong>Your donation contributes to the Susan Calvin Project.</strong><p>The project aims to collect and analyze data on how AI systems behave in the real world. If you choose to donate, your reviewed bundle becomes part of its research corpus.</p><div className="donation-project-links"><a href={SUSAN_CALVIN_DATA_POLICY_URL} target="_blank" rel="noreferrer">How your data is stored and used <span aria-hidden="true">↗</span></a><a href={SUSAN_CALVIN_PROJECT_URL} target="_blank" rel="noreferrer">About the Susan Calvin Project <span aria-hidden="true">↗</span></a></div></aside>
       </div>
     </section>
     <div className="donation-layout">
