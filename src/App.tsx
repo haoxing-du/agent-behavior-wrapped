@@ -1264,7 +1264,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
     </div>
     <section className="donation-hero">
       <div className="donation-hero-intro">
-        <h1>Thank you for donating your data.</h1><p>Review the exact data you want to contribute. Your bundle is encrypted on this machine before it is trasmitted to the storage service.</p>
+        <h1>Review your data before you donate.</h1><p>Review the exact data you want to contribute. Your bundle is encrypted on this machine before it is trasmitted to the storage service.</p>
       </div>
       <div className="donation-hero-copy">
         <div className="donation-hero-controls">
