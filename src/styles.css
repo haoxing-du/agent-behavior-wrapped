@@ -1704,7 +1704,8 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .donation-hero-intro { grid-column: 1 / -1; }
 .donation-hero .eyebrow { color: var(--folio-violet); font-size: 10px; letter-spacing: .16em; }
 .donation-hero h1 {
-  max-width: 1040px;
+  width: 100%;
+  max-width: none;
   margin: 14px 0 18px;
   font-size: clamp(58px, 7vw, 88px);
   line-height: .85;
