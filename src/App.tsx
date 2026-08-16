@@ -1263,8 +1263,10 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
       <span className="page-status local"><i aria-hidden="true" />Local review</span>
     </div>
     <section className="donation-hero">
+      <div className="donation-hero-intro">
+        <h1>Thank you for donating your data.</h1><p>Review the exact data you want to contribute. Your bundle is encrypted on this machine before it is trasmitted to the storage service.</p>
+      </div>
       <div className="donation-hero-copy">
-        <h1>Donate your data for research.</h1><p>Review the exact data you want to contribute. Your bundle is encrypted on this machine before it is trasmitted to the storage service.</p>
         <div className="donation-hero-controls">
           <aside className="local-review-notice"><span className="pulse" aria-hidden="true" /><div><strong>This is a local app.</strong><p> Nothing leaves this machine until you consent and press Donate.</p></div></aside>
           <label className="donation-mode-control"><span>Donation mode</span><select value={mode} onChange={(event) => { window.location.href = `/donate/${reportId}?mode=${event.target.value}`; }}><option value="standard">All sessions and standard redactions</option><option value="advanced">Select sessions and customize redactions</option><option value="unredacted">Unredacted</option></select><small>{modeDescription}</small></label>

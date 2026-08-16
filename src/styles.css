@@ -1698,18 +1698,20 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
   display: grid;
   grid-template-columns: minmax(0, 1.18fr) minmax(330px, .82fr);
   align-items: end;
-  gap: clamp(46px, 7vw, 90px);
+  column-gap: clamp(46px, 7vw, 90px);
+  row-gap: 34px;
 }
+.donation-hero-intro { grid-column: 1 / -1; }
 .donation-hero .eyebrow { color: var(--folio-violet); font-size: 10px; letter-spacing: .16em; }
 .donation-hero h1 {
-  max-width: 680px;
+  max-width: 1040px;
   margin: 14px 0 18px;
   font-size: clamp(58px, 7vw, 88px);
   line-height: .85;
   letter-spacing: -.068em;
   text-wrap: balance;
 }
-.donation-hero-copy > p { max-width: 610px; color: var(--folio-muted); font-size: 15px; line-height: 1.55; }
+.donation-hero-intro > p { max-width: 760px; color: var(--folio-muted); font-size: 15px; line-height: 1.55; }
 .donation-project-notice {
   max-width: none;
   margin: 0;
@@ -1729,7 +1731,7 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .donation-hero-aside { display: grid; align-self: end; }
 .donation-hero-controls {
   width: min(650px, 100%);
-  margin-top: 34px;
+  margin-top: 0;
   display: grid;
   gap: 22px;
 }
