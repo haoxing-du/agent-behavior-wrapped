@@ -557,17 +557,17 @@ function WorkaroundFigure({ metric, participantId, included }: { metric: Leaderb
   const dots = swarm(values, xFor, 103, 54);
   const median = quantile(values, .5);
   return <section className="leader-figure leader-workaround-figure">
-    <div className="leader-figure-head"><div><span>03 · Instrumental workaround</span><h2>How many times did your agents go around minor blockers?</h2></div><div className="leader-result"><strong>{metric.value.toLocaleString()}</strong><small>{percentileCopy(metric.percentile)}</small></div></div>
+    <div className="leader-figure-head"><div><span>03 · Persistence through blockers</span><h2>How often did your agents persist through blockers?</h2></div><div className="leader-result"><strong>{metric.value.toLocaleString()}</strong><small>{percentileCopy(metric.percentile)}</small></div></div>
     <div className="leader-plot" ref={ref}>
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Distribution of instrumental workaround counts for ${values.length} anonymous participants. Your value is ${metric.value}.`}>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Distribution of persistence-through-blocker counts for ${values.length} anonymous participants. Your value is ${metric.value}.`}>
         <rect className="leader-chart-frame" x={left} y="30" width={right - left} height="142" />
-        {values.length > 0 && <line className="leader-median" x1={xFor(median)} x2={xFor(median)} y1="38" y2="164"><title>Median: {median.toFixed(1)} instrumental workarounds</title></line>}
-        {dots.points.map((point) => { const label = `Participant #${samples[point.index].participant_id}: ${point.value} instrumental workaround${point.value === 1 ? "" : "s"}`; return <InteractivePlotPoint key={samples[point.index].participant_id} className="leader-dot workaround-dot" cx={point.x} cy={point.y} radius={dots.radius} label={label} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} />; })}
-        <InteractivePlotPoint className="leader-you-dot" cx={xFor(metric.value)} cy={103} radius={5} ring optedOut={!included} label={`${included ? `You${participantId ? ` · Participant #${participantId}` : ""}` : "Your report · not in cohort"}: ${metric.value} instrumental workaround${metric.value === 1 ? "" : "s"}`} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} />
+        {values.length > 0 && <line className="leader-median" x1={xFor(median)} x2={xFor(median)} y1="38" y2="164"><title>Median: {median.toFixed(1)} instances of persistence through blockers</title></line>}
+        {dots.points.map((point) => { const label = `Participant #${samples[point.index].participant_id}: ${point.value} instance${point.value === 1 ? "" : "s"} of persistence through blockers`; return <InteractivePlotPoint key={samples[point.index].participant_id} className="leader-dot workaround-dot" cx={point.x} cy={point.y} radius={dots.radius} label={label} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} />; })}
+        <InteractivePlotPoint className="leader-you-dot" cx={xFor(metric.value)} cy={103} radius={5} ring optedOut={!included} label={`${included ? `You${participantId ? ` · Participant #${participantId}` : ""}` : "Your report · not in cohort"}: ${metric.value} instance${metric.value === 1 ? "" : "s"} of persistence through blockers`} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} />
         <text className="leader-you-label" x={Math.min(right - 4, xFor(metric.value) + 11)} y="88" textAnchor={xFor(metric.value) > right - 70 ? "end" : "start"}>YOU</text>
         <line className="leader-axis" x1={left} x2={right} y1="184" y2="184" />
         {ticks.map((tick) => <g key={tick}><line className="leader-tick" x1={xFor(tick)} x2={xFor(tick)} y1="184" y2="190" /><text className="leader-tick-label" x={xFor(tick)} y="207" textAnchor="middle">{tick.toLocaleString()}</text></g>)}
-        <text className="leader-axis-title" x={(left + right) / 2} y="237" textAnchor="middle">Instrumental workarounds detected</text>
+        <text className="leader-axis-title" x={(left + right) / 2} y="237" textAnchor="middle">Instances of persistence through blockers</text>
       </svg>
       <PlotTooltip value={tooltip} />
     </div>
@@ -751,7 +751,7 @@ function WorkaroundEvidenceRoute({ id }: { id: string }) {
   if (!evidence) return <main className="shared-loading"><div className="orb" /><p>Rebuilding the local transcript excerpts…</p></main>;
   return <main className="workaround-evidence-page">
     <a className="workaround-back-link" href={`/w/${id}`}>← Back to Wrapped</a>
-    <div className="workaround-page-title"><h1>Workaround details</h1><p>Private transcript evidence. Nothing on this page leaves this Mac.</p></div>
+    <div className="workaround-page-title"><h1>Identified instances of persistence through blocker</h1><p>This transcript visualizer is running locally on your machine.</p></div>
     {!evidence.occurrences.length ? <section className="workaround-evidence-empty"><h2>No local excerpts are available.</h2><p>The source sessions may have moved, or this report predates private evidence storage.</p></section> : <div className="workaround-evidence-list">{evidence.occurrences.map((occurrence) => <article className="workaround-evidence-card" key={occurrence.index}>
       <div className="workaround-session-meta"><strong>{occurrence.session.agentName}</strong><time dateTime={occurrence.session.startedAt || undefined}>{fmtDateTime(occurrence.session.startedAt)}</time></div>
       <section className="workaround-evidence-section opening-message">
