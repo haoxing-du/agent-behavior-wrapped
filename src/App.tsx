@@ -1364,7 +1364,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
             })}</div>
           </>}
           <div className="donation-step consent-step"><span>3</span><div><h2>Consent separately</h2><p>This consent applies only to the reviewed bundle above. It is protected with authenticated AES-256-GCM encryption before leaving localhost.</p></div></div>
-          <label className={`consent ${unredacted ? "unredacted-consent" : ""}`}><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /><span>{unredacted && <>I understand that this donation is not automatically redacted and may contain credentials, personal details, private code, URLs, and file paths. </>}I consent. I confirm that I have read the <a href={SUSAN_CALVIN_DATA_POLICY_URL} target="_blank" rel="noreferrer">data policy <span aria-hidden="true">↗</span></a>.</span></label>
+          <label className={`consent ${unredacted ? "unredacted-consent" : ""}`}><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /><span>{unredacted && <>I understand that this donation is not automatically redacted and may contain credentials, personal details, private code, URLs, and file paths. </>}I consent and confirm that I have read the <a href={SUSAN_CALVIN_DATA_POLICY_URL} target="_blank" rel="noreferrer">data policy <span aria-hidden="true">↗</span></a>.</span></label>
           <button className={`export-button ${unredacted ? "unredacted" : ""}`} disabled={!consent || loading || !messageCount} onClick={donate}>{loading ? "Transmitting…" : unredacted ? "Donate unredacted data" : "Donate reviewed data"} <span>→</span></button>
         </>}
       </section>

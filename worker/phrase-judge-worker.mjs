@@ -11,6 +11,7 @@ export { sanitizePublicReport } from "../server/public-report-schema.mjs";
 const MAX_BODY_BYTES = 256_000;
 const MAX_CANDIDATES = 100;
 const JUDGE_ATTEMPTS = 2;
+const ZULIP_NOTIFICATION_TIMEOUT_MS = 5_000;
 const candidateKeys = ["candidate_id", "distinct_sessions", "end_boundary_rate", "occurrences", "opening_rate", "phrase", "start_boundary_rate"];
 const leaderboardAggregateKeys = ["agent_words", "favorite_phrase", "frustrated_messages", "grateful_messages", "instrumental_workarounds", "instrumental_workarounds_by_model", "phrase_occurrences", "phrase_sessions", "session_turn_counts", "tokens", "user_words", "word_ratio"];
 
@@ -24,6 +25,60 @@ function json(body, status = 200) {
       "referrer-policy": "no-referrer",
     },
   });
+}
+
+function zulipConfiguration(env) {
+  const site = safeText(env.ZULIP_SITE, 200).replace(/\/$/, "");
+  const email = safeText(env.ZULIP_BOT_EMAIL, 200);
+  const apiKey = typeof env.ZULIP_BOT_API_KEY === "string" ? env.ZULIP_BOT_API_KEY : "";
+  const channel = safeText(env.ZULIP_CHANNEL, 80);
+  if (!/^https:\/\/[^/]+$/.test(site) || !email.includes("@") || !apiKey || !channel) return null;
+  return { site, email, apiKey, channel };
+}
+
+export async function sendZulipNotification(env, topic, content, fetchImpl = fetch) {
+  const configuration = zulipConfiguration(env);
+  if (!configuration) return { sent: false, reason: "not_configured" };
+  const body = new URLSearchParams({ type: "stream", to: configuration.channel, topic, content });
+  let response;
+  try {
+    response = await fetchImpl(`${configuration.site}/api/v1/messages`, {
+      method: "POST",
+      headers: {
+        authorization: `Basic ${btoa(`${configuration.email}:${configuration.apiKey}`)}`,
+        "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
+        "user-agent": "BehaviorWrappedMonitor/1.0",
+      },
+      body: body.toString(),
+      signal: AbortSignal.timeout(ZULIP_NOTIFICATION_TIMEOUT_MS),
+    });
+  } catch (error) {
+    throw new Error(`Zulip notification request failed: ${safeText(error?.name || "network_error", 40)}`);
+  }
+  if (!response.ok) throw new Error(`Zulip notification returned HTTP ${response.status}`);
+  return { sent: true };
+}
+
+export function wrappedCreatedNotification(report) {
+  const sessions = Math.round(safeNumber(report?.stats?.sessions, 1_000_000));
+  const activeDays = Math.round(safeNumber(report?.stats?.activeDays, 100_000));
+  return `**Wrapped created**\n\n- Sessions analyzed: **${sessions.toLocaleString("en-US")}**\n- Active days: **${activeDays.toLocaleString("en-US")}**`;
+}
+
+export function donationAcceptedNotification(donation) {
+  const metadata = donation?.metadata || {};
+  const sessions = Math.round(safeNumber(metadata.sessions, 1_000_000));
+  const messages = Math.round(safeNumber(metadata.messages, 10_000_000));
+  const detections = Math.round(safeNumber(metadata.automatedDetections, 10_000_000));
+  const mode = new Set(["standard", "advanced", "unredacted"]).has(metadata.redactionMode) ? metadata.redactionMode : "unknown";
+  return `**Encrypted research donation accepted**\n\n- Sessions: **${sessions.toLocaleString("en-US")}**\n- Messages: **${messages.toLocaleString("en-US")}**\n- Redaction mode: \`${mode}\`\n- Automated detections: **${detections.toLocaleString("en-US")}**`;
+}
+
+function scheduleZulipNotification(context, env, topic, content, fetchImpl) {
+  if (!zulipConfiguration(env) || !context?.waitUntil) return;
+  context.waitUntil(sendZulipNotification(env, topic, content, fetchImpl).catch((error) => {
+    console.error(JSON.stringify({ event: "zulip_notification_failed", topic, message: safeText(error?.message, 120) }));
+  }));
 }
 
 function judgeResponseDiagnostic(body, requiredArrays) {
@@ -327,7 +382,7 @@ async function replaceLeaderboardModelWorkarounds(env, hash, models) {
   }
 }
 
-async function handlePublicReports(request, env) {
+async function handlePublicReports(request, env, fetchImpl, context) {
   if (!env.LEADERBOARD_DB) return json({ error: "Public report storage is not configured." }, 503);
   const clientId = request.headers.get("x-behavior-wrapped-client") || "";
   if (!/^[a-f0-9]{32}$/.test(clientId)) return json({ error: "A valid local client ID is required." }, 400);
@@ -357,6 +412,7 @@ async function handlePublicReports(request, env) {
   const aggregate = aggregateFromPublicReport(report);
   if (aggregate && !await leaderboardOptedOut(env, hash)) await upsertAnonymousLeaderboardEntry(env, hash, aggregate);
   const origin = new URL(request.url).origin;
+  scheduleZulipNotification(context, env, "app usage", wrappedCreatedNotification(report), fetchImpl);
   return json({ id: report.id, public_url: `${origin}/w/${report.id}` }, 201);
 }
 
@@ -441,7 +497,7 @@ async function handlePublicLeaderboard(request, env, id) {
   catch { return json({ error: "Leaderboard storage is not configured." }, 503); }
 }
 
-async function handleResearchDonation(request, env) {
+async function handleResearchDonation(request, env, fetchImpl, context) {
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
   if (!env.RESEARCH_DB || !env.RESEARCH_DONATIONS) return json({ error: "Research donation storage is not configured." }, 503);
   const clientId = request.headers.get("x-behavior-wrapped-client") || "";
@@ -483,6 +539,7 @@ async function handleResearchDonation(request, env) {
     await env.RESEARCH_DONATIONS.delete(objectKey).catch(() => {});
     return json({ error: "Research donation metadata storage is temporarily unavailable." }, 503);
   }
+  scheduleZulipNotification(context, env, "data donations", donationAcceptedNotification(donation), fetchImpl);
   return json({ accepted: true, donation_id: id, deletion_token: deletionToken, encrypted: true }, 201);
 }
 
@@ -628,7 +685,7 @@ function isUnlistedAppPath(pathname) {
   return /^\/(?:w|leaderboard|donate)\/[A-Za-z0-9_-]{8,32}$/.test(pathname);
 }
 
-export async function handleRequest(request, env, fetchImpl = fetch) {
+export async function handleRequest(request, env, fetchImpl = fetch, context) {
   const url = new URL(request.url);
   if (url.pathname === "/data-policy" && new Set(["GET", "HEAD"]).has(request.method)) {
     return Response.redirect("https://susancalvin.org/data-policy", 308);
@@ -654,7 +711,7 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
   }
   if (url.pathname === "/v1/research-donations") {
     if (request.headers.get("x-behavior-wrapped-protocol") !== "2") return json({ error: "Update Behavior Wrapped before donating; encrypted donation protocol 2 is required." }, 426);
-    return handleResearchDonation(request, env);
+    return handleResearchDonation(request, env, fetchImpl, context);
   }
   const researchDonationMatch = url.pathname.match(/^\/v1\/research-donations\/([0-9a-f-]{36})$/);
   if (researchDonationMatch && request.method === "DELETE") {
@@ -670,7 +727,7 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
   if (url.pathname.startsWith("/v1/reports")) {
     if (request.headers.get("x-behavior-wrapped-protocol") !== "1") return json({ error: "Unsupported client protocol." }, 400);
     if (!new Set(["POST", "DELETE"]).has(request.method)) return json({ error: "Method not allowed." }, 405);
-    return handlePublicReports(request, env);
+    return handlePublicReports(request, env, fetchImpl, context);
   }
   if (url.pathname.startsWith("/v1/leaderboard/")) {
     if (request.headers.get("x-behavior-wrapped-protocol") !== "1") return json({ error: "Unsupported client protocol." }, 400);
@@ -767,7 +824,7 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
 }
 
 export default {
-  fetch(request, env) {
-    return handleRequest(request, env);
+  fetch(request, env, context) {
+    return handleRequest(request, env, fetch, context);
   },
 };
