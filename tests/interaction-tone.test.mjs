@@ -31,10 +31,11 @@ test("builds a strict interaction classifier request", () => {
   assert.deepEqual(request.reasoning, { effort: "none", exclude: true });
   assert.deepEqual(request.provider, { data_collection: "deny", zdr: true });
   assert.equal(request.seed, 1729);
-  assert.equal(request.messages[0].content.includes("word \"dude\" used warmly"), true);
-  assert.equal(request.messages[0].content.includes("clear anger, frustration, exasperation, blame, sharp pushback, or dissatisfaction"), true);
-  assert.equal(request.messages[0].content.includes("when a case is borderline or ambiguous, set frustrated to false"), true);
-  assert.equal(request.messages[0].content.includes("Return exactly one classification for every candidate"), true);
+  assert.equal(request.messages[0].content.includes("only for unmistakable anger, hostility, insult, blame, or sharp exasperation"), true);
+  assert.equal(request.messages[0].content.includes("Reasonable technical feedback"), true);
+  assert.equal(request.messages[0].content.includes("pasted transcripts, behavior rubrics, examples, and app or system context do not count"), true);
+  assert.equal(request.messages[0].content.includes("But I don't want quite this much back-and-forth with round-trips."), true);
+  assert.equal(request.messages[0].content.includes("Return one classification per candidate in order"), true);
   const classifications = request.response_format.json_schema.schema.properties.classifications;
   assert.equal(classifications.minItems, candidates.length);
   assert.equal(classifications.maxItems, candidates.length);

@@ -267,7 +267,8 @@ test("worker validates interaction candidates and returns classifications withou
     return new Response(JSON.stringify({ model: OPENROUTER_MODEL, choices: [{ message: { content: JSON.stringify(upstreamSelection) } }] }), { status: 200, headers: { "content-type": "application/json" } });
   });
   assert.equal(response.status, 200);
-  assert.equal(upstreamBody.messages[0].content.includes("Evaluate every supplied excerpt independently"), true);
+  assert.equal(upstreamBody.messages[0].content.includes("Reasonable technical feedback"), true);
+  assert.equal(upstreamBody.messages[0].content.includes("behavior rubrics"), true);
   assert.deepEqual(await response.json(), { ...expectedSelection, model: OPENROUTER_MODEL, usage: null });
 });
 

@@ -1,6 +1,6 @@
 {
   "name": "behavior-wrapped",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "A private, local-first Wrapped report for Claude Code, Cowork, and Codex behavior.",
   "license": "Apache-2.0",
   "type": "module",
