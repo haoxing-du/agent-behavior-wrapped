@@ -50,7 +50,8 @@
     "test": "node --test tests/*.test.mjs",
     "check": "npm test && npm run build",
     "prepack": "npm run build",
-    "prepublishOnly": "npm run check"
+    "prepublishOnly": "npm run check",
+    "postpublish": "npm run worker:deploy"
   },
   "engines": {
     "node": ">=20"
