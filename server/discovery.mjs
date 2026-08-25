@@ -4,10 +4,9 @@ import os from "node:os";
 import crypto from "node:crypto";
 import readline from "node:readline";
 import { semanticToolUse } from "./tool-semantics.mjs";
+import { canonicalSessionRoots } from "./platform.mjs";
 
-const canonicalClaudeRoot = path.join(os.homedir(), ".claude", "projects");
-const canonicalCodexRoots = [path.join(os.homedir(), ".codex", "sessions"), path.join(os.homedir(), ".codex", "archived_sessions")];
-const canonicalCoworkRoot = path.join(os.homedir(), "Library", "Application Support", "Claude", "local-agent-mode-sessions");
+const { claudeRoot: canonicalClaudeRoot, codexRoots: canonicalCodexRoots, coworkRoot: canonicalCoworkRoot } = canonicalSessionRoots();
 const DEFAULT_WINDOW_DAYS = 30;
 const metadataCacheFile = path.join(process.env.BEHAVIOR_WRAPPED_STORE_ROOT || path.join(os.homedir(), ".agent-behavior-wrapped"), "session-index-v1.json");
 
@@ -247,7 +246,7 @@ async function readCoworkSessionMetadataAsync(file, cache) {
 }
 
 function recursiveJsonl(root) {
-  if (!fs.existsSync(root)) return [];
+  if (!root || !fs.existsSync(root)) return [];
   const files = [];
   const stack = [root];
   while (stack.length) {
@@ -306,7 +305,7 @@ function coworkAuditFiles(root) {
 }
 
 export function discoverCoworkSessions(root = canonicalCoworkRoot) {
-  if (!fs.existsSync(root)) return finishCatalog([], false);
+  if (!root || !fs.existsSync(root)) return finishCatalog([], false);
   const sessions = [];
   for (const file of coworkAuditFiles(root)) {
     try { sessions.push(readCoworkSessionMetadata(file)); } catch { /* Skip unreadable sessions. */ }
@@ -336,14 +335,14 @@ export async function discoverAllSessionsAsync(options = {}) {
       }
     }
   }
-  if (fs.existsSync(coworkRoot)) for (const file of coworkAuditFiles(coworkRoot)) {
+  if (coworkRoot && fs.existsSync(coworkRoot)) for (const file of coworkAuditFiles(coworkRoot)) {
     try { sessions.push(await readCoworkSessionMetadataAsync(file, cache)); } catch { /* Skip unreadable sessions. */ }
   }
   for (const root of codexRoots) for (const file of recursiveJsonl(root)) {
     try { sessions.push(await readSessionMetadata(file, "codex", "Codex project", cache)); } catch { /* Skip unreadable sessions. */ }
   }
   if (persistCache) writeMetadataCache(cache);
-  return finishCatalog(sessions, fs.existsSync(claudeRoot) || fs.existsSync(coworkRoot) || codexRoots.some((root) => fs.existsSync(root)));
+  return finishCatalog(sessions, fs.existsSync(claudeRoot) || Boolean(coworkRoot && fs.existsSync(coworkRoot)) || codexRoots.some((root) => fs.existsSync(root)));
 }
 
 function isoDay(value) {

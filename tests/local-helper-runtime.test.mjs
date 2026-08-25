@@ -43,6 +43,17 @@ test("an advertised helper PID must also own the listening port", async () => {
   assert.deepEqual(killed, []);
 });
 
+test("Linux stale helper replacement resolves process tools through PATH", async () => {
+  const killed = [];
+  const commands = new Map([
+    ["lsof", "512\n"],
+    ["ps:512", "node /home/me/node_modules/behavior-wrapped/server/launcher.mjs --port=4317 --no-open\n"],
+  ]);
+  const runCommand = async (file, args) => commands.get(file === "ps" ? `${file}:${args[1]}` : file) || "";
+  assert.equal(await stopVerifiedStaleHelper(4317, 512, { platform: "linux", runCommand, kill: (pid, signal) => killed.push([pid, signal]) }), true);
+  assert.deepEqual(killed, [[512, "SIGTERM"]]);
+});
+
 test("a daemon helper shuts down after its idle window", () => {
   const timers = [];
   let shutdowns = 0;

@@ -1,6 +1,6 @@
 {
   "name": "behavior-wrapped",
-  "version": "0.5.21",
+  "version": "0.6.0",
   "description": "A private, local-first Wrapped report for Claude Code, Cowork, and Codex behavior.",
   "license": "Apache-2.0",
   "type": "module",
@@ -23,7 +23,8 @@
     "wrapped"
   ],
   "os": [
-    "darwin"
+    "darwin",
+    "linux"
   ],
   "files": [
     "dist/",

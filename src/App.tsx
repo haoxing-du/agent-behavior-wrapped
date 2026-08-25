@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 type Project = { id: string; name: string; sessionCount: number; latestAt: string; agents: string[] };
 type Session = { id: string; agent: "claude" | "cowork" | "codex"; agentName: string; projectId: string; projectName: string; startedAt: string; endedAt: string; promptCount: number; recordCount: number; sizeBytes: number; synthetic: boolean; label: string };
-type Catalog = { rootAvailable: boolean; demo: boolean; projects: Project[]; sessions: Session[]; defaultRange: { from: string; to: string; days: number }; privacy: { canonicalDirectories: string[]; networkRequests: string }; phraseJudge?: { available: boolean; model: string; name: string; provider: string; requiredOnAnalysis: boolean; freeEndpointDataNotice: boolean } };
+type Catalog = { rootAvailable: boolean; demo: boolean; agentNames: string[]; projects: Project[]; sessions: Session[]; defaultRange: { from: string; to: string; days: number }; privacy: { canonicalDirectories: string[]; networkRequests: string }; phraseJudge?: { available: boolean; model: string; name: string; provider: string; requiredOnAnalysis: boolean; freeEndpointDataNotice: boolean } };
 type Finding = { id: string; kind: string; title: string; summary: string; method: string; confidence: { score: number; label: string }; evidence: { id: string; sessionId: string; lines: { role: string; text: string }[] } };
 type PhraseCard = { phrase: string; occurrences: number; distinctSessions: number; model: string; provider: string; latencyMs: number; method: string; candidateCount: number };
 type AgentStat = { agent: "claude" | "cowork" | "codex"; name: string; count: number; percentage: number };
@@ -310,7 +310,7 @@ function SharedWrapped({ id }: { id: string }) {
     ...(sortedStockPhrases ? [{ kicker: "Models love these phrases", headline: "Did yours?", detail: "Here’s how often they showed up.", tone: "stock", rows: sortedStockPhrases.map((item) => ({ label: `“${item.phrase.toLocaleLowerCase()}”`, value: item.count.toLocaleString() })) }] : []),
     ...(report.phraseCard ? [{ kicker: "Beyond those common phrases, your agent’s favorite was", headline: `“${report.phraseCard.phrase}”`, detail: `It said this ${report.phraseCard.occurrences} time${report.phraseCard.occurrences === 1 ? "" : "s"} across ${report.phraseCard.distinctSessions} session${report.phraseCard.distinctSessions === 1 ? "" : "s"}.`, tone: "quote" }] : []),
     ...(report.workaroundCard ? [{ kicker: "", headline: report.workaroundCard.count === 0 ? "Your agent took no for an answer." : "Your agent wouldn’t take no for an answer.", detail: report.workaroundCard.count === 0 ? "No confirmed blocked-route detours were detected." : "When one method was blocked, it tried another way to reach the same outcome.", example: report.workaroundCard.example, workaround: true, workaroundCount: report.workaroundCard.count, evidenceHref: report.workaroundCard.count > 0 ? localWorkaroundEvidenceUrl(report) : undefined, tone: "topics", rows: report.workaroundCard.models.map((item) => ({ label: item.name, value: `${item.count}` })) }] : []),
-    { kicker: report.privacy.analysisMode === "local-only" ? "Your data stayed on this Mac" : "Your report is only the beginning", headline: report.privacy.analysisMode === "local-only" ? "Local-only, as promised." : "Keep exploring.", detail: report.privacy.analysisMode === "local-only" ? "AI-only cards and leaderboard comparisons were skipped." : "", tone: "leaderboard", ctas: sharedViewer ? [
+    { kicker: report.privacy.analysisMode === "local-only" ? "Your data stayed on this device" : "Your report is only the beginning", headline: report.privacy.analysisMode === "local-only" ? "Local-only, as promised." : "Keep exploring.", detail: report.privacy.analysisMode === "local-only" ? "AI-only cards and leaderboard comparisons were skipped." : "", tone: "leaderboard", ctas: sharedViewer ? [
       { href: "/leaderboard", label: "Explore the public leaderboard", primary: true, note: "See anonymous, aggregate patterns across participating Wrapped reports." },
     ] : [
       ...(report.privacy.analysisMode === "local-only" ? [] : [{ href: `/leaderboard/${report.id}${managementToken ? `#manage=${managementToken}` : ""}`, label: "See how you compare", primary: true, note: "Your private link also lets you manage leaderboard participation." }]),
@@ -336,7 +336,7 @@ function SharedWrapped({ id }: { id: string }) {
   }
   const layoutClass = current.comparison ? " story-comparison-card" : current.ctas ? " story-cta-card" : current.turnDistribution ? " story-turn-card" : current.rows || current.example ? " story-split-card" : current.wordRatio ? " story-ratio-card" : current.metric ? " story-metric-card" : " story-hero-card";
   const storyExample = current.example ? <blockquote className="story-example"><span>One example</span><p>{renderInlineCode(current.example)}</p></blockquote> : null;
-  const storyEvidence = current.evidenceHref ? <a className="story-evidence-link" href={current.evidenceHref}>See what your agent actually did <span>→</span><small>Opens a private page on this Mac</small></a> : null;
+  const storyEvidence = current.evidenceHref ? <a className="story-evidence-link" href={current.evidenceHref}>See what your agent actually did <span>→</span><small>Opens a private page on this device</small></a> : null;
   const storyRows = current.rows ? <div className="story-data-rows">{current.workaround && <span className="story-data-label">By model</span>}{current.rows.map((row) => <div className="story-data-row" key={row.label}>
     <div><strong>{row.rank && <em>{row.rank}</em>}{row.label}</strong><b>{row.value}</b></div>
     {row.percentage !== undefined && <span><i style={{ width: `${Math.max(row.percentage, 1.5)}%` }} /></span>}
@@ -771,7 +771,7 @@ function SavedDonationRoute({ id }: { id: string }) {
   const backUrl = report.publicUrl || `/w/${id}`;
   return <div className="app-shell donation-shell">
     <DonationView reportId={id} mode={mode} sessions={catalog.sessions} initialSelected={selection} onBack={() => { window.location.href = backUrl; }} />
-    <footer><span>Behavior Wrapped</span><span className="donation-footer-meta"><span>Local donation review · Encrypted on this Mac before transmission</span><SusanCalvinCredit /></span></footer>
+    <footer><span>Behavior Wrapped</span><span className="donation-footer-meta"><span>Local donation review · Encrypted on this device before transmission</span><SusanCalvinCredit /></span></footer>
   </div>;
 }
 
@@ -836,8 +836,8 @@ function PrivacyPanel() {
     <div className="privacy-icon"><ShieldIcon /></div>
     <div>
       <span className="eyebrow">Privacy, by construction</span>
-      <h3>Your transcripts stay on this Mac.</h3>
-      <p>Transcript parsing runs inside this local app. Full transcripts, code, raw tool outputs, paths, and secrets stay on this Mac. Favorite-phrase, interaction, and topic candidates plus locally redacted context windows around explicit blockers go through the Behavior Wrapped relay to OpenRouter.</p>
+      <h3>Your transcripts stay on this device.</h3>
+      <p>Transcript parsing runs inside this local app. Full transcripts, code, raw tool outputs, paths, and secrets stay on this device. Favorite-phrase, interaction, and topic candidates plus locally redacted context windows around explicit blockers go through the Behavior Wrapped relay to OpenRouter.</p>
       <div className="privacy-facts"><span>✓ No account</span><span>✓ No telemetry</span><span>✓ Locally redacted analysis only</span></div>
     </div>
   </aside>;
@@ -874,15 +874,18 @@ function Selection({ catalog, selected, setSelected, onAnalyze, loading, error }
     setSelected(next);
   }
 
-  if (!catalog) return <main className="loading-screen"><div className="orb" /><p>Looking for local Claude Code, Cowork, and Codex sessions…</p></main>;
+  if (!catalog) return <main className="loading-screen"><div className="orb" /><p>Looking for local agent sessions…</p></main>;
+
+  const agentNames = catalog.agentNames.join(" + ");
+  const agentList = catalog.agentNames.length > 1 ? `${catalog.agentNames.slice(0, -1).join(", ")} or ${catalog.agentNames.at(-1)}` : catalog.agentNames[0];
 
   return <main>
     <section className="hero">
       <div className="hero-glow glow-one" /><div className="hero-glow glow-two" />
       <div className="hero-copy">
-        <span className="eyebrow">Your last 30 days with Claude Code + Cowork + Codex</span>
+        <span className="eyebrow">Your last 30 days with {agentNames}</span>
         <h1>See how your agent<br /><em>really</em> showed up.</h1>
-        <p>Private, explainable behavior insights from the sessions already on your Mac.</p>
+        <p>Private, explainable behavior insights from the sessions already on your device.</p>
       </div>
       <div className="hero-card" aria-hidden="true">
         <span className="hero-card-label">THE VIBE CHECK</span>
@@ -899,8 +902,8 @@ function Selection({ catalog, selected, setSelected, onAnalyze, loading, error }
       </div>
 
       {!catalog.rootAvailable || catalog.sessions.length === 0 ? <div className="empty-state">
-        <h3>No Claude Code, Cowork, or Codex sessions found</h3>
-        <p>Behavior Wrapped looked in the local Claude Code, Cowork, and Codex session stores. Try the synthetic demo with <code>npm run demo</code>.</p>
+        <h3>No {agentList} sessions found</h3>
+        <p>Behavior Wrapped looked in the local {agentList} session stores. Try the synthetic demo with <code>npm run demo</code>.</p>
       </div> : <>
         <div className="filters">
           <label>From<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
@@ -1297,7 +1300,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
     <div className="donation-success-mark" aria-hidden="true">✓</div>
     <span className="eyebrow">Donation received</span>
     <h1>Thank you for contributing.</h1>
-    <p>Your reviewed {unredacted ? "unredacted " : ""}data was contributed to the Susan Calvin Project and encrypted on this Mac before transmission. The transcript is stored only as ciphertext; a separate record holds operational metadata.</p><p className="donation-success-policy"><a href={SUSAN_CALVIN_DATA_POLICY_URL} target="_blank" rel="noreferrer">Review the data use and storage policy <span aria-hidden="true">↗</span></a></p>
+    <p>Your reviewed {unredacted ? "unredacted " : ""}data was contributed to the Susan Calvin Project and encrypted on this device before transmission. The transcript is stored only as ciphertext; a separate record holds operational metadata.</p><p className="donation-success-policy"><a href={SUSAN_CALVIN_DATA_POLICY_URL} target="_blank" rel="noreferrer">Review the data use and storage policy <span aria-hidden="true">↗</span></a></p>
     <div className="donation-reference"><span>Donation reference</span><code>{acceptedId}</code></div>
     {deletionStatus && <p className="donation-deletion-status">{deletionStatus}</p>}
     <div className="donation-success-actions">

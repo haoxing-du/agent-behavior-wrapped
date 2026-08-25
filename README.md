@@ -2,11 +2,13 @@
 
 [behaviorwrapped.com](https://behaviorwrapped.com)
 
-A local-first, macOS prototype that discovers Claude Code history in `~/.claude/projects`, Cowork audit streams in `~/Library/Application Support/Claude/local-agent-mode-sessions`, and Codex history in `~/.codex/sessions` plus `~/.codex/archived_sessions`, analyzes selected sessions on-device, and publishes a strictly share-safe Wrapped deck. A narrow localhost helper is retained only for optional research-donation review because a hosted page cannot read local transcripts.
+A local-first macOS and Linux app that discovers Claude Code history in `~/.claude/projects` and Codex history in `~/.codex/sessions` plus `~/.codex/archived_sessions`, analyzes selected sessions on-device, and publishes a strictly share-safe Wrapped deck. On macOS it also discovers Cowork audit streams in `~/Library/Application Support/Claude/local-agent-mode-sessions`; Cowork history is not currently available on Linux. A narrow localhost helper is retained only for optional research-donation review because a hosted page cannot read local transcripts.
 
 ## Run it
 
 Requires Node.js 20 or newer.
+
+Supported platforms are macOS and Linux. Opening the finished report automatically on Linux uses `xdg-open`; if it is unavailable, the CLI still prints the report URL.
 
 ```bash
 npx behavior-wrapped@latest

@@ -2,9 +2,7 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
 import { discoverAllSessionsAsync, readRecordsAsync, defaultDateRange, DEFAULT_WINDOW_DAYS } from "./discovery.mjs";
 import { makeDonationPreview } from "./analysis.mjs";
 import { deleteDonationReceipt, getOrCreateClientId, loadDonationReceipt, loadReport, saveDonationReceipt } from "./store.mjs";
@@ -12,6 +10,7 @@ import { deleteResearchDonation, RESEARCH_DONATION_URL, submitResearchDonation }
 import { APP_VERSION, LOCAL_DONATION_PROTOCOL } from "./runtime-version.mjs";
 import { makeWorkaroundEvidencePreview } from "./workaround-evidence.mjs";
 import { createIdleShutdownController } from "./local-helper-runtime.mjs";
+import { canonicalSessionDirectoryLabels, openExternalUrl, supportedAgentNames } from "./platform.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.dirname(here);
@@ -80,13 +79,15 @@ async function chosenRecords(ids, options = {}) {
 }
 
 function publicCatalog() {
+  const agentNames = supportedAgentNames(process.platform, { includeCowork: demo || process.platform === "darwin" });
   return {
     rootAvailable: catalog.rootAvailable,
     demo,
     projects: catalog.projects,
     sessions: catalog.sessions.map((session, index) => ({ ...session, label: session.label || `Session ${index + 1}` })),
     defaultRange: defaultDateRange(catalog.sessions, { days: DEFAULT_WINDOW_DAYS, anchorLatest: demo }),
-    privacy: { canonicalDirectories: ["~/.claude/projects", "~/Library/Application Support/Claude/local-agent-mode-sessions", "~/.codex/sessions", "~/.codex/archived_sessions"], networkRequests: "only-after-final-donation-consent" },
+    agentNames,
+    privacy: { canonicalDirectories: canonicalSessionDirectoryLabels(), networkRequests: "only-after-final-donation-consent" },
   };
 }
 
@@ -182,6 +183,7 @@ const idleShutdown = createIdleShutdownController({
 server.listen(port, "127.0.0.1", () => {
   const url = `http://localhost:${port}`;
   console.log(`Behavior Wrapped donation helper is ready at ${url}`);
-  console.log(demo ? "Using synthetic demo sessions." : `Donation review reads selected sessions locally from ${path.join(os.homedir(), ".claude")}, ${path.join(os.homedir(), "Library", "Application Support", "Claude")}, and ${path.join(os.homedir(), ".codex")}.`);
-  if (!process.argv.includes("--no-open") && process.env.NODE_ENV !== "test") spawn("open", [url], { stdio: "ignore", detached: true }).unref();
+  const sessionDirectories = canonicalSessionDirectoryLabels().join(", ");
+  console.log(demo ? "Using synthetic demo sessions." : `Donation review reads selected sessions locally from ${sessionDirectories}.`);
+  if (!process.argv.includes("--no-open") && process.env.NODE_ENV !== "test") openExternalUrl(url);
 });

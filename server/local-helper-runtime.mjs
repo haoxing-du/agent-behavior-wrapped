@@ -47,21 +47,36 @@ export function isVerifiedLauncherCommand(command, port) {
     && new RegExp(`(?:^|\\s)--port=${escapedPort}(?:\\s|$)`).test(command || "");
 }
 
-async function listeningPids(port, runCommand) {
-  try {
-    const output = await runCommand("/usr/sbin/lsof", ["-nP", "-t", `-iTCP:${port}`, "-sTCP:LISTEN"]);
-    return String(output).split(/\s+/).filter((value) => /^\d+$/.test(value)).map(Number);
-  } catch { return []; }
+function processTools(platform) {
+  if (platform === "darwin") return { lsof: ["/usr/sbin/lsof", "lsof"], ps: ["/bin/ps", "ps"] };
+  return { lsof: ["lsof", "/usr/bin/lsof"], ps: ["ps", "/bin/ps"] };
 }
 
-export async function stopVerifiedStaleHelper(port, advertisedPid, { runCommand = run, kill = process.kill } = {}) {
-  const listeners = await listeningPids(port, runCommand);
+async function listeningPids(port, runCommand, platform) {
+  for (const file of processTools(platform).lsof) {
+    try {
+      const output = await runCommand(file, ["-nP", "-t", `-iTCP:${port}`, "-sTCP:LISTEN"]);
+      return String(output).split(/\s+/).filter((value) => /^\d+$/.test(value)).map(Number);
+    } catch { /* Try the next standard location. */ }
+  }
+  return [];
+}
+
+async function processCommand(pid, runCommand, platform) {
+  for (const file of processTools(platform).ps) {
+    try { return await runCommand(file, ["-p", String(pid), "-o", "command="]); }
+    catch { /* Try the next standard location. */ }
+  }
+  return null;
+}
+
+export async function stopVerifiedStaleHelper(port, advertisedPid, { runCommand = run, kill = process.kill, platform = process.platform } = {}) {
+  const listeners = await listeningPids(port, runCommand, platform);
   const candidates = Number.isInteger(advertisedPid) && advertisedPid > 1 ? listeners.filter((pid) => pid === advertisedPid) : listeners;
   let stopped = false;
   for (const pid of candidates) {
-    let command;
-    try { command = await runCommand("/bin/ps", ["-p", String(pid), "-o", "command="]); }
-    catch { continue; }
+    const command = await processCommand(pid, runCommand, platform);
+    if (command === null) continue;
     if (!isVerifiedLauncherCommand(String(command).trim(), port)) continue;
     try { kill(pid, "SIGTERM"); stopped = true; }
     catch (error) { if (error?.code !== "ESRCH") throw error; }

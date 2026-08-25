@@ -16,6 +16,7 @@ import { judgeErrorDetails } from "./judge-debug.mjs";
 import { createCliProgress } from "./progress.mjs";
 import { helperHealthMatches, stopVerifiedStaleHelper } from "./local-helper-runtime.mjs";
 import { APP_VERSION, LOCAL_DONATION_PROTOCOL } from "./runtime-version.mjs";
+import { openExternalUrl } from "./platform.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.dirname(here);
@@ -54,6 +55,11 @@ function formatRange(sessions) {
   const format = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: values[0].getFullYear() === values.at(-1).getFullYear() ? undefined : "numeric" });
   const year = values.at(-1).getFullYear();
   return `${format.format(values[0])} – ${format.format(values.at(-1))}, ${year}`;
+}
+
+function formatAgentSource(sessions) {
+  const present = new Set(sessions.map((session) => session.agent));
+  return [["claude", "Claude Code"], ["cowork", "Cowork"], ["codex", "Codex"]].filter(([agent]) => present.has(agent)).map(([, name]) => name).join(" + ");
 }
 
 async function optionalAnalysis(promise, label, warnings) {
@@ -101,7 +107,7 @@ async function ensureServer(demo = false) {
 
 function openUrl(url) {
   if (process.argv.includes("--no-open")) return;
-  spawn("open", [url], { detached: true, stdio: "ignore" }).unref();
+  openExternalUrl(url);
 }
 
 function printList() {
@@ -252,7 +258,7 @@ async function createWrapped() {
   const id = createReportId();
   const safeFindings = analyzed.findings.map(({ evidence, method, ...finding }) => finding);
   const hasPrivateWorkaroundEvidence = Boolean(analyzed.workaroundReview?.occurrences?.length || analyzed.workaroundReview?.borderline?.length);
-  const report = { id, createdAt: new Date().toISOString(), rangeLabel: formatRange(chosenSessions), source: "Claude Code + Cowork + Codex", stats: analyzed.stats, findings: safeFindings, phraseCard: analyzed.phraseCard, interactionCard: analyzed.interactionCard, workaroundCard: analyzed.workaroundCard, workaroundReview: analyzed.workaroundReview, sessionSummaries: analyzed.sessionSummaries || [], sessionIds: chosenSessions.map((session) => session.id), donationHelperUrl: `${baseUrl}/donate/${id}`, privacy: { shareSafe: !hasPrivateWorkaroundEvidence, containsTranscriptText: hasPrivateWorkaroundEvidence, externalTransmission: !localOnly, analysisMode: localOnly ? "local-only" : "remote", leaderboardParticipation: localOnly ? "excluded" : "included-by-default", ...(localOnly ? { transmittedData: `None; ${testMode ? "test" : "local-only"} mode stays on this Mac.`, externalRecipient: "None" } : { transmittedData: "redacted phrase, interaction-tone, and session-topic candidates; locally redacted context windows around explicit blockers for workaround discovery; aggregate report statistics; and a random client ID only", externalRecipient: "Behavior Wrapped relay, OpenRouter, a zero-data-retention GPT-5.6 Luna provider, and public report hosting" }) } };
+  const report = { id, createdAt: new Date().toISOString(), rangeLabel: formatRange(chosenSessions), source: formatAgentSource(chosenSessions), stats: analyzed.stats, findings: safeFindings, phraseCard: analyzed.phraseCard, interactionCard: analyzed.interactionCard, workaroundCard: analyzed.workaroundCard, workaroundReview: analyzed.workaroundReview, sessionSummaries: analyzed.sessionSummaries || [], sessionIds: chosenSessions.map((session) => session.id), donationHelperUrl: `${baseUrl}/donate/${id}`, privacy: { shareSafe: !hasPrivateWorkaroundEvidence, containsTranscriptText: hasPrivateWorkaroundEvidence, externalTransmission: !localOnly, analysisMode: localOnly ? "local-only" : "remote", leaderboardParticipation: localOnly ? "excluded" : "included-by-default", ...(localOnly ? { transmittedData: `None; ${testMode ? "test" : "local-only"} mode stays on this device.`, externalRecipient: "None" } : { transmittedData: "redacted phrase, interaction-tone, and session-topic candidates; locally redacted context windows around explicit blockers for workaround discovery; aggregate report statistics; and a random client ID only", externalRecipient: "Behavior Wrapped relay, OpenRouter, a zero-data-retention GPT-5.6 Luna provider, and public report hosting" }) } };
   let publicUrl = null;
   if (!localOnly) {
     progress.start("Publishing share-safe Wrapped", "strict aggregate-only schema");
