@@ -698,7 +698,7 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .donation-message-row.user .bundle-message { justify-self: end; }
 .donation-message-row .remove-message { position: static; grid-column: 2; grid-row: 1; align-self: start; margin-top: 20px; }
 .bundle-final-text, .bundle-bubble textarea { font-size: 12px; }
-.workaround-evidence-page { width: min(900px, calc(100% - 40px)); margin: 0 auto; padding: 34px 0 90px; }
+.workaround-evidence-page, .interaction-evidence-page { width: min(900px, calc(100% - 40px)); margin: 0 auto; padding: 34px 0 90px; }
 .workaround-back-link { display: inline-block; color: #6d4c7d; font-size: 12px; font-weight: 800; text-decoration: none; }
 .workaround-page-title { margin: 42px 0 20px; }
 .workaround-page-title h1 { margin: 0; color: #201b23; font-size: clamp(32px, 5vw, 48px); line-height: 1; letter-spacing: -.045em; }
@@ -733,12 +733,39 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .workaround-evidence-empty { padding: 40px; border: 1px solid #d4cdd6; border-radius: 16px; background: rgba(255,255,255,.68); text-align: center; }
 .workaround-evidence-empty h2 { margin: 0 0 8px; }
 .workaround-evidence-empty p { margin: 0; color: #746d78; }
+.interaction-evidence-page { width: min(980px, calc(100% - 40px)); }
+.interaction-evidence-section { margin-top: 34px; }
+.interaction-evidence-section > header { display: grid; grid-template-columns: minmax(250px, .7fr) minmax(280px, 1fr); gap: 30px; align-items: end; margin-bottom: 14px; padding: 0 3px; }
+.interaction-evidence-section > header div { display: grid; gap: 5px; }
+.interaction-evidence-section > header span { color: #8b6172; font-size: 9px; font-weight: 900; letter-spacing: .11em; text-transform: uppercase; }
+.interaction-evidence-section.is-thanks > header span { color: #55703c; }
+.interaction-evidence-section > header h2 { margin: 0; color: #27212b; font-size: 24px; letter-spacing: -.025em; }
+.interaction-evidence-section > header p { margin: 0; color: #746d78; font-size: 11px; line-height: 1.5; }
+.interaction-evidence-list { display: grid; gap: 16px; }
+.interaction-evidence-card { overflow: hidden; border: 1px solid #d4cdd6; border-radius: 16px; background: rgba(255,255,255,.78); box-shadow: 0 15px 42px rgba(55,39,66,.05); }
+.interaction-transcript { display: grid; gap: 10px; padding: 18px 20px 22px; background: rgba(247,244,237,.42); }
+.interaction-message { width: min(84%, 720px); padding: 12px 14px; border: 1px solid #ded8e0; border-radius: 12px; background: #fffdf9; }
+.interaction-message.assistant { justify-self: start; border-bottom-left-radius: 4px; }
+.interaction-message.user { justify-self: end; border-bottom-right-radius: 4px; }
+.interaction-message.context { opacity: .63; }
+.interaction-message.highlighted { border-color: #d6a5b7; background: #fff0f4; box-shadow: 0 7px 20px rgba(108,59,78,.08); }
+.is-thanks .interaction-message.highlighted { border-color: #b7cf9d; background: #f1f8e9; box-shadow: 0 7px 20px rgba(68,91,43,.07); }
+.interaction-message > span { display: block; margin-bottom: 5px; color: #857d89; font-size: 8px; font-weight: 900; letter-spacing: .09em; text-transform: uppercase; }
+.interaction-message.highlighted > span { color: #88566a; }
+.is-thanks .interaction-message.highlighted > span { color: #58713e; }
+.interaction-message p { margin: 0; color: #332d36; font-size: 13px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.interaction-message > button { margin-top: 9px; padding: 0; border: 0; background: transparent; color: #765782; font-size: 9px; font-weight: 850; cursor: pointer; }
+.interaction-message > button:hover { text-decoration: underline; }
+.interaction-evidence-empty { padding: 28px; border: 1px dashed #cfc6d1; border-radius: 14px; color: #746d78; background: rgba(255,255,255,.45); font-size: 12px; text-align: center; }
 @media (max-width: 760px) {
-  .workaround-evidence-page { width: min(100% - 24px, 900px); padding-top: 22px; }
+  .workaround-evidence-page, .interaction-evidence-page { width: min(100% - 24px, 900px); padding-top: 22px; }
   .workaround-page-title { margin-top: 32px; }
   .workaround-session-meta { align-items: flex-start; flex-direction: column; gap: 5px; }
   .workaround-evidence-section { padding: 16px; }
   .workaround-sequence li { padding: 13px; }
+  .interaction-evidence-section > header { grid-template-columns: 1fr; gap: 8px; }
+  .interaction-transcript { padding: 14px; }
+  .interaction-message { width: 92%; }
 }
 .donation-success-page { display: grid; place-items: center; padding-block: clamp(42px, 9vh, 96px); }
 .donation-success { width: min(680px, 100%); padding: clamp(32px, 5vw, 58px); border: 1px solid #d4cbd7; border-radius: 28px; background: rgba(255,255,255,.72); box-shadow: 0 28px 80px rgba(55,39,66,.1); text-align: center; }
@@ -1159,9 +1186,9 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .shared-page .story-workaround .story-workaround-count + p { margin-top: 12px; }
 .shared-page .story-workaround .story-data-rows { padding: 0; box-shadow: none; }
 .shared-page .story-workaround .story-example { margin-top: 22px; padding-left: 22px; border-left-width: 1px; }
-.shared-page .story-workaround .story-evidence-link { position: relative; z-index: 2; display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; align-items: center; align-self: stretch; margin: 2px 0 32px; padding-top: 15px; border-top: 1px solid rgba(45,33,49,.13); color: #4f3c5b; font-size: 13px; font-weight: 800; text-decoration: none; }
-.shared-page .story-workaround .story-evidence-link > span { color: var(--deck-emphasis); font-size: 18px; }
-.shared-page .story-workaround .story-evidence-link small { grid-column: 1 / -1; color: rgba(43,33,47,.5); font-size: 9px; font-weight: 650; letter-spacing: .02em; }
+.shared-page .story-card .story-evidence-link { position: relative; z-index: 2; display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; align-items: center; align-self: stretch; margin: 2px 0 32px; padding-top: 15px; border-top: 1px solid rgba(45,33,49,.13); color: #4f3c5b; font-size: 13px; font-weight: 800; text-decoration: none; }
+.shared-page .story-card .story-evidence-link > span { color: var(--deck-emphasis); font-size: 18px; }
+.shared-page .story-card .story-evidence-link small { grid-column: 1 / -1; color: rgba(43,33,47,.5); font-size: 9px; font-weight: 650; letter-spacing: .02em; }
 
 .shared-page .story-cta-card .story-copy { max-width: 700px; align-items: flex-end; }
 .shared-page .story-cta-card .story-copy h1 { font-size: clamp(92px, 11vw, 138px); }

@@ -69,8 +69,8 @@ function priority(text, occurrences) {
 export function buildInteractionToneCandidates(sessionRecords, { maximumCandidates = INTERACTION_TONE_MAX_CANDIDATES } = {}) {
   const messages = new Map();
   let order = 0;
-  for (const { records } of sessionRecords) {
-    for (const record of records) {
+  for (const { sessionId, records } of sessionRecords) {
+    for (const [recordIndex, record] of records.entries()) {
       if (record.type !== "user" || record.isMeta) continue;
       const text = safeInteractionExcerpt(visibleText(record));
       if (!text) continue;
@@ -78,15 +78,23 @@ export function buildInteractionToneCandidates(sessionRecords, { maximumCandidat
       if (!likelyTonePattern.test(text) && words > 40 && !/[!?]{2,}/.test(text)) continue;
       const key = text.normalize("NFKC").toLocaleLowerCase();
       const existing = messages.get(key);
-      if (existing) existing.occurrences++;
-      else messages.set(key, { text, occurrences: 1, order: order++ });
+      const location = { sessionId, recordIndex, timestamp: record.timestamp || null };
+      if (existing) {
+        existing.occurrences++;
+        existing.locations.push(location);
+      } else messages.set(key, { text, occurrences: 1, order: order++, locations: [location] });
     }
   }
   return [...messages.values()]
     .sort((left, right) => priority(right.text, right.occurrences) - priority(left.text, left.occurrences)
       || right.occurrences - left.occurrences || left.order - right.order)
     .slice(0, Math.min(INTERACTION_TONE_MAX_CANDIDATES, maximumCandidates))
-    .map(({ text, occurrences }, index) => ({ candidate_id: `interaction-${index + 1}`, text, occurrences }));
+    .map(({ text, occurrences, locations }, index) => {
+      const candidate = { candidate_id: `interaction-${index + 1}`, text, occurrences };
+      // Local transcript locations must survive judging without entering the relay payload.
+      Object.defineProperty(candidate, "locations", { value: locations, enumerable: false });
+      return candidate;
+    });
 }
 
 export const interactionToneJudgePrompt = `You classify how a user speaks to an AI agent for a playful "Behavior Wrapped" report. Evaluate every supplied excerpt independently.
@@ -222,6 +230,10 @@ function resultFromSelection(candidates, selection, { model, provider, latencyMs
     occurrences: byId.get(item.candidate_id).occurrences,
     confidence: item.confidence,
   }));
+  const reviewRefs = (items) => items.flatMap((item) => (byId.get(item.candidate_id).locations || []).map((location) => ({
+    candidateId: item.candidate_id,
+    location,
+  })));
   return {
     frustratedMessages: count(selection.frustrated),
     gratefulMessages: count(selection.grateful),
@@ -230,6 +242,11 @@ function resultFromSelection(candidates, selection, { model, provider, latencyMs
     candidateMessages: candidates.reduce((sum, candidate) => sum + candidate.occurrences, 0),
     frustrationQuote: funniest?.text || null,
     privateMatches: { frustrated: matches(selection.frustrated), grateful: matches(selection.grateful) },
+    review: {
+      format: "behavior-wrapped-interaction-review-v1",
+      frustrated: reviewRefs(selection.frustrated),
+      grateful: reviewRefs(selection.grateful),
+    },
     model,
     provider,
     latencyMs,
@@ -325,6 +342,7 @@ export function applyInteractionToneJudgment(analyzed, judgment) {
     method: judgment.method,
   };
   analyzed.interactionCard = judgment.frustrationQuote ? { frustrationQuote: judgment.frustrationQuote } : null;
+  analyzed.interactionReview = judgment.review;
   return analyzed;
 }
 

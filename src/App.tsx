@@ -26,10 +26,13 @@ type Donation = { format: string; createdLocally: boolean; unredacted?: boolean;
 type DonationMode = "standard" | "advanced" | "unredacted";
 type Stage = "select" | "report" | "donate";
 type SavedReport = Report & { id: string; createdAt: string; rangeLabel: string; source: string; publicUrl?: string; donationHelperUrl?: string; hosting?: { public: boolean }; privacy: { shareSafe: boolean; containsTranscriptText: boolean; externalTransmission: boolean; analysisMode?: "remote" | "local-only"; leaderboardParticipation?: "included-by-default" | "excluded" } };
-type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; metricUnit?: string; headlineAccent?: string; wordRatio?: string; example?: string; workaround?: boolean; workaroundCount?: number; evidenceHref?: string; turnDistribution?: { values: number[]; median: number }; ctaHref?: string; ctaLabel?: string; ctas?: { href: string; label: string; primary?: boolean; note?: string }[]; rows?: { label: string; value: string; percentage?: number; rank?: number }[]; comparison?: { label: string; highlight: string; accent: "yell" | "thanks"; value: string; suffix: string; quote?: string }[] };
+type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; metricUnit?: string; headlineAccent?: string; wordRatio?: string; example?: string; workaround?: boolean; workaroundCount?: number; evidenceHref?: string; evidenceLabel?: string; turnDistribution?: { values: number[]; median: number }; ctaHref?: string; ctaLabel?: string; ctas?: { href: string; label: string; primary?: boolean; note?: string }[]; rows?: { label: string; value: string; percentage?: number; rank?: number }[]; comparison?: { label: string; highlight: string; accent: "yell" | "thanks"; value: string; suffix: string; quote?: string }[] };
 type WorkaroundEvidenceAction = { toolName: string; details: string; timestamp: string | null };
 type WorkaroundEvidenceOccurrence = { index: number; session: { label: string; agentName: string; startedAt: string | null; openingMessage: { preview: string; full: string }; turnsBeforeWorkaround: number }; originalAction: WorkaroundEvidenceAction; blocker: { text: string; timestamp: string | null }; workaroundAction: WorkaroundEvidenceAction };
 type WorkaroundEvidence = { format: string; localPrivate: boolean; standardRedactionsApplied: boolean; reportId: string; occurrences: WorkaroundEvidenceOccurrence[] };
+type InteractionEvidenceMessage = { role: "user" | "assistant"; text: string; timestamp: string | null; highlighted: boolean };
+type InteractionEvidenceOccurrence = { index: number; candidateId: string; session: { label: string; agentName: string; startedAt: string | null }; timestamp: string | null; messages: InteractionEvidenceMessage[] };
+type InteractionEvidence = { format: string; localPrivate: boolean; standardRedactionsApplied: boolean; reportId: string; frustrated: InteractionEvidenceOccurrence[]; grateful: InteractionEvidenceOccurrence[] };
 type ParticipantSample = { participant_id: number; value: number };
 type SessionLengthSample = ParticipantSample & { session_index: number };
 type PhraseWallEntry = { participant_id: number; phrase: string; occurrences: number; sessions: number };
@@ -115,6 +118,11 @@ function renderInlineCode(value: string) {
 function localWorkaroundEvidenceUrl(report: SavedReport) {
   const donationUrl = report.donationHelperUrl || `http://localhost:4317/donate/${report.id}`;
   return donationUrl.replace(new RegExp(`/donate/${report.id}$`), `/workarounds/${report.id}`);
+}
+
+function localInteractionEvidenceUrl(report: SavedReport) {
+  const donationUrl = report.donationHelperUrl || `http://localhost:4317/donate/${report.id}`;
+  return donationUrl.replace(new RegExp(`/donate/${report.id}$`), `/interactions/${report.id}`);
 }
 
 function fmtUsd(value: number) {
@@ -303,7 +311,7 @@ function SharedWrapped({ id }: { id: string }) {
     ...(topTopic ? [{ kicker: "Your #1 use for agents was", headline: topTopic.topic, detail: "", tone: "topics", rows: displayTopics.slice(0, 5).map((item) => ({ label: item.topic === "Other" ? "Everything else" : item.topic, value: `${item.percentage.toFixed(1)}%`, percentage: item.percentage })) }] : []),
     ...(sessionTurnCounts.length ? [{ kicker: "Your longest session lasted", headline: `${longestSessionTurns.toLocaleString()} turns`, detail: "", tone: "turns", turnDistribution: { values: sessionTurnCounts, median: quantile(sessionTurnCounts, .5) } }] : []),
     ...(Number.isFinite(report.stats.averageAgentResponseWords) ? [{ kicker: "On average, your agent responded with", headline: `${report.stats.averageAgentResponseWords!.toLocaleString()} words`, detail: `Your average input was ${report.stats.averageUserInputWords!.toLocaleString()} words.`, wordRatio: agentWordRatio?.toLocaleString(undefined, { maximumFractionDigits: 2 }), tone: "violet" }] : []),
-    ...(interactionTone && interactionTone.frustratedMessages + interactionTone.gratefulMessages > 0 ? [{ kicker: "Your relationship with your agent", headline: "", detail: "", tone: "social", comparison: [
+    ...(interactionTone && interactionTone.frustratedMessages + interactionTone.gratefulMessages > 0 ? [{ kicker: "Your relationship with your agent", headline: "", detail: "", tone: "social", evidenceHref: localInteractionEvidenceUrl(report), evidenceLabel: "See exact transcript excerpts", comparison: [
       { label: "You yelled at your agent", highlight: "yelled at", accent: "yell" as const, value: interactionTone.frustratedMessages.toLocaleString(), suffix: `time${interactionTone.frustratedMessages === 1 ? "" : "s"}`, quote: report.interactionCard?.frustrationQuote || report.interactionCard?.quote },
       { label: "You thanked your agent", highlight: "thanked", accent: "thanks" as const, value: interactionTone.gratefulMessages.toLocaleString(), suffix: `time${interactionTone.gratefulMessages === 1 ? "" : "s"}` },
     ] }] : []),
@@ -336,7 +344,7 @@ function SharedWrapped({ id }: { id: string }) {
   }
   const layoutClass = current.comparison ? " story-comparison-card" : current.ctas ? " story-cta-card" : current.turnDistribution ? " story-turn-card" : current.rows || current.example ? " story-split-card" : current.wordRatio ? " story-ratio-card" : current.metric ? " story-metric-card" : " story-hero-card";
   const storyExample = current.example ? <blockquote className="story-example"><span>One example</span><p>{renderInlineCode(current.example)}</p></blockquote> : null;
-  const storyEvidence = current.evidenceHref ? <a className="story-evidence-link" href={current.evidenceHref}>See what your agent actually did <span>→</span><small>Opens a private page on this device</small></a> : null;
+  const storyEvidence = current.evidenceHref ? <a className="story-evidence-link" href={current.evidenceHref}>{current.evidenceLabel || "See what your agent actually did"} <span>→</span><small>Opens a private page on this device</small></a> : null;
   const storyRows = current.rows ? <div className="story-data-rows">{current.workaround && <span className="story-data-label">By model</span>}{current.rows.map((row) => <div className="story-data-row" key={row.label}>
     <div><strong>{row.rank && <em>{row.rank}</em>}{row.label}</strong><b>{row.value}</b></div>
     {row.percentage !== undefined && <span><i style={{ width: `${Math.max(row.percentage, 1.5)}%` }} /></span>}
@@ -819,6 +827,48 @@ function WorkaroundEvidenceRoute({ id }: { id: string }) {
         </ol>
       </section>
     </article>)}</div>}
+  </main>;
+}
+
+function InteractionEvidenceMessageView({ message, agentName }: { message: InteractionEvidenceMessage; agentName: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const maximumPreview = 460;
+  const canExpand = !message.highlighted && message.text.length > maximumPreview;
+  const preview = canExpand ? `${message.text.slice(0, maximumPreview).trimEnd()}…` : message.text;
+  return <div className={`interaction-message ${message.role} ${message.highlighted ? "highlighted" : "context"}`}>
+    <span>{message.role === "user" ? "You" : agentName}{message.highlighted ? " · classified excerpt" : " · context"}</span>
+    <p>{renderDonationText(expanded ? message.text : preview, [])}</p>
+    {canExpand && <button type="button" onClick={() => setExpanded((value) => !value)}>{expanded ? "Collapse context ↑" : "Show full context ↓"}</button>}
+  </div>;
+}
+
+function InteractionEvidenceSection({ title, description, occurrences, accent }: { title: string; description: string; occurrences: InteractionEvidenceOccurrence[]; accent: "yell" | "thanks" }) {
+  return <section className={`interaction-evidence-section is-${accent}`}>
+    <header><div><span>{occurrences.length.toLocaleString()} match{occurrences.length === 1 ? "" : "es"}</span><h2>{title}</h2></div><p>{description}</p></header>
+    {!occurrences.length ? <div className="interaction-evidence-empty">No local excerpts were recorded for this category.</div> : <div className="interaction-evidence-list">{occurrences.map((occurrence) => <article className="interaction-evidence-card" key={`${occurrence.candidateId}-${occurrence.index}`}>
+      <div className="workaround-session-meta"><strong>{occurrence.session.agentName} · {occurrence.session.label}</strong><time dateTime={occurrence.timestamp || undefined}>{fmtDateTime(occurrence.timestamp || occurrence.session.startedAt)}</time></div>
+      <div className="interaction-transcript">{occurrence.messages.map((message, index) => <InteractionEvidenceMessageView message={message} agentName={occurrence.session.agentName} key={index} />)}</div>
+    </article>)}</div>}
+  </section>;
+}
+
+function InteractionEvidenceRoute({ id }: { id: string }) {
+  const [evidence, setEvidence] = useState<InteractionEvidence | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    fetch(`/api/reports/${id}/interactions`).then(async (response) => {
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "This private evidence page is unavailable.");
+      return body;
+    }).then(setEvidence).catch((caught) => setError(caught instanceof Error ? caught.message : "This private evidence page is unavailable."));
+  }, [id]);
+  if (error) return <main className="shared-error"><h1>Private evidence unavailable</h1><p>{error}</p><a href={`/w/${id}`}>Back to Wrapped</a></main>;
+  if (!evidence) return <main className="shared-loading"><div className="orb" /><p>Rebuilding the local transcript excerpts…</p></main>;
+  return <main className="interaction-evidence-page">
+    <a className="workaround-back-link" href={`/w/${id}`}>← Back to Wrapped</a>
+    <div className="workaround-page-title"><h1>Exact interaction transcript excerpts</h1><p>Rebuilt locally from your original, unredacted session files. Nothing on this page is included in the public report.</p></div>
+    <InteractionEvidenceSection title="Classified as yelling" description="Messages the judge marked as clearly frustrated or angry toward the agent or its work." occurrences={evidence.frustrated} accent="yell" />
+    <InteractionEvidenceSection title="Classified as thanking" description="Messages the judge marked as clear thanks, praise, or warm acknowledgment." occurrences={evidence.grateful} accent="thanks" />
   </main>;
 }
 
@@ -1401,6 +1451,8 @@ export default function App() {
   if (donationId) return <SavedDonationRoute id={donationId} />;
   const workaroundEvidenceId = window.location.pathname.match(/^\/workarounds\/([A-Za-z0-9_-]{8,32})$/)?.[1];
   if (workaroundEvidenceId) return <WorkaroundEvidenceRoute id={workaroundEvidenceId} />;
+  const interactionEvidenceId = window.location.pathname.match(/^\/interactions\/([A-Za-z0-9_-]{8,32})$/)?.[1];
+  if (interactionEvidenceId) return <InteractionEvidenceRoute id={interactionEvidenceId} />;
   const sharedId = window.location.pathname.match(/^\/w\/([A-Za-z0-9_-]{8,32})$/)?.[1];
   if (sharedId) return <SharedWrapped id={sharedId} />;
   return <LandingPage />;

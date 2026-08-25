@@ -248,6 +248,7 @@ async function createWrapped() {
     delete analyzed.stats.topics;
     delete analyzed.stats.topicMethod;
     delete analyzed.interactionCard;
+    delete analyzed.interactionReview;
     delete analyzed.workaroundCard;
     delete analyzed.workaroundReview;
   }
@@ -258,7 +259,7 @@ async function createWrapped() {
   const id = createReportId();
   const safeFindings = analyzed.findings.map(({ evidence, method, ...finding }) => finding);
   const hasPrivateWorkaroundEvidence = Boolean(analyzed.workaroundReview?.occurrences?.length || analyzed.workaroundReview?.borderline?.length);
-  const report = { id, createdAt: new Date().toISOString(), rangeLabel: formatRange(chosenSessions), source: formatAgentSource(chosenSessions), stats: analyzed.stats, findings: safeFindings, phraseCard: analyzed.phraseCard, interactionCard: analyzed.interactionCard, workaroundCard: analyzed.workaroundCard, workaroundReview: analyzed.workaroundReview, sessionSummaries: analyzed.sessionSummaries || [], sessionIds: chosenSessions.map((session) => session.id), donationHelperUrl: `${baseUrl}/donate/${id}`, privacy: { shareSafe: !hasPrivateWorkaroundEvidence, containsTranscriptText: hasPrivateWorkaroundEvidence, externalTransmission: !localOnly, analysisMode: localOnly ? "local-only" : "remote", leaderboardParticipation: localOnly ? "excluded" : "included-by-default", ...(localOnly ? { transmittedData: `None; ${testMode ? "test" : "local-only"} mode stays on this device.`, externalRecipient: "None" } : { transmittedData: "redacted phrase, interaction-tone, and session-topic candidates; locally redacted context windows around explicit blockers for workaround discovery; aggregate report statistics; and a random client ID only", externalRecipient: "Behavior Wrapped relay, OpenRouter, a zero-data-retention GPT-5.6 Luna provider, and public report hosting" }) } };
+  const report = { id, createdAt: new Date().toISOString(), rangeLabel: formatRange(chosenSessions), source: formatAgentSource(chosenSessions), stats: analyzed.stats, findings: safeFindings, phraseCard: analyzed.phraseCard, interactionCard: analyzed.interactionCard, interactionReview: analyzed.interactionReview, workaroundCard: analyzed.workaroundCard, workaroundReview: analyzed.workaroundReview, sessionSummaries: analyzed.sessionSummaries || [], sessionIds: chosenSessions.map((session) => session.id), donationHelperUrl: `${baseUrl}/donate/${id}`, privacy: { shareSafe: !hasPrivateWorkaroundEvidence, containsTranscriptText: hasPrivateWorkaroundEvidence, externalTransmission: !localOnly, analysisMode: localOnly ? "local-only" : "remote", leaderboardParticipation: localOnly ? "excluded" : "included-by-default", ...(localOnly ? { transmittedData: `None; ${testMode ? "test" : "local-only"} mode stays on this device.`, externalRecipient: "None" } : { transmittedData: "redacted phrase, interaction-tone, and session-topic candidates; locally redacted context windows around explicit blockers for workaround discovery; aggregate report statistics; and a random client ID only", externalRecipient: "Behavior Wrapped relay, OpenRouter, a zero-data-retention GPT-5.6 Luna provider, and public report hosting" }) } };
   let publicUrl = null;
   if (!localOnly) {
     progress.start("Publishing share-safe Wrapped", "strict aggregate-only schema");

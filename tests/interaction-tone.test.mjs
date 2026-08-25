@@ -22,6 +22,7 @@ test("builds deduplicated, redacted interaction candidates with occurrence count
   assert.ok(candidates.some((candidate) => candidate.text === "Thank you, this is exactly what I needed."));
   assert.equal(JSON.stringify(candidates).includes("sk-test"), false);
   assert.equal(JSON.stringify(candidates).includes("assistant"), false);
+  assert.equal(JSON.stringify(candidates).includes("recordIndex"), false);
 });
 
 test("builds a strict interaction classifier request", () => {
@@ -57,11 +58,14 @@ test("resolves judged IDs to local counts and the exact local quote", async () =
   assert.equal(result.frustratedMessages, 2);
   assert.equal(result.gratefulMessages, 1);
   assert.equal(result.frustrationQuote, dude.text);
+  assert.deepEqual(result.review.frustrated.map((item) => item.location.recordIndex), [0, 1]);
+  assert.deepEqual(result.review.grateful.map((item) => item.location.recordIndex), [2]);
   assert.equal(result.provider, "OpenRouter via Behavior Wrapped relay");
   const analyzed = { stats: { interactionTone: { analyzedMessages: 3 } } };
   applyInteractionToneJudgment(analyzed, result);
   assert.equal(analyzed.stats.interactionTone.frustratedMessages, 2);
   assert.equal(analyzed.interactionCard.frustrationQuote, dude.text);
+  assert.deepEqual(analyzed.interactionReview, result.review);
 });
 
 test("drops invented IDs and low-confidence classifications", () => {

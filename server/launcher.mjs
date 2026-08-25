@@ -9,6 +9,7 @@ import { deleteDonationReceipt, getOrCreateClientId, loadDonationReceipt, loadRe
 import { deleteResearchDonation, RESEARCH_DONATION_URL, submitResearchDonation } from "./research-donation.mjs";
 import { APP_VERSION, LOCAL_DONATION_PROTOCOL } from "./runtime-version.mjs";
 import { makeWorkaroundEvidencePreview } from "./workaround-evidence.mjs";
+import { makeInteractionEvidencePreview } from "./interaction-evidence.mjs";
 import { createIdleShutdownController } from "./local-helper-runtime.mjs";
 import { canonicalSessionDirectoryLabels, openExternalUrl, supportedAgentNames } from "./platform.mjs";
 
@@ -106,7 +107,7 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "GET" && reportMatch) {
       const report = loadReport(reportMatch[1]);
       if (!report) return json(response, 404, { error: "Saved report not found" });
-      const { sessionIds, workaroundReview, ...shareSafeReport } = report;
+      const { sessionIds, workaroundReview, interactionReview, ...shareSafeReport } = report;
       shareSafeReport.privacy = { ...shareSafeReport.privacy, shareSafe: true, containsTranscriptText: false };
       return json(response, 200, shareSafeReport);
     }
@@ -126,6 +127,17 @@ const server = http.createServer(async (request, response) => {
       const records = await chosenRecords(ids, { includePrivateToolDetails: true });
       const labels = new Map(publicCatalog().sessions.map((session) => [session.id, session]));
       return json(response, 200, makeWorkaroundEvidencePreview(report, records, labels));
+    }
+    const interactionEvidenceMatch = url.pathname.match(/^\/api\/reports\/([A-Za-z0-9_-]{8,32})\/interactions$/);
+    if (request.method === "GET" && interactionEvidenceMatch) {
+      const report = loadReport(interactionEvidenceMatch[1]);
+      if (!report) return json(response, 404, { error: "Saved report not found" });
+      const allowed = new Set(report.sessionIds || []);
+      const references = [...(report.interactionReview?.frustrated || []), ...(report.interactionReview?.grateful || [])];
+      const ids = [...new Set(references.map((reference) => reference?.location?.sessionId).filter((id) => allowed.has(id) && catalog.index.has(id)))].slice(0, 200);
+      const records = await chosenRecords(ids);
+      const labels = new Map(publicCatalog().sessions.map((session) => [session.id, session]));
+      return json(response, 200, makeInteractionEvidencePreview(report, records, labels));
     }
     if (request.method === "POST" && url.pathname === "/api/donation-preview") {
       const body = await readBody(request);
