@@ -327,7 +327,10 @@ function SharedWrapped({ id }: { id: string }) {
     <section ref={cardRef} className={`story-card story-${current.tone}${current.workaround ? " story-workaround" : ""}${layoutClass}`} aria-live="polite">
       <header className="story-chrome">
         <div className="story-brand" aria-label="Behavior Wrapped"><strong><span>Behavior</span><span>Wrapped</span></strong></div>
-        <span className="story-index" aria-hidden="true">{String(slide + 1).padStart(2, "0")} <i /> {String(slides.length).padStart(2, "0")}</span>
+        <div className="story-card-meta">
+          <span className="story-site">behaviorwrapped.com</span>
+          <span className="story-index" aria-hidden="true">{String(slide + 1).padStart(2, "0")} <i /> {String(slides.length).padStart(2, "0")}</span>
+        </div>
       </header>
       <div className="story-sparkles" aria-hidden="true"><i /><i /><i /></div>
       {current.comparison ? <div className="story-comparison-wrap"><span className="story-comparison-kicker">{current.kicker}</span><div className="story-comparison">{current.comparison.map((item) => {

@@ -1253,6 +1253,14 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .shared-page .story-workaround .story-headline-accent { color: var(--deck-emphasis); }
 
 .shared-page .story-brand strong { font-size: 22px; }
+.story-card-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.story-site {
+  color: rgba(66, 49, 72, .72);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: .055em;
+}
 .story-index { color: rgba(66, 49, 72, .56); font-size: 10px; }
 .shared-page .story-copy { padding-block: 18px; }
 .shared-page .story-copy > div:first-child > span,
@@ -1399,6 +1407,8 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
   }
   .shared-page .story-card { padding: 30px 25px 24px; }
   .shared-page .story-brand strong { font-size: 19px; }
+  .story-card-meta { gap: 7px; }
+  .story-site { font-size: 9.5px; }
   .story-index { font-size: 9px; }
   .shared-page .story-copy { padding-block: 21px 16px; }
   .shared-page .story-copy > div:first-child > span,
