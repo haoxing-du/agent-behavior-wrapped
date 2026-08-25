@@ -342,10 +342,7 @@ function SharedWrapped({ id }: { id: string }) {
     <section ref={cardRef} className={`story-card story-${current.tone}${current.workaround ? " story-workaround" : ""}${layoutClass}`} aria-live="polite">
       <header className="story-chrome">
         <div className="story-brand" aria-label="Behavior Wrapped"><strong><span>Behavior</span><span>Wrapped</span></strong></div>
-        <div className="story-card-meta">
-          <span className="story-site">behaviorwrapped.com</span>
-          <span className="story-index" aria-hidden="true">{String(slide + 1).padStart(2, "0")} <i /> {String(slides.length).padStart(2, "0")}</span>
-        </div>
+        <span className="story-index" aria-hidden="true">{String(slide + 1).padStart(2, "0")} <i /> {String(slides.length).padStart(2, "0")}</span>
       </header>
       <div className="story-sparkles" aria-hidden="true"><i /><i /><i /></div>
       {current.comparison ? <div className="story-comparison-wrap"><span className="story-comparison-kicker">{current.kicker}</span><div className="story-comparison">{current.comparison.map((item) => {
@@ -357,7 +354,8 @@ function SharedWrapped({ id }: { id: string }) {
           {current.turnDistribution ? <SessionTurnChart {...current.turnDistribution} /> : current.workaround ? <>{storyRows}{storyExample}</> : <>{storyExample}{storyRows}</>}
         </div>}
       </div>}
-      {current.ctas ? <div className="story-cta-group">{current.ctas.map((cta) => <div className="story-cta-choice" key={cta.href}><a className={`story-cta ${cta.primary ? "primary" : "secondary"}`} href={cta.href}>{cta.label} <span>→</span></a>{cta.note && <small>{cta.note}</small>}</div>)}</div> : current.ctaHref ? <a className="story-cta" href={current.ctaHref}>{current.ctaLabel} <span>→</span></a> : storyEvidence || <div className="story-tag">#behaviorwrapped</div>}
+      {current.ctas ? <div className="story-cta-group">{current.ctas.map((cta) => <div className="story-cta-choice" key={cta.href}><a className={`story-cta ${cta.primary ? "primary" : "secondary"}`} href={cta.href}>{cta.label} <span>→</span></a>{cta.note && <small>{cta.note}</small>}</div>)}</div> : current.ctaHref ? <a className="story-cta" href={current.ctaHref}>{current.ctaLabel} <span>→</span></a> : storyEvidence}
+      <div className="story-tag">behaviorwrapped.com</div>
       <button className="story-arrow prev" disabled={slide === 0} onClick={() => setSlide(slide - 1)} aria-label="Previous slide">‹</button>
       <button className="story-arrow next" disabled={slide === slides.length - 1} onClick={() => setSlide(slide + 1)} aria-label="Next slide">›</button>
     </section>
@@ -703,9 +701,9 @@ function LeaderboardView({ id }: { id: string }) {
     <div className="page-chrome leader-chrome">
       <a className="leader-back" href={`/w/${id}`}>← Back to your Wrapped</a>
       <div className="page-wordmark" aria-label="Behavior Wrapped"><strong><span>Behavior</span><span>Wrapped</span></strong></div>
-      <span className="page-status">Anonymous cohort</span>
+      <span className="page-status"></span>
     </div>
-    <header className="leader-hero"><div><span className="eyebrow">The collective view · 2026</span><h1>How you compare</h1></div><p><strong>{snapshot.cohort_size.toLocaleString()}</strong><span>participant{snapshot.cohort_size === 1 ? "" : "s"}<br />in the cohort</span></p></header>
+    <header className="leader-hero"><div><span className="eyebrow">The leaderboard · Last 30 days</span><h1>How you compare</h1></div><p><strong>{snapshot.cohort_size.toLocaleString()}</strong><span>participant{snapshot.cohort_size === 1 ? "" : "s"}<br />in the cohort</span></p></header>
     <div className="leader-figures">
       <TokenUsageFigure metric={snapshot.tokens} participantId={snapshot.participation.participant_id} included={snapshot.participation.joined} />
       <RelationshipFigure ratio={ratio} appreciation={snapshot.good_human_score.value} points={snapshot.relationship.points} participantId={snapshot.participation.participant_id} included={snapshot.participation.joined} />
@@ -713,11 +711,12 @@ function LeaderboardView({ id }: { id: string }) {
       <SessionLengthFigure metric={snapshot.session_lengths} participantId={snapshot.participation.participant_id} included={snapshot.participation.joined} />
       <PhraseWallFigure entries={snapshot.phrases.entries} participantId={snapshot.participation.participant_id} />
     </div>
-    {snapshot.can_manage && <section className="leader-donation"><div><span className="eyebrow">Optional research donation</span><h2>Will you contribute your agents' transcripts to research?</h2><p>Separate from the anonymous leaderboard, you can contribute your agent transcripts to the research corpus. You’ll review the redactions and explicitly consent before any transcript data is sent.</p></div><a className="primary" href={`${report.donationHelperUrl || `http://localhost:4317/donate/${report.id}`}?mode=standard`}>Review and donate your data <span>→</span></a></section>}
+    {snapshot.can_manage && <section className="leader-donation"><div><span className="eyebrow">Optional research donation</span><h2>Will you contribute your transcripts to research?</h2><p>Separate from the anonymous leaderboard, you can contribute your agent transcripts to the research corpus at the <a href={SUSAN_CALVIN_PROJECT_URL} target="_blank" rel="noreferrer">Susan Calvin Project</a>. You’ll review the redactions and explicitly consent before any transcript data is sent.</p></div><a className="primary" href={`${report.donationHelperUrl || `http://localhost:4317/donate/${report.id}`}?mode=standard`}>Review and donate your data <span>→</span></a></section>}
     {snapshot.can_manage ? <section className="leader-opt-out" id="join-leaderboard">
       <div><p>{snapshot.participation.joined ? "Don’t want your data to show up on the leaderboard?" : "Your data is currently opted out of the leaderboard."}</p>{error && <span className="error" role="alert">{error}</span>}</div>
       {snapshot.participation.joined ? <button className="leader-remove" disabled={saving} onClick={leave}>{saving ? "Opting out…" : "Click here to opt out"}</button> : <button className="primary" disabled={saving} onClick={include}>{saving ? "Adding…" : "Add my anonymous stats back"}<span>→</span></button>}
     </section> : <section className="leader-public-note" id="join-leaderboard"><strong>Anonymous summaries, not full transcripts.</strong><p>Published Wrapped reports are included by default with aggregate stats, the favorite phrase shown on the public Wrapped, and session-length counts. Only the creator can remove or restore this data using their private management link.</p></section>}
+    <footer className="leader-footer"><SusanCalvinCredit /></footer>
   </main>;
 }
 
@@ -1283,7 +1282,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
     </div>
     <section className="donation-hero">
       <div className="donation-hero-intro">
-        <h1>Review your data before you donate.</h1><p>Review the exact data you want to contribute. Your bundle is encrypted on this machine before it is trasmitted to the storage service.</p>
+        <h1>Review your data before you donate.</h1><p>Review the exact data you want to contribute. Your bundle is encrypted on this machine before it is transmitted to the storage service.</p>
       </div>
       <div className="donation-hero-copy">
         <div className="donation-hero-controls">
@@ -1333,8 +1332,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
             })}</div>
           </>}
           <div className="donation-step consent-step"><span>3</span><div><h2>Consent separately</h2><p>This consent applies only to the reviewed bundle above. It is protected with authenticated AES-256-GCM encryption before leaving localhost.</p></div></div>
-          <p className="consent-policy-link">Before consenting, please read <a href={SUSAN_CALVIN_DATA_POLICY_URL} target="_blank" rel="noreferrer">how the Susan Calvin Project stores and may use donated data <span aria-hidden="true">↗</span></a>.</p>
-          <label className={`consent ${unredacted ? "unredacted-consent" : ""}`}><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /><span>{unredacted ? "I understand this donation is not automatically redacted and may contain credentials, personal details, private code, URLs, and file paths. I consent to transmit it to the Susan Calvin Project for research under the data policy." : "I consent for this reviewed data to be transmitted to the Susan Calvin Project and used for research under the data policy."}</span></label>
+          <label className={`consent ${unredacted ? "unredacted-consent" : ""}`}><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /><span>{unredacted && <>I understand that this donation is not automatically redacted and may contain credentials, personal details, private code, URLs, and file paths. </>}I consent. I confirm that I have read the <a href={SUSAN_CALVIN_DATA_POLICY_URL} target="_blank" rel="noreferrer">data policy <span aria-hidden="true">↗</span></a>.</span></label>
           <button className={`export-button ${unredacted ? "unredacted" : ""}`} disabled={!consent || loading || !messageCount} onClick={donate}>{loading ? "Transmitting…" : unredacted ? "Donate unredacted data" : "Donate reviewed data"} <span>→</span></button>
         </>}
       </section>

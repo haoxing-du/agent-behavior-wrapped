@@ -1253,14 +1253,6 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .shared-page .story-workaround .story-headline-accent { color: var(--deck-emphasis); }
 
 .shared-page .story-brand strong { font-size: 22px; }
-.story-card-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
-.story-site {
-  color: rgba(66, 49, 72, .72);
-  font-size: 10.5px;
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: .055em;
-}
 .story-index { color: rgba(66, 49, 72, .56); font-size: 10px; }
 .shared-page .story-copy { padding-block: 18px; }
 .shared-page .story-copy > div:first-child > span,
@@ -1348,7 +1340,16 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 }
 .shared-page .story-comparison-card .story-comparison p b { font-size: var(--type-body); }
 .shared-page .story-comparison-card .story-comparison-wrap blockquote { font-size: 16px; line-height: 1.42; }
-.shared-page .story-card .story-tag { color: var(--deck-emphasis); font-size: 10.5px; opacity: .78; }
+.shared-page .story-card .story-tag {
+  position: absolute;
+  left: 60px;
+  bottom: 36px;
+  z-index: 3;
+  margin: 0;
+  color: var(--deck-emphasis);
+  font-size: 10.5px;
+  opacity: .78;
+}
 
 .shared-page .story-cta-card {
   display: grid;
@@ -1407,9 +1408,8 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
   }
   .shared-page .story-card { padding: 30px 25px 24px; }
   .shared-page .story-brand strong { font-size: 19px; }
-  .story-card-meta { gap: 7px; }
-  .story-site { font-size: 9.5px; }
   .story-index { font-size: 9px; }
+  .shared-page .story-card .story-tag { left: 25px; bottom: 24px; font-size: 9.5px; }
   .shared-page .story-copy { padding-block: 21px 16px; }
   .shared-page .story-copy > div:first-child > span,
   .shared-page .story-comparison-kicker { font-size: var(--type-kicker); }
@@ -1687,9 +1687,11 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .leader-donation { max-width: 1120px; margin-top: 24px; border-radius: 24px; }
 .leader-donation h2 { font-size: clamp(30px, 3.4vw, 43px); }
 .leader-donation p { font-size: 13px; }
+.leader-donation p a { color: inherit; font-weight: 750; text-underline-offset: 3px; }
 .leader-opt-out, .leader-public-note { max-width: 1120px; }
 .leader-public-note { margin: 24px auto 0; border-radius: 18px; }
 .leader-opt-out { margin-top: 12px; }
+.leader-footer { max-width: 1120px; margin: 48px auto 0; display: flex; justify-content: center; color: var(--folio-muted); font-size: 12px; text-align: center; }
 .leaderboard-page .primary,
 .donation-page .primary,
 .donation-page .export-button {
@@ -1842,8 +1844,7 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .donation-success .donation-deletion-status { color: var(--folio-violet); }
 .donation-success-policy { margin-top: 12px !important; font-size: 11px !important; }
 .donation-success-policy a,
-.consent-policy-link a { color: var(--folio-violet-deep); font-weight: 800; text-underline-offset: 3px; }
-.consent-policy-link { margin: 18px 0 -7px; color: var(--folio-muted); font-size: 11px; line-height: 1.5; }
+.donation-preview .consent a { color: var(--folio-violet-deep); font-weight: 800; text-underline-offset: 3px; }
 
 @media (max-width: 900px) {
   .donation-hero { grid-template-columns: 1fr; gap: 30px; }
