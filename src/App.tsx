@@ -52,6 +52,21 @@ type LeaderboardSnapshot = {
 const SUSAN_CALVIN_PROJECT_URL = "https://susancalvin.org";
 const SUSAN_CALVIN_DATA_POLICY_URL = `${SUSAN_CALVIN_PROJECT_URL}/data-policy`;
 
+function useLocalHelperHeartbeat() {
+  useEffect(() => {
+    if (!new Set(["localhost", "127.0.0.1", "::1"]).has(window.location.hostname)) return;
+    const heartbeat = () => { void fetch("/api/health", { cache: "no-store" }).catch(() => {}); };
+    const onVisibilityChange = () => { if (!document.hidden) heartbeat(); };
+    heartbeat();
+    const timer = window.setInterval(heartbeat, 30_000);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, []);
+}
+
 function reportManagementToken(id: string) {
   const key = `behavior-wrapped:manage:${id}`;
   const fragmentToken = new URLSearchParams(window.location.hash.slice(1)).get("manage") || "";
@@ -1345,6 +1360,7 @@ function LandingPage() {
 }
 
 export default function App() {
+  useLocalHelperHeartbeat();
   const leaderboardId = window.location.pathname.match(/^\/leaderboard\/([A-Za-z0-9_-]{8,32})$/)?.[1];
   if (leaderboardId) return <LeaderboardView id={leaderboardId} />;
   const donationId = window.location.pathname.match(/^\/donate\/([A-Za-z0-9_-]{8,32})$/)?.[1];

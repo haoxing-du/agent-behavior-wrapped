@@ -11,6 +11,7 @@ import { deleteDonationReceipt, getOrCreateClientId, loadDonationReceipt, loadRe
 import { deleteResearchDonation, RESEARCH_DONATION_URL, submitResearchDonation } from "./research-donation.mjs";
 import { APP_VERSION, LOCAL_DONATION_PROTOCOL } from "./runtime-version.mjs";
 import { makeWorkaroundEvidencePreview } from "./workaround-evidence.mjs";
+import { createIdleShutdownController } from "./local-helper-runtime.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.dirname(here);
@@ -21,6 +22,8 @@ const coworkFixtureRoot = path.join(root, "fixtures", "cowork-sessions");
 const demo = process.argv.includes("--demo");
 const portArg = process.argv.find((arg) => arg.startsWith("--port="));
 const port = Number(portArg?.split("=")[1] || 4317);
+const configuredIdleMs = Number(process.env.BEHAVIOR_WRAPPED_HELPER_IDLE_MS);
+const helperIdleMs = Number.isFinite(configuredIdleMs) && configuredIdleMs >= 100 ? configuredIdleMs : 5 * 60 * 1_000;
 let catalog = await loadCatalog();
 
 async function loadCatalog() {
@@ -91,6 +94,7 @@ const mime = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; cha
 const server = http.createServer(async (request, response) => {
   try {
     if (!new Set([`127.0.0.1:${port}`, `localhost:${port}`]).has(request.headers.host || "")) return json(response, 403, { error: "Local access only" });
+    idleShutdown.touch();
     const url = new URL(request.url || "/", `http://${request.headers.host}`);
     if (request.method === "GET" && url.pathname === "/api/health") return json(response, 200, { app: "behavior-wrapped", version: APP_VERSION, local: true, purpose: "research-donation", donationProtocol: LOCAL_DONATION_PROTOCOL, pid: process.pid, demo });
     if (request.method === "GET" && url.pathname === "/api/discover") {
@@ -167,6 +171,12 @@ const server = http.createServer(async (request, response) => {
   } catch (error) {
     if (!response.headersSent) json(response, error.message === "Request too large" ? 413 : 500, { error: error.message || "Local processing failed" });
   }
+});
+
+const idleShutdown = createIdleShutdownController({
+  enabled: process.env.BEHAVIOR_WRAPPED_DAEMON === "1",
+  idleMs: helperIdleMs,
+  onIdle: () => server.close(() => process.exit(0)),
 });
 
 server.listen(port, "127.0.0.1", () => {

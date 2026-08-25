@@ -9,6 +9,38 @@ export function helperHealthMatches(value, { version, protocol, demo }) {
     && value.version === version && value.donationProtocol === protocol && Boolean(value.demo) === Boolean(demo));
 }
 
+export function createIdleShutdownController({
+  enabled,
+  idleMs,
+  onIdle,
+  setTimeoutImpl = setTimeout,
+  clearTimeoutImpl = clearTimeout,
+}) {
+  let timer = null;
+  let stopped = false;
+
+  function schedule() {
+    if (!enabled || stopped) return;
+    if (timer) clearTimeoutImpl(timer);
+    timer = setTimeoutImpl(() => {
+      timer = null;
+      stopped = true;
+      onIdle();
+    }, idleMs);
+    timer?.unref?.();
+  }
+
+  function touch() { schedule(); }
+  function stop() {
+    stopped = true;
+    if (timer) clearTimeoutImpl(timer);
+    timer = null;
+  }
+
+  schedule();
+  return { touch, stop };
+}
+
 export function isVerifiedLauncherCommand(command, port) {
   const escapedPort = String(port).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`(?:/(?:agent-)?behavior-wrapped/|(?:^|\\s))server/launcher\\.mjs(?:\\s|$)`, "i").test(command || "")

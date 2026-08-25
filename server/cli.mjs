@@ -129,6 +129,8 @@ async function createWrapped() {
   progress.start("Preparing local donation helper", `localhost:${port}`);
   await ensureServer(demo);
   progress.succeed("Local donation helper ready");
+  const helperHeartbeat = setInterval(() => { void fetch(`${loopbackUrl}/api/health`).catch(() => {}); }, 30_000);
+  helperHeartbeat.unref();
   const daysArgument = process.argv.find((argument) => argument.startsWith("--days="));
   const windowDays = daysArgument ? Number(daysArgument.split("=")[1]) : DEFAULT_WINDOW_DAYS;
   if (!Number.isInteger(windowDays) || windowDays < 1 || windowDays > 3650) throw new Error("--days must be a whole number from 1 to 3650.");
