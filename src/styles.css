@@ -586,9 +586,8 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .landing-command button { flex: none; border: 0; border-radius: 0; padding: 0 18px; background: #756a7e; color: #fff; font-size: 14px; font-weight: 500; }
 .landing-command button:hover { background: #665c70; }
 .landing-command button:focus-visible { outline: 2px solid #f7f4ed; outline-offset: -3px; }
-.landing-leaderboard-link { width: fit-content; margin: 20px auto 0; display: inline-flex; align-items: center; gap: 10px; color: #5d4b67; font-size: 13px; font-weight: 800; text-decoration: none; }
-.landing-leaderboard-link:hover { color: #2f2535; }
-.landing-leaderboard-link span { font-size: 17px; }
+.landing-leaderboard-link { color: inherit; font-weight: 750; text-decoration-color: rgba(117, 91, 128, .35); text-underline-offset: 3px; transition: color 150ms ease, text-decoration-color 150ms ease; }
+.landing-leaderboard-link:hover { color: #4f3c5b; text-decoration-color: currentColor; }
 .landing-alpha { width: min(100%, 540px); margin: 18px auto 0; padding-top: 16px; border-top: 1px solid rgba(117,106,126,.18); display: flex; align-items: flex-start; gap: 13px; color: #7c7480; text-align: left; }
 .landing-alpha > span { flex: none; margin-top: 1px; padding: 4px 7px; border: 1px solid rgba(146,119,38,.24); border-radius: 999px; background: rgba(247,229,171,.38); color: #7d6828; font-size: 9px; font-weight: 850; line-height: 1; letter-spacing: .12em; text-transform: uppercase; }
 .landing-alpha p { margin: 0; font-size: 12px; line-height: 1.5; text-wrap: pretty; }

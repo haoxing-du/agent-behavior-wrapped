@@ -1386,7 +1386,7 @@ function LandingPage() {
     }
   }
 
-  return <main className="landing-page"><div><h1>Behavior Wrapped</h1><p className="landing-description">A local-first behavior report for you and your AI agents.</p><div className="landing-command"><code><span aria-hidden="true">$</span>{command}</code><button type="button" onClick={copyCommand} aria-label="Copy npx command">{copied ? "Copied!" : "Copy"}</button></div><a className="landing-leaderboard-link" href="/leaderboard">Explore the public leaderboard <span>→</span></a><aside className="landing-alpha"><span>Alpha</span><p>Behavior Wrapped is currently in Alpha and may have bugs. Report issues to Haoxing at haoxingdu [at] gmail [dot] com!</p></aside></div><p className="landing-credit"><SusanCalvinCredit /></p></main>;
+  return <main className="landing-page"><div><h1>Behavior Wrapped</h1><p className="landing-description">A local-first behavior report for you and your AI agents.</p><div className="landing-command"><code><span aria-hidden="true">$</span>{command}</code><button type="button" onClick={copyCommand} aria-label="Copy npx command">{copied ? "Copied!" : "Copy"}</button></div><aside className="landing-alpha"><span>Alpha</span><p>Behavior Wrapped is currently in Alpha and may have bugs. Report issues to Haoxing at haoxingdu [at] gmail [dot] com!</p></aside></div><p className="landing-credit"><SusanCalvinCredit /><span aria-hidden="true"> · </span><a className="landing-leaderboard-link" href="/leaderboard">Public leaderboard</a></p></main>;
 }
 
 export default function App() {
