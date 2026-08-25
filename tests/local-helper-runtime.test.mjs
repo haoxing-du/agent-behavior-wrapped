@@ -28,7 +28,7 @@ test("stale helper replacement validates the listening process before terminatin
     ["/bin/ps:411", "python -m http.server 4317\n"],
   ]);
   const runCommand = async (file, args) => commands.get(file === "/bin/ps" ? `${file}:${args[1]}` : file) || "";
-  assert.equal(await stopVerifiedStaleHelper(4317, null, { runCommand, kill: (pid, signal) => killed.push([pid, signal]) }), true);
+  assert.equal(await stopVerifiedStaleHelper(4317, null, { platform: "darwin", runCommand, kill: (pid, signal) => killed.push([pid, signal]) }), true);
   assert.deepEqual(killed, [[410, "SIGTERM"]]);
 });
 
@@ -39,7 +39,7 @@ test("an advertised helper PID must also own the listening port", async () => {
     ["/bin/ps:410", "node server/launcher.mjs --port=4317 --no-open\n"],
   ]);
   const runCommand = async (file, args) => commands.get(file === "/bin/ps" ? `${file}:${args[1]}` : file) || "";
-  assert.equal(await stopVerifiedStaleHelper(4317, 999, { runCommand, kill: (pid, signal) => killed.push([pid, signal]) }), false);
+  assert.equal(await stopVerifiedStaleHelper(4317, 999, { platform: "darwin", runCommand, kill: (pid, signal) => killed.push([pid, signal]) }), false);
   assert.deepEqual(killed, []);
 });
 
