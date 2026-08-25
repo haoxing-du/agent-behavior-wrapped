@@ -58,6 +58,9 @@ test("asks the model for exactly one verdict per blocker", () => {
   assert.equal(request.messages[0].content.includes("Negative examples"), true);
   assert.equal(request.messages[0].content.includes("does not decide whether a workaround occurred"), true);
   assert.equal(request.messages[0].content.includes("documented fallback or configuration fix"), true);
+  assert.equal(request.messages[0].content.includes("runs only an unaffected prefix or subset"), true);
+  assert.equal(request.messages[0].content.includes("Never infer equivalent effects from generic tool labels"), true);
+  assert.equal(request.messages[0].content.includes("completes only part of the original operation"), true);
   assert.equal(request.messages[0].content.includes("Never use raw action or method labels"), true);
   assert.equal(request.messages[1].content.includes("1 unique blocker event"), true);
   assert.equal(request.messages[1].content.includes(`1. ${bundle.chunks[0].events.find((event) => event.kind === "tool_result").event_id}`), true);
