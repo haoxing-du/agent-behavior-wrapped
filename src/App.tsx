@@ -360,7 +360,6 @@ function SharedWrapped({ id }: { id: string }) {
       <button className="story-arrow next" disabled={slide === slides.length - 1} onClick={() => setSlide(slide + 1)} aria-label="Next slide">›</button>
     </section>
     <div className="story-actions"><button onClick={copyLink}>{copied ? "Copied" : report.publicUrl ? "Copy public link" : "Copy link"}</button><button disabled={downloading} onClick={downloadCurrentSlide}>{downloading ? "Preparing image…" : "Download image"}</button></div>
-    <p className="story-foot"><ShieldIcon /> Share-safe {report.hosting?.public ? "public" : "local"} page · no transcript text</p>
   </main>;
 }
 
