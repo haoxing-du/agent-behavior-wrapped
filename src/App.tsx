@@ -260,6 +260,7 @@ function SharedWrapped({ id }: { id: string }) {
     if (!report) return [];
     const agents = report.stats.agents?.length ? report.stats.agents : [{ agent: "claude" as const, name: "Claude Code", count: report.stats.sessions, percentage: 100 }];
     const activeAgents = agents
+      .map((agent) => agent.agent === "cowork" ? { ...agent, name: "Claude Cowork" } : agent)
       .filter((agent) => hasDisplayablePercentage(agent.percentage))
       .sort((left, right) => right.percentage - left.percentage || right.count - left.count || left.name.localeCompare(right.name));
     const leader = activeAgents[0];
