@@ -252,7 +252,7 @@ function SessionTurnChart({ values, median }: { values: number[]; median: number
 async function downloadSlide(card: HTMLElement, slide: number) {
   await document.fonts.ready;
   const dataUrl = await toPng(card, {
-    backgroundColor: "#09090b",
+    backgroundColor: "#f5f1ed",
     cacheBust: true,
     pixelRatio: 2,
   });
