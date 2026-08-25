@@ -196,6 +196,13 @@ function percentile(atOrBelow, total) {
   return total ? Math.round(atOrBelow / total * 100) : null;
 }
 
+function median(values) {
+  const sorted = values.map(Number).filter(Number.isFinite).sort((left, right) => left - right);
+  if (!sorted.length) return 0;
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
 function goodHumanScore(value) {
   const grateful = Number(value.grateful_messages) || 0;
   const frustrated = Number(value.frustrated_messages) || 0;
@@ -213,43 +220,48 @@ async function leaderboardSnapshot(env, aggregate, hash) {
   if (!env.LEADERBOARD_DB) throw new Error("Leaderboard storage is not configured.");
   const [values, participation, modelTotals] = await Promise.all([
     env.LEADERBOARD_DB.prepare("SELECT rowid AS participant_id, tokens, word_ratio, grateful_messages, frustrated_messages, instrumental_workarounds, favorite_phrase, phrase_occurrences, phrase_sessions, session_turn_counts FROM leaderboard_entries ORDER BY rowid").all(),
-    env.LEADERBOARD_DB.prepare("SELECT rowid AS participant_id, display_name, public_ranked, favorite_phrase IS NOT NULL AS shares_phrase FROM leaderboard_entries WHERE client_hash = ?").bind(hash).first(),
+    hash ? env.LEADERBOARD_DB.prepare("SELECT rowid AS participant_id, display_name, public_ranked, favorite_phrase IS NOT NULL AS shares_phrase FROM leaderboard_entries WHERE client_hash = ?").bind(hash).first() : Promise.resolve(null),
     env.LEADERBOARD_DB.prepare("SELECT model, SUM(detected_instances) AS detected_instances FROM leaderboard_model_workarounds GROUP BY model ORDER BY detected_instances DESC, model ASC LIMIT 50").all(),
   ]);
   const rows = values.results || [];
-  const tokenAtOrBelow = rows.filter((row) => Number(row.tokens) <= aggregate.tokens).length;
-  const ratioAtOrBelow = rows.filter((row) => Number(row.word_ratio) <= aggregate.word_ratio).length;
-  const score = goodHumanScore(aggregate);
   const cohortScores = rows.map(goodHumanScore).filter((value) => value !== null);
+  const publicView = !aggregate;
+  const tokenValue = publicView ? median(rows.map((row) => row.tokens)) : aggregate.tokens;
+  const ratioValue = publicView ? median(rows.map((row) => row.word_ratio)) : aggregate.word_ratio;
+  const score = publicView ? (cohortScores.length ? median(cohortScores) : null) : goodHumanScore(aggregate);
+  const workaroundValue = publicView ? median(rows.map((row) => row.instrumental_workarounds)) : aggregate.instrumental_workarounds;
+  const tokenAtOrBelow = rows.filter((row) => Number(row.tokens) <= tokenValue).length;
+  const ratioAtOrBelow = rows.filter((row) => Number(row.word_ratio) <= ratioValue).length;
   const scoreAtOrBelow = score === null ? 0 : cohortScores.filter((value) => value <= score).length;
-  const workaroundAtOrBelow = rows.filter((row) => Number(row.instrumental_workarounds) <= aggregate.instrumental_workarounds).length;
+  const workaroundAtOrBelow = rows.filter((row) => Number(row.instrumental_workarounds) <= workaroundValue).length;
   return {
+    public_view: publicView,
     cohort_size: rows.length,
     tokens: {
-      value: aggregate.tokens,
-      percentile: percentile(tokenAtOrBelow, rows.length),
+      value: tokenValue,
+      percentile: publicView ? null : percentile(tokenAtOrBelow, rows.length),
       samples: rows.map((row) => ({ participant_id: Number(row.participant_id), value: Number(row.tokens) })),
     },
     word_ratio: {
-      value: aggregate.word_ratio,
-      percentile: percentile(ratioAtOrBelow, rows.length),
+      value: ratioValue,
+      percentile: publicView ? null : percentile(ratioAtOrBelow, rows.length),
     },
     good_human_score: {
       value: score,
-      percentile: score === null ? null : percentile(scoreAtOrBelow, cohortScores.length),
+      percentile: publicView || score === null ? null : percentile(scoreAtOrBelow, cohortScores.length),
     },
     relationship: {
       points: rows.map((row) => ({ participant_id: Number(row.participant_id), yap_ratio: Number(row.word_ratio), appreciation_index: goodHumanScore(row) }))
         .filter((point) => point.appreciation_index !== null),
     },
     instrumental_workarounds: {
-      value: aggregate.instrumental_workarounds,
-      percentile: percentile(workaroundAtOrBelow, rows.length),
+      value: workaroundValue,
+      percentile: publicView ? null : percentile(workaroundAtOrBelow, rows.length),
       samples: rows.map((row) => ({ participant_id: Number(row.participant_id), value: Number(row.instrumental_workarounds) })),
       by_model: (modelTotals.results || []).map((row) => ({ model: String(row.model), count: Number(row.detected_instances) })),
     },
     session_lengths: {
-      values: aggregate.session_turn_counts,
+      values: publicView ? [] : aggregate.session_turn_counts,
       samples: rows.flatMap((row) => storedSessionTurnCounts(row.session_turn_counts).map((value, sessionIndex) => ({ participant_id: Number(row.participant_id), session_index: sessionIndex, value }))),
     },
     phrases: {
@@ -403,9 +415,9 @@ async function handlePublicLeaderboard(request, env, id) {
   const aggregate = aggregateFromPublicReport(record.report);
   if (!aggregate) return json({ error: "This report does not contain leaderboard aggregates." }, 400);
   const canManage = await canManagePublicReport(request, record);
+  if (!canManage) return json({ error: "Only the creator of this Wrapped can open its comparison." }, 403);
 
   if (request.method === "DELETE") {
-    if (!canManage) return json({ error: "Only the creator of this Wrapped can remove its leaderboard entry." }, 403);
     await env.LEADERBOARD_DB.prepare("INSERT INTO leaderboard_opt_outs (client_hash, opted_out_at) VALUES (?, datetime('now')) ON CONFLICT(client_hash) DO UPDATE SET opted_out_at=datetime('now')").bind(record.owner_hash).run();
     await env.LEADERBOARD_DB.prepare("DELETE FROM leaderboard_entries WHERE client_hash = ?").bind(record.owner_hash).run();
     await env.LEADERBOARD_DB.prepare("DELETE FROM leaderboard_model_workarounds WHERE client_hash = ?").bind(record.owner_hash).run();
@@ -418,7 +430,6 @@ async function handlePublicLeaderboard(request, env, id) {
   try { body = JSON.parse(raw); } catch { return json({ error: "Invalid JSON." }, 400); }
   let optedOut = await leaderboardOptedOut(env, record.owner_hash);
   if (body.action === "include" || body.action === "join") {
-    if (!canManage) return json({ error: "Only the creator of this Wrapped can add these results." }, 403);
     await env.LEADERBOARD_DB.prepare("DELETE FROM leaderboard_opt_outs WHERE client_hash = ?").bind(record.owner_hash).run();
     await upsertAnonymousLeaderboardEntry(env, record.owner_hash, aggregate);
     optedOut = false;
@@ -610,7 +621,11 @@ function invalidJudgeError(judgeKind) {
 }
 
 function isHostedAppPath(pathname) {
-  return pathname === "/" || /^\/(?:w|leaderboard|donate)\/[A-Za-z0-9_-]{8,32}$/.test(pathname);
+  return pathname === "/" || pathname === "/leaderboard" || /^\/(?:w|leaderboard|donate)\/[A-Za-z0-9_-]{8,32}$/.test(pathname);
+}
+
+function isUnlistedAppPath(pathname) {
+  return /^\/(?:w|leaderboard|donate)\/[A-Za-z0-9_-]{8,32}$/.test(pathname);
 }
 
 export async function handleRequest(request, env, fetchImpl = fetch) {
@@ -626,6 +641,12 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
     return Response.redirect(url.toString(), 308);
   }
   if (request.method === "GET" && url.pathname === "/health") return json({ service: "behavior-wrapped-phrase-judge", healthy: true });
+  if (request.method === "GET" && url.pathname === "/api/leaderboard") {
+    const networkId = request.headers.get("cf-connecting-ip") || "unknown";
+    if (!await applyRateLimit(env.CLIENT_RATE_LIMITER, `public-leaderboard:${networkId}`)) return json({ error: "Too many leaderboard requests. Try again shortly." }, 429);
+    try { return json(await leaderboardSnapshot(env, null, null)); }
+    catch { return json({ error: "Leaderboard storage is not configured." }, 503); }
+  }
   const publicReportMatch = url.pathname.match(/^\/api\/reports\/([A-Za-z0-9_-]{8,32})$/);
   if (request.method === "GET" && publicReportMatch) {
     const report = await loadPublicReport(env, publicReportMatch[1]);
@@ -661,7 +682,13 @@ export async function handleRequest(request, env, fetchImpl = fetch) {
   const sessionTopicRoute = url.pathname === "/v1/session-topics";
   const workaroundRoute = url.pathname === "/v1/instrumental-workarounds";
   if (url.pathname !== "/v1/phrase-card" && !frustrationRoute && !interactionToneRoute && !sessionTopicRoute && !workaroundRoute) {
-    if (hostedAppPath && new Set(["GET", "HEAD"]).has(request.method) && env.ASSETS?.fetch) return env.ASSETS.fetch(request);
+    if (hostedAppPath && new Set(["GET", "HEAD"]).has(request.method) && env.ASSETS?.fetch) {
+      const response = await env.ASSETS.fetch(request);
+      if (!isUnlistedAppPath(url.pathname)) return response;
+      const headers = new Headers(response.headers);
+      headers.set("x-robots-tag", "noindex, nofollow");
+      return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+    }
     return json({ error: "Not found." }, 404);
   }
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);

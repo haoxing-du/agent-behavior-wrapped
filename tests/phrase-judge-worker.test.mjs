@@ -199,6 +199,22 @@ test("worker serves the landing page from assets on the canonical domain", async
   assert.equal(assetUrl, "https://behaviorwrapped.com/");
 });
 
+test("worker indexes only the public leaderboard, not individual Wrapped routes", async () => {
+  const assetsEnv = {
+    ...env(),
+    ASSETS: { fetch: () => new Response("app", { headers: { "content-type": "text/html" } }) },
+  };
+  const publicResponse = await handleRequest(new Request("https://behaviorwrapped.com/leaderboard"), assetsEnv);
+  assert.equal(publicResponse.status, 200);
+  assert.equal(publicResponse.headers.get("x-robots-tag"), null);
+
+  for (const path of ["/w/shareSafe1234", "/leaderboard/shareSafe1234", "/donate/shareSafe1234"]) {
+    const response = await handleRequest(new Request(`https://behaviorwrapped.com${path}`), assetsEnv);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("x-robots-tag"), "noindex, nofollow");
+  }
+});
+
 test("worker keeps legacy API clients working without a redirect", async () => {
   const request = relayRequest(
     undefined,

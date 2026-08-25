@@ -122,7 +122,7 @@ test("requires explicit consent before storing a leaderboard entry", async () =>
   assert.match((await response.json()).error, /consent/i);
 });
 
-test("a published report is included anonymously by default", async () => {
+test("a report-specific leaderboard comparison is creator-only", async () => {
   const token = "d".repeat(64);
   const database = leaderboardDatabase(await sha256(token));
   const response = await handleRequest(new Request("https://example.com/api/reports/leaderReport123/leaderboard", {
@@ -130,13 +130,32 @@ test("a published report is included anonymously by default", async () => {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ action: "snapshot" }),
   }), { LEADERBOARD_DB: database, CLIENT_RATE_LIMITER: { limit: async () => ({ success: true }) } });
+  assert.equal(response.status, 403);
+  assert.match((await response.json()).error, /creator/i);
+  assert.equal(database.entry, null);
+});
+
+test("the public leaderboard exposes cohort medians without report management state", async () => {
+  const token = "f".repeat(64);
+  const database = leaderboardDatabase(await sha256(token));
+  const environment = { LEADERBOARD_DB: database, CLIENT_RATE_LIMITER: { limit: async () => ({ success: true }) } };
+  await handleRequest(new Request("https://example.com/api/reports/leaderReport123/leaderboard", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-behavior-wrapped-management": token },
+    body: JSON.stringify({ action: "snapshot" }),
+  }), environment);
+  const response = await handleRequest(new Request("https://example.com/api/leaderboard"), environment);
   assert.equal(response.status, 200);
   const snapshot = await response.json();
-  assert.equal(snapshot.can_manage, false);
-  assert.equal(snapshot.participation.joined, true);
-  assert.equal(database.entry.displayName, "Anonymous");
-  assert.equal(database.entry.publicRanked, 0);
-  assert.equal(database.entry.sharesPhrase, true);
+  assert.equal(snapshot.public_view, true);
+  assert.equal(snapshot.can_manage, undefined);
+  assert.deepEqual(snapshot.participation, { joined: false });
+  assert.equal(snapshot.tokens.value, aggregate.tokens);
+  assert.equal(snapshot.tokens.percentile, null);
+  assert.equal(snapshot.word_ratio.value, aggregate.word_ratio);
+  assert.equal(snapshot.good_human_score.value, 70);
+  assert.equal(snapshot.instrumental_workarounds.value, aggregate.instrumental_workarounds);
+  assert.deepEqual(snapshot.session_lengths.values, []);
 });
 
 test("the creator can persistently opt out and later add anonymous stats back", async () => {
