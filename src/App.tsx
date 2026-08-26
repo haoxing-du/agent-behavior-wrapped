@@ -304,7 +304,10 @@ function SharedWrapped({ id }: { id: string }) {
       ["Cache read", report.stats.tokenBreakdown.cacheRead],
       ["Cache creation", report.stats.tokenBreakdown.cacheCreation],
       ["Reasoning", report.stats.tokenBreakdown.reasoning],
-    ] as const).filter(([, count]) => count > 0).map(([label, count]) => ({ label, value: fmtCompact(count), percentage: report.stats.tokens ? count / report.stats.tokens * 100 : 0 })) : [];
+    ] as const)
+      .filter(([, count]) => count > 0)
+      .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+      .map(([label, count]) => ({ label, value: fmtCompact(count), percentage: report.stats.tokens ? count / report.stats.tokens * 100 : 0 })) : [];
     const interactionTone = report.stats.interactionTone;
     const stockPhrases = report.stats.stockPhrases;
     const sortedStockPhrases = stockPhrases?.slice().sort((left, right) => right.count - left.count || left.phrase.localeCompare(right.phrase, undefined, { sensitivity: "base" })).slice(0, 4);
@@ -312,7 +315,7 @@ function SharedWrapped({ id }: { id: string }) {
     const displayTopics = [...topics.filter((item) => item.topic !== "Other"), ...topics.filter((item) => item.topic === "Other")];
     const topTopic = displayTopics[0];
     const wrappedSlides: StorySlide[] = [
-    { kicker: "This month you went through", headline: fmtCompact(report.stats.tokens || 0), metricUnit: "tokens", detail: `That’s the complete Harry Potter series roughly ${harryPotterSeriesCount} times over. Input excludes separately reported cache tokens.`, tone: "ice", metric: true, rows: tokenBreakdownRows.length ? tokenBreakdownRows : undefined },
+    { kicker: "This month you went through", headline: fmtCompact(report.stats.tokens || 0), metricUnit: "tokens", detail: `That’s the complete Harry Potter series roughly ${harryPotterSeriesCount} times over.`, tone: "ice", metric: true, rows: tokenBreakdownRows.length ? tokenBreakdownRows : undefined },
     { kicker: "Your tokens were worth", headline: fmtUsd(report.stats.estimatedCostUsd || 0), detail: "", tone: "cost", rows: costEquivalents(report.stats.estimatedCostUsd || 0) },
     ...(leader ? [{ kicker: "Your most-used agent was", headline: leader.name, detail: `${leader.count} of ${report.stats.sessions} selected sessions.`, tone: "agents", rows: activeAgents.map((agent) => ({ label: agent.name, value: `${agent.percentage.toFixed(1)}%`, percentage: agent.percentage })) }] : []),
     ...(topModel ? [{ kicker: "Your top models", headline: `${topModel.percentage.toFixed(1)}%`, detail: `went to your #1 · ${topModel.name}`, tone: "models", rows: activeModels.slice(0, 4).map((model, index) => ({ label: model.name, value: `${model.percentage.toFixed(1)}%`, percentage: model.percentage, rank: index + 1 })) }] : []),
