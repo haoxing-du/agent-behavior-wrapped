@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { safeEvidenceText, redactText } from "./privacy.mjs";
 import { isFrustratedMessage, isGratefulMessage } from "./frustration-card.mjs";
+import { estimateModelUsageCost } from "./model-pricing.mjs";
 import { displayModelName } from "./model-names.mjs";
 
 export { displayModelName } from "./model-names.mjs";
@@ -251,15 +252,6 @@ function finding(kind, title, summary, method, score, evidence) {
   return { id: crypto.randomUUID(), kind, title, summary, method, confidence: confidence(score), evidence };
 }
 
-function ratesFor(model, agent) {
-  const value = String(model || "").toLowerCase();
-  if (value.includes("opus")) return { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 };
-  if (value.includes("sonnet")) return { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 };
-  if (value.includes("haiku")) return { input: 1, output: 5, cacheWrite: 1.25, cacheRead: 0.1 };
-  if (agent === "codex" || value.startsWith("gpt")) return { input: 1.25, output: 10, cacheWrite: 1.25, cacheRead: 0.125 };
-  return { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 };
-}
-
 function analyzeBehavior(sessionRecords) {
   const findings = [];
   for (const { sessionId, records } of sessionRecords) {
@@ -403,8 +395,7 @@ export function analyzeSessions(sessionRecords) {
         tokenBreakdown.reasoning += reasoning;
         const model = record?.message?.model || `${agent === "codex" ? "Codex" : "Claude"} model`;
         modelTokens.set(model, (modelTokens.get(model) || 0) + recordTokens);
-        const rates = ratesFor(model, agent);
-        estimatedCostUsd += (input * rates.input + (output + reasoning) * rates.output + cacheWrite * rates.cacheWrite + cacheRead * rates.cacheRead) / 1_000_000;
+        estimatedCostUsd += estimateModelUsageCost(usage, model, agent);
       }
       for (const tool of toolUses(record)) {
         toolCalls++;
@@ -460,7 +451,7 @@ export function analyzeSessions(sessionRecords) {
     agents,
     models,
     estimatedCostUsd: Number(estimatedCostUsd.toFixed(2)),
-    costEstimateMethod: "API-equivalent estimate using a local, inspectable model-family rate table.",
+    costEstimateMethod: "API-equivalent estimate using current standard list prices by exact model, including distinct cache-read, 5-minute cache-write, and 1-hour cache-write rates.",
   };
   return { stats, findings: analyzeBehavior(sessionRecords) };
 }

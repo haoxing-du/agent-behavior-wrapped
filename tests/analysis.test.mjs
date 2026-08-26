@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { discoverSessions, discoverCoworkSessions, discoverAllSessions, discoverAllSessionsAsync, defaultDateRange, sessionsInDefaultWindow, readRecords, readRecordsAsync } from "../server/discovery.mjs";
 import { analyzeSessions, makeDonationPreview } from "../server/analysis.mjs";
 import { redactText, safeEvidenceText } from "../server/privacy.mjs";
+import { estimateModelUsageCost, ratesFor } from "../server/model-pricing.mjs";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "projects");
 const codexRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "codex-sessions");
@@ -85,6 +86,34 @@ test("discovers and normalizes Claude Code, Cowork, and Codex sessions together"
   assert.equal(report.stats.models[0].name, "Claude Opus 4.8");
   assert.equal(report.stats.models[1].name, "GPT-5.6 Sol");
   assert.ok(report.stats.estimatedCostUsd > 0);
+});
+
+test("uses exact model prices and distinguishes 5-minute and 1-hour cache writes", () => {
+  assert.deepEqual(ratesFor("gpt-5.6-sol", "codex"), { input: 4, output: 20, cacheRead: 0.4, cacheWrite5m: 5, cacheWrite1h: 8 });
+  assert.deepEqual(ratesFor("gpt-5.6-luna", "codex"), { input: 0.2, output: 1.2, cacheRead: 0.02, cacheWrite5m: 0.25, cacheWrite1h: 0.4 });
+  assert.deepEqual(ratesFor("claude-sonnet-5", "claude"), { input: 2, output: 10, cacheRead: 0.2, cacheWrite5m: 2.5, cacheWrite1h: 4 });
+  assert.deepEqual(ratesFor("claude-fable-5", "claude"), { input: 10, output: 50, cacheRead: 1, cacheWrite5m: 12.5, cacheWrite1h: 20 });
+
+  const codexCost = estimateModelUsageCost({
+    input_tokens: 1_000_000,
+    output_tokens: 1_000_000,
+    reasoning_output_tokens: 1_000_000,
+    cache_read_input_tokens: 1_000_000,
+    cache_creation_input_tokens: 1_000_000,
+  }, "gpt-5.6-sol", "codex");
+  assert.equal(codexCost, 49.4);
+
+  const claudeCost = estimateModelUsageCost({
+    input_tokens: 1_000_000,
+    output_tokens: 1_000_000,
+    cache_read_input_tokens: 1_000_000,
+    cache_creation_input_tokens: 2_000_000,
+    cache_creation: {
+      ephemeral_5m_input_tokens: 1_000_000,
+      ephemeral_1h_input_tokens: 1_000_000,
+    },
+  }, "claude-opus-4-8", "claude");
+  assert.equal(claudeCost, 46.75);
 });
 
 test("discovers Cowork audit streams and removes replay and split-message duplication", async () => {
