@@ -295,6 +295,24 @@ test("counts fixed stock phrases only in assistant prose", () => {
   ]);
 });
 
+test("finds repeated exact user instructions without counting tool results", () => {
+  const report = analyzeSessions([
+    { sessionId: "instructions-one", records: [
+      { type: "user", message: { content: "Please keep your responses short. Always run the tests." } },
+      { type: "assistant", message: { content: "Understood." } },
+      { type: "user", isMeta: true, message: { content: "Please keep your responses short." } },
+      { type: "user", message: { content: "Please keep your responses short." } },
+    ] },
+    { sessionId: "instructions-two", records: [
+      { type: "user", message: { content: "Always run the tests. Please keep your responses short." } },
+    ] },
+  ]);
+  assert.deepEqual(report.stats.repeatedInstructions, [
+    { instruction: "Please keep your responses short.", occurrences: 3, distinctSessions: 2 },
+    { instruction: "Always run the tests.", occurrences: 2, distinctSessions: 2 },
+  ]);
+});
+
 test("detects a brief unprompted non-Latin language switch", () => {
   const report = analyzeSessions([{ sessionId: "language-anomaly", records: [
     { type: "user", message: { content: "Please summarize the result briefly." } },

@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { safeEvidenceText, redactText } from "./privacy.mjs";
+import { safeEvidenceText, redactAggregateText, redactText } from "./privacy.mjs";
 import { isFrustratedMessage, isGratefulMessage } from "./frustration-card.mjs";
 import { estimateModelUsageCost } from "./model-pricing.mjs";
 import { displayModelName } from "./model-names.mjs";
@@ -76,6 +76,36 @@ function stockPhraseCounts(texts) {
       return sum + [...proseText(value).matchAll(expression)].length;
     }, 0),
   }));
+}
+
+const instructionOpeningPattern = /^(?:please\s+)?(?:always|never|do not|don['’]t|avoid|be|check|commit|continue|focus|give|include|keep|make|only|prefer|push|remember|respond|run|show|stop|tell|use|write)\b/i;
+
+function repeatedInstructions(sessionRecords) {
+  const instructions = new Map();
+  for (let sessionIndex = 0; sessionIndex < sessionRecords.length; sessionIndex++) {
+    for (const record of sessionRecords[sessionIndex].records) {
+      if (record.type !== "user" || record.isMeta) continue;
+      const cleaned = redactAggregateText(proseText(visibleText(record)));
+      if (!cleaned || /\[(?:REDACTED|REMOVED)[^\]]*\]/i.test(cleaned)) continue;
+      for (const rawClause of cleaned.split(/(?<=[.!?])\s+|[;\n]+/)) {
+        const instruction = rawClause.replace(/^[-*\d.)\s]+/, "").replace(/\s+/g, " ").trim();
+        const words = instruction.match(/\p{L}+(?:['’]\p{L}+)?/gu) || [];
+        if (words.length < 3 || words.length > 18 || instruction.length > 160 || !instructionOpeningPattern.test(instruction)) continue;
+        if (/https?:\/\/|(?:\/Users\/|\/home\/)|```|<[^>]+>|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(instruction)) continue;
+        const key = instruction.normalize("NFKC").replace(/[’‘]/g, "'").toLocaleLowerCase().replace(/[^\p{L}'\s]/gu, "").replace(/\s+/g, " ").trim();
+        if (!key) continue;
+        const item = instructions.get(key) || { instruction, occurrences: 0, sessions: new Set() };
+        item.occurrences++;
+        item.sessions.add(sessionIndex);
+        instructions.set(key, item);
+      }
+    }
+  }
+  return [...instructions.values()]
+    .filter((item) => item.occurrences >= 2)
+    .sort((left, right) => right.sessions.size - left.sessions.size || right.occurrences - left.occurrences || left.instruction.localeCompare(right.instruction))
+    .slice(0, 4)
+    .map((item) => ({ instruction: item.instruction, occurrences: item.occurrences, distinctSessions: item.sessions.size }));
 }
 
 const anomalyScripts = [
@@ -442,6 +472,7 @@ export function analyzeSessions(sessionRecords) {
       method: "Counts user messages matching conservative frustration or gratitude phrase patterns; this is an approximate tone signal, not a judgment of emotion.",
     },
     stockPhrases: stockPhraseCounts(assistantProse),
+    repeatedInstructions: repeatedInstructions(sessionRecords),
     outputLanguages: languageBreakdown(assistantProse),
     languageAnomaly: languageAnomalyBreakdown(sessionRecords),
     languageMethod: "Estimates natural-language word share in assistant text after removing fenced code, inline code, URLs, paths, and markup. Script detection and small Latin-language lexicons are approximate.",

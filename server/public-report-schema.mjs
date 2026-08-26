@@ -36,6 +36,18 @@ function safeStockPhrases(value) {
   return stockPhraseLabels.map((phrase) => ({ phrase, count: counts.get(phrase) || 0 }));
 }
 
+function safeRepeatedInstructions(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 4).flatMap((item) => {
+    const instruction = safeText(item?.instruction, 160).trim();
+    const occurrences = Math.round(safeNumber(item?.occurrences, 1_000_000));
+    const distinctSessions = Math.round(safeNumber(item?.distinctSessions, 1_000_000));
+    if (!instruction || occurrences < 2 || distinctSessions < 1 || distinctSessions > occurrences) return [];
+    if (/\[(?:REDACTED|REMOVED)[^\]]*\]|https?:\/\/|(?:\/Users\/|\/home\/)|```|<[^>]+>|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(instruction)) return [];
+    return [{ instruction, occurrences, distinctSessions }];
+  });
+}
+
 export function sanitizePublicReport(value) {
   if (!value || typeof value !== "object" || Array.isArray(value) || !/^[A-Za-z0-9_-]{8,32}$/.test(value.id || "")) return null;
   const stats = value.stats;
@@ -100,6 +112,7 @@ export function sanitizePublicReport(value) {
         analyzedMessages: Math.round(safeNumber(stats.interactionTone?.analyzedMessages, 1_000_000)),
       },
       ...(safeStockPhraseCounts ? { stockPhrases: safeStockPhraseCounts } : {}),
+      repeatedInstructions: safeRepeatedInstructions(stats.repeatedInstructions),
       outputLanguages: safeBreakdown(stats.outputLanguages, "language", "words", allowedLanguages),
       languageAnomaly: safeLanguageAnomaly,
       topics: safeBreakdown(stats.topics, "topic", "tokens", new Set(["Coding", "Writing", "Personal advice", "Research & search", "Planning", "Data & analysis", "Other"])),
