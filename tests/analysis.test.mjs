@@ -122,12 +122,13 @@ test("discovers Cowork audit streams and removes replay and split-message duplic
   assert.equal(catalog.sessions[0].agent, "cowork");
   assert.equal(catalog.sessions[0].agentName, "Cowork");
   assert.equal(catalog.sessions[0].promptCount, 2);
-  assert.equal(catalog.sessions[0].recordCount, 5);
+  assert.equal(catalog.sessions[0].recordCount, 6);
   assert.equal("file" in catalog.sessions[0], false);
   const session = catalog.index.get(catalog.sessions[0].id);
   const records = await readRecordsAsync(session.file, "cowork");
   assert.equal(records.filter((record) => record.type === "user" && !record.isMeta).length, 2);
   assert.equal(records.filter((record) => record.type === "assistant").length, 2);
+  assert.equal(records.filter((record) => record.subtype === "turn_duration").length, 1);
   assert.equal(records.filter((record) => record.message?.usage).length, 2);
   assert.equal(JSON.stringify(records).includes("I should keep this concise"), true);
   const report = analyzeSessions([{ sessionId: session.id, agent: "cowork", records }]);
@@ -138,6 +139,14 @@ test("discovers Cowork audit streams and removes replay and split-message duplic
     { agent: "claude", count: 0, percentage: 0 },
     { agent: "codex", count: 0, percentage: 0 },
   ]);
+});
+
+test("uses explicit completed-turn durations for the longest uninterrupted run", () => {
+  const report = analyzeSessions([
+    { sessionId: "claude-run", agent: "claude", records: [{ type: "system", subtype: "turn_duration", durationMs: 75_000 }] },
+    { sessionId: "codex-run", agent: "codex", records: [{ type: "system", subtype: "turn_duration", durationMs: 182_450 }] },
+  ]);
+  assert.deepEqual(report.stats.longestUninterruptedRun, { durationMs: 182_450, agent: "codex", agentName: "Codex" });
 });
 
 test("normalizes structured Codex tool records into private-safe workaround evidence", () => {

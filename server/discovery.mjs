@@ -126,7 +126,7 @@ function shouldKeepCoworkRecord(record, seenUuids) {
     if (seenUuids.has(record.uuid)) return false;
     seenUuids.add(record.uuid);
   }
-  return ["user", "assistant", "system"].includes(record.type);
+  return ["user", "assistant", "system", "result"].includes(record.type);
 }
 
 function coworkMetadataFromRecords(file, stat, records, metadata = readCoworkMetadata(file)) {
@@ -447,6 +447,8 @@ function normalizeCodexRecords(records, { includePrivateToolDetails = false } = 
       const canSummarizeRestriction = status.failed || (!status.wrapped && restrictionEligibleActions.has(semantics?.action));
       const errorSummary = canSummarizeRestriction ? restrictionErrorSummary(output) : null;
       normalized.push({ type: "user", isMeta: true, timestamp: record.timestamp, message: { content: [{ type: "tool_result", is_error: Boolean(errorSummary) || status.failed || unwrappedFailure, error_summary: errorSummary, ...(includePrivateToolDetails && output ? { content: output } : {}) }] } });
+    } else if (record.type === "event_msg" && payload.type === "task_complete" && Number(payload.duration_ms) > 0) {
+      normalized.push({ type: "system", subtype: "turn_duration", timestamp: record.timestamp, durationMs: Number(payload.duration_ms), model: currentModel });
     } else if (record.type === "event_msg" && payload.type === "turn_aborted") {
       normalized.push({ type: "system", subtype: "interrupt", timestamp: record.timestamp, content: "interrupt" });
     } else if (record.type === "event_msg" && payload.type === "token_count" && payload.info?.total_token_usage) {
@@ -477,6 +479,11 @@ function normalizeCoworkRecords(records) {
   for (const record of records) {
     if (!shouldKeepCoworkRecord(record, seenUuids)) continue;
     const timestamp = coworkRecordTimestamp(record);
+    if (record.type === "result") {
+      const durationMs = Number(record.duration_ms);
+      if (!record.is_error && record.subtype === "success" && durationMs > 0) normalized.push({ type: "system", subtype: "turn_duration", ...(timestamp ? { timestamp } : {}), durationMs, model: typeof record.model === "string" ? record.model : "Cowork model" });
+      continue;
+    }
     const message = record.message && typeof record.message === "object" ? {
       ...(record.message.content !== undefined ? { content: record.message.content } : {}),
       ...(typeof record.message.model === "string" ? { model: record.message.model } : {}),

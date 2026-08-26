@@ -379,6 +379,7 @@ export function analyzeSessions(sessionRecords) {
   let gratefulMessages = 0;
   let userApologies = 0;
   let agentApologies = 0;
+  let longestUninterruptedRun = null;
   const assistantProse = [];
   const sessionTurnCounts = [];
   for (const { records, agent = "claude" } of sessionRecords) {
@@ -397,6 +398,13 @@ export function analyzeSessions(sessionRecords) {
     };
     for (const record of records) {
       const text = visibleText(record);
+      if (record.type === "system" && record.subtype === "turn_duration") {
+        const durationMs = Number(record.durationMs);
+        if (Number.isFinite(durationMs) && durationMs > 0 && (!longestUninterruptedRun || durationMs > longestUninterruptedRun.durationMs)) {
+          const definition = agentDefinitions.find((item) => item.agent === agent);
+          longestUninterruptedRun = { durationMs: Math.round(durationMs), agent, agentName: definition?.name || "Agent" };
+        }
+      }
       if (record.type === "user" && !record.isMeta && text) {
         finishResponse();
         hasCurrentPrompt = true;
@@ -484,6 +492,7 @@ export function analyzeSessions(sessionRecords) {
       agent: agentApologies,
       method: "Counts visible messages containing explicit admissions of error or fault; generic capability apologies are excluded.",
     },
+    longestUninterruptedRun,
     stockPhrases: stockPhraseCounts(assistantProse),
     repeatedInstructions: repeatedInstructions(sessionRecords),
     outputLanguages: languageBreakdown(assistantProse),

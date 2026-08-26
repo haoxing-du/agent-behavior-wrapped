@@ -64,6 +64,12 @@ export function sanitizePublicReport(value) {
   const safeTokenBreakdown = tokenBreakdown && Object.values(tokenBreakdown).reduce((sum, count) => sum + count, 0) === safeTokens ? tokenBreakdown : null;
   const safeStockPhraseCounts = safeStockPhrases(stats.stockPhrases);
   const safeSessionTurnCounts = safeTurnCounts(stats.sessionTurnCounts);
+  const runAgent = allowedAgents.has(stats.longestUninterruptedRun?.agent) ? stats.longestUninterruptedRun.agent : null;
+  const safeLongestUninterruptedRun = runAgent && safeNumber(stats.longestUninterruptedRun?.durationMs, 7 * 24 * 60 * 60 * 1000) > 0 ? {
+    durationMs: Math.round(safeNumber(stats.longestUninterruptedRun.durationMs, 7 * 24 * 60 * 60 * 1000)),
+    agent: runAgent,
+    agentName: safeText(stats.longestUninterruptedRun?.agentName, 30),
+  } : null;
   const phrase = value.phraseCard?.phrase;
   const safePhrase = typeof phrase === "string" && /^[a-z]+(?:'[a-z]+)?(?: [a-z]+(?:'[a-z]+)?){3,9}$/.test(phrase) ? {
     phrase,
@@ -106,6 +112,7 @@ export function sanitizePublicReport(value) {
       averageAgentResponseWords: Math.round(safeNumber(stats.averageAgentResponseWords)), averageUserInputWords: Math.round(safeNumber(stats.averageUserInputWords)),
       longestSessionTurns: Math.max(0, ...safeSessionTurnCounts),
       sessionTurnCounts: safeSessionTurnCounts,
+      longestUninterruptedRun: safeLongestUninterruptedRun,
       interactionTone: {
         frustratedMessages: Math.round(safeNumber(stats.interactionTone?.frustratedMessages, 1_000_000)),
         gratefulMessages: Math.round(safeNumber(stats.interactionTone?.gratefulMessages, 1_000_000)),
