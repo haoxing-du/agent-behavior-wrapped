@@ -111,6 +111,10 @@ export function sanitizePublicReport(value) {
         gratefulMessages: Math.round(safeNumber(stats.interactionTone?.gratefulMessages, 1_000_000)),
         analyzedMessages: Math.round(safeNumber(stats.interactionTone?.analyzedMessages, 1_000_000)),
       },
+      apologyCounts: {
+        user: Math.round(safeNumber(stats.apologyCounts?.user, 1_000_000)),
+        agent: Math.round(safeNumber(stats.apologyCounts?.agent, 1_000_000)),
+      },
       ...(safeStockPhraseCounts ? { stockPhrases: safeStockPhraseCounts } : {}),
       repeatedInstructions: safeRepeatedInstructions(stats.repeatedInstructions),
       outputLanguages: safeBreakdown(stats.outputLanguages, "language", "words", allowedLanguages),

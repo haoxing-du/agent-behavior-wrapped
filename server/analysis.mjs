@@ -79,6 +79,8 @@ function stockPhraseCounts(texts) {
 }
 
 const instructionOpeningPattern = /^(?:please\s+)?(?:always|never|do not|don['’]t|avoid|be|check|commit|continue|focus|give|include|keep|make|only|prefer|push|remember|respond|run|show|stop|tell|use|write)\b/i;
+const userAccountabilityPattern = /\b(?:my (?:mistake|fault|bad)|i (?:was|am|got (?:that|this|it)) wrong|you (?:were|are) right|(?:i['’]m )?sorry[,—–-]? (?:i (?:was|got|missed|misunderstood|overlooked|forgot|made)|that was|you were))\b/i;
+const agentAccountabilityPattern = /\b(?:my (?:mistake|fault|error)|i (?:was|am|got (?:that|this|it)) wrong|you(?:['’]re| are| were) right|(?:i['’]m )?sorry[,—–-]? (?:i (?:was|got|missed|misunderstood|overlooked|forgot|made)|that was|you were))\b/i;
 
 function repeatedInstructions(sessionRecords) {
   const instructions = new Map();
@@ -375,6 +377,8 @@ export function analyzeSessions(sessionRecords) {
   let agentResponseCount = 0;
   let frustratedMessages = 0;
   let gratefulMessages = 0;
+  let userApologies = 0;
+  let agentApologies = 0;
   const assistantProse = [];
   const sessionTurnCounts = [];
   for (const { records, agent = "claude" } of sessionRecords) {
@@ -401,10 +405,14 @@ export function analyzeSessions(sessionRecords) {
         sessionTurns++;
         if (isFrustratedMessage(text)) frustratedMessages++;
         if (isGratefulMessage(text)) gratefulMessages++;
+        if (userAccountabilityPattern.test(proseText(text))) userApologies++;
       } else if (record.type === "assistant" && hasCurrentPrompt && text) {
         currentResponseWords += wordCount(text);
       }
-      if (record.type === "assistant" && text) assistantProse.push(text);
+      if (record.type === "assistant" && text) {
+        assistantProse.push(text);
+        if (agentAccountabilityPattern.test(proseText(text))) agentApologies++;
+      }
       const d = day(record.timestamp);
       if (d) activeDays.add(d);
       if (record.type === "user" && !record.isMeta && text) prompts++;
@@ -470,6 +478,11 @@ export function analyzeSessions(sessionRecords) {
       gratefulMessages,
       analyzedMessages: userInputCount,
       method: "Counts user messages matching conservative frustration or gratitude phrase patterns; this is an approximate tone signal, not a judgment of emotion.",
+    },
+    apologyCounts: {
+      user: userApologies,
+      agent: agentApologies,
+      method: "Counts visible messages containing explicit admissions of error or fault; generic capability apologies are excluded.",
     },
     stockPhrases: stockPhraseCounts(assistantProse),
     repeatedInstructions: repeatedInstructions(sessionRecords),

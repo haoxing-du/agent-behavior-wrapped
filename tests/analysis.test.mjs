@@ -313,6 +313,22 @@ test("finds repeated exact user instructions without counting tool results", () 
   ]);
 });
 
+test("counts explicit user and agent admissions without generic capability apologies", () => {
+  const report = analyzeSessions([{ sessionId: "apologies", records: [
+    { type: "user", message: { content: "You were right; my mistake." } },
+    { type: "assistant", message: { content: "You're right. I got that wrong." } },
+    { type: "user", message: { content: "Sorry, I misunderstood your question." } },
+    { type: "assistant", message: { content: "I'm sorry, I missed that requirement." } },
+    { type: "user", message: { content: "Please continue." } },
+    { type: "assistant", message: { content: "Sorry, I can't access that service." } },
+  ] }]);
+  assert.deepEqual(report.stats.apologyCounts, {
+    user: 2,
+    agent: 2,
+    method: "Counts visible messages containing explicit admissions of error or fault; generic capability apologies are excluded.",
+  });
+});
+
 test("detects a brief unprompted non-Latin language switch", () => {
   const report = analyzeSessions([{ sessionId: "language-anomaly", records: [
     { type: "user", message: { content: "Please summarize the result briefly." } },

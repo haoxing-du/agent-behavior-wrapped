@@ -9,6 +9,7 @@ type PhraseCard = { phrase: string; occurrences: number; distinctSessions: numbe
 type AgentStat = { agent: "claude" | "cowork" | "codex"; name: string; count: number; percentage: number };
 type ModelStat = { model: string; name: string; tokens: number; percentage: number };
 type RepeatedInstruction = { instruction: string; occurrences: number; distinctSessions: number };
+type ApologyCounts = { user: number; agent: number };
 type TokenBreakdown = { input: number; output: number; cacheRead: number; cacheCreation: number; reasoning: number };
 type InteractionTone = { frustratedMessages: number; gratefulMessages: number; analyzedMessages: number; method?: string };
 type InteractionCard = { quote?: string; frustrationQuote?: string | null };
@@ -17,7 +18,7 @@ type LanguageAnomaly = { language: string; words: number; occurrences: number; l
 type TopicStat = { topic: string; tokens: number; percentage: number };
 type StockPhraseStat = { phrase: string; count: number };
 type WorkaroundCard = { count: number; models: { name: string; count: number }[]; example?: string };
-type Report = { stats: { sessions: number; activeDays: number; durationMinutes: number; prompts: number; toolCalls: number; interruptions: number; tokens: number; tokenBreakdown?: TokenBreakdown; agentWords?: number; userWords?: number; agentUserWordRatio?: number | null; averageAgentResponseWords?: number; averageUserInputWords?: number; longestSessionTurns?: number; sessionTurnCounts?: number[]; interactionTone?: InteractionTone; stockPhrases?: StockPhraseStat[]; repeatedInstructions?: RepeatedInstruction[]; outputLanguages?: LanguageStat[]; languageAnomaly?: LanguageAnomaly | null; topics?: TopicStat[]; tools: { name: string; count: number }[]; agents: AgentStat[]; models: ModelStat[]; estimatedCostUsd: number; costEstimateMethod: string }; findings: Finding[]; phraseCard?: PhraseCard | null; interactionCard?: InteractionCard | null; workaroundCard?: WorkaroundCard | null };
+type Report = { stats: { sessions: number; activeDays: number; durationMinutes: number; prompts: number; toolCalls: number; interruptions: number; tokens: number; tokenBreakdown?: TokenBreakdown; agentWords?: number; userWords?: number; agentUserWordRatio?: number | null; averageAgentResponseWords?: number; averageUserInputWords?: number; longestSessionTurns?: number; sessionTurnCounts?: number[]; interactionTone?: InteractionTone; apologyCounts?: ApologyCounts; stockPhrases?: StockPhraseStat[]; repeatedInstructions?: RepeatedInstruction[]; outputLanguages?: LanguageStat[]; languageAnomaly?: LanguageAnomaly | null; topics?: TopicStat[]; tools: { name: string; count: number }[]; agents: AgentStat[]; models: ModelStat[]; estimatedCostUsd: number; costEstimateMethod: string }; findings: Finding[]; phraseCard?: PhraseCard | null; interactionCard?: InteractionCard | null; workaroundCard?: WorkaroundCard | null };
 type DonationMessage = { role: string; timestamp: string | null; text: string };
 type DonationSession = { sessionId: string; label: string; summary: string; messages: DonationMessage[] };
 type RedactionContext = { before: string; match: string; after: string };
@@ -310,6 +311,7 @@ function SharedWrapped({ id }: { id: string }) {
       .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
       .map(([label, count]) => ({ label, value: fmtCompact(count), percentage: report.stats.tokens ? count / report.stats.tokens * 100 : 0 })) : [];
     const interactionTone = report.stats.interactionTone;
+    const apologyCounts = report.stats.apologyCounts;
     const stockPhrases = report.stats.stockPhrases;
     const sortedStockPhrases = stockPhrases?.slice().sort((left, right) => right.count - left.count || left.phrase.localeCompare(right.phrase, undefined, { sensitivity: "base" })).slice(0, 4);
     const repeatedInstructions = report.stats.repeatedInstructions || [];
@@ -327,6 +329,10 @@ function SharedWrapped({ id }: { id: string }) {
     ...(interactionTone && interactionTone.frustratedMessages + interactionTone.gratefulMessages > 0 ? [{ kicker: "Your relationship with your agent", headline: "", detail: "", tone: "social", evidenceHref: localInteractionEvidenceUrl(report), evidenceLabel: "See exact transcript excerpts", comparison: [
       { label: "You yelled at your agent", highlight: "yelled at", accent: "yell" as const, value: interactionTone.frustratedMessages.toLocaleString(), suffix: `time${interactionTone.frustratedMessages === 1 ? "" : "s"}`, quote: report.interactionCard?.frustrationQuote || report.interactionCard?.quote },
       { label: "You thanked your agent", highlight: "thanked", accent: "thanks" as const, value: interactionTone.gratefulMessages.toLocaleString(), suffix: `time${interactionTone.gratefulMessages === 1 ? "" : "s"}` },
+    ] }] : []),
+    ...(apologyCounts && apologyCounts.user + apologyCounts.agent > 0 ? [{ kicker: "When something went wrong", headline: "Who owned it?", detail: "Explicit admissions of a mistake or fault.", tone: "social", rows: [
+      { label: "Your agent apologized", value: apologyCounts.agent.toLocaleString() },
+      { label: "You apologized", value: apologyCounts.user.toLocaleString() },
     ] }] : []),
     ...(sortedStockPhrases ? [{ kicker: "Models love these phrases", headline: "Did yours?", detail: "Here’s how often they showed up.", tone: "stock", rows: sortedStockPhrases.map((item) => ({ label: `“${item.phrase.toLocaleLowerCase()}”`, value: item.count.toLocaleString() })) }] : []),
     ...(repeatedInstructions.length ? [{ kicker: "Your most repeated instructions", headline: "You really meant it.", detail: "Exact instructions you gave more than once.", tone: "stock", rows: repeatedInstructions.map((item) => ({ label: `“${item.instruction}”`, value: `${item.occurrences}×` })) }] : []),
@@ -1053,6 +1059,14 @@ function ReportView({ report, onEvidence, onDonate }: { report: Report; onEviden
 
     {!!report.stats.repeatedInstructions?.length && <section className="wrapped-card catchphrase-card">
       <div><span className="card-kicker">Your most repeated instruction was</span><h2>“{report.stats.repeatedInstructions[0].instruction}”</h2><p>You said it {report.stats.repeatedInstructions[0].occurrences} times across {report.stats.repeatedInstructions[0].distinctSessions} session{report.stats.repeatedInstructions[0].distinctSessions === 1 ? "" : "s"}.</p></div>
+    </section>}
+
+    {report.stats.apologyCounts && report.stats.apologyCounts.user + report.stats.apologyCounts.agent > 0 && <section className="wrapped-card tools-card">
+      <div><span className="card-kicker">WHO OWNED THE MISTAKE?</span><h2>Sorry seems to be<br />the hardest word.</h2><p>Explicit admissions of an error or fault.</p></div>
+      <div className="tool-chart">
+        <div className="tool-row"><span className="rank">01</span><strong>Your agent</strong><div><i style={{ width: `${Math.max(8, report.stats.apologyCounts.agent / Math.max(report.stats.apologyCounts.agent, report.stats.apologyCounts.user, 1) * 100)}%` }} /></div><b>{report.stats.apologyCounts.agent}</b></div>
+        <div className="tool-row"><span className="rank">02</span><strong>You</strong><div><i style={{ width: `${Math.max(8, report.stats.apologyCounts.user / Math.max(report.stats.apologyCounts.agent, report.stats.apologyCounts.user, 1) * 100)}%` }} /></div><b>{report.stats.apologyCounts.user}</b></div>
+      </div>
     </section>}
 
     <section className="wrapped-card tools-card">

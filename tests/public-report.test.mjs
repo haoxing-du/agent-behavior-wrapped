@@ -17,6 +17,7 @@ function reportFixture() {
       longestSessionTurns: 999,
       sessionTurnCounts: [12, 2, 51, 0, -1, "private"],
       interactionTone: { frustratedMessages: 3, gratefulMessages: 7, analyzedMessages: 20, method: "private implementation detail" },
+      apologyCounts: { user: 2, agent: 5, method: "private apology method" },
       stockPhrases: [{ phrase: "You're right", count: 8 }, { phrase: "Say the word", count: 5 }, { phrase: "genuinely", count: 3 }, { phrase: "one wrinkle", count: 2 }, { phrase: "load bearing", count: 7 }, { phrase: "the full picture", count: 6 }, { phrase: "delve", count: 4 }, { phrase: "private custom phrase", count: 99 }],
       repeatedInstructions: [{ instruction: "Please keep your responses short.", occurrences: 5, distinctSessions: 3 }, { instruction: "/Users/private/do this", occurrences: 9, distinctSessions: 2 }],
       outputLanguages: [{ language: "English", words: 6_000, percentage: 75 }, { language: "Spanish", words: 2_000, percentage: 25 }, { language: "Private language", words: 1, percentage: 1 }],
@@ -45,6 +46,7 @@ test("sanitizes a hosted report to a strict share-safe shape", () => {
   assert.equal(safe.stats.longestSessionTurns, 51);
   assert.deepEqual(safe.stats.sessionTurnCounts, [2, 12, 51]);
   assert.deepEqual(safe.stats.interactionTone, { frustratedMessages: 3, gratefulMessages: 7, analyzedMessages: 20 });
+  assert.deepEqual(safe.stats.apologyCounts, { user: 2, agent: 5 });
   assert.deepEqual(safe.stats.stockPhrases, [{ phrase: "You're right", count: 8 }, { phrase: "Say the word", count: 5 }, { phrase: "genuinely", count: 3 }, { phrase: "one wrinkle", count: 2 }, { phrase: "load bearing", count: 7 }, { phrase: "the full picture", count: 6 }, { phrase: "delve", count: 4 }]);
   assert.deepEqual(safe.stats.repeatedInstructions, [{ instruction: "Please keep your responses short.", occurrences: 5, distinctSessions: 3 }]);
   assert.deepEqual(safe.stats.outputLanguages.map((item) => item.language), ["English", "Spanish"]);
