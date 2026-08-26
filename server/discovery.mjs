@@ -421,7 +421,7 @@ function normalizeCodexRecords(records, { includePrivateToolDetails = false } = 
   let hasSeenModelContext = false;
   const pendingTools = new Map();
   const anonymousTools = [];
-  let previousUsage = { input_tokens: 0, output_tokens: 0, cache_write_input_tokens: 0, cached_input_tokens: 0 };
+  let previousUsage = { input_tokens: 0, output_tokens: 0, cache_write_input_tokens: 0, cached_input_tokens: 0, reasoning_output_tokens: 0 };
   for (const record of records) {
     const payload = record?.payload || {};
     if (record.type === "turn_context" && typeof payload.model === "string") {
@@ -462,6 +462,7 @@ function normalizeCodexRecords(records, { includePrivateToolDetails = false } = 
           output_tokens: usage.output_tokens,
           cache_creation_input_tokens: usage.cache_write_input_tokens,
           cache_read_input_tokens: usage.cached_input_tokens,
+          reasoning_output_tokens: usage.reasoning_output_tokens,
         } },
       });
     }

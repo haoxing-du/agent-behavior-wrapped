@@ -26,7 +26,8 @@ function sessionTokens(records) {
     return total + (Number(usage.input_tokens) || 0)
       + (Number(usage.output_tokens) || 0)
       + (Number(usage.cache_creation_input_tokens) || 0)
-      + (Number(usage.cache_read_input_tokens) || 0);
+      + (Number(usage.cache_read_input_tokens) || 0)
+      + (Number(usage.reasoning_output_tokens) || 0);
   }, 0);
 }
 

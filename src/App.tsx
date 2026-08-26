@@ -8,6 +8,7 @@ type Finding = { id: string; kind: string; title: string; summary: string; metho
 type PhraseCard = { phrase: string; occurrences: number; distinctSessions: number; model: string; provider: string; latencyMs: number; method: string; candidateCount: number };
 type AgentStat = { agent: "claude" | "cowork" | "codex"; name: string; count: number; percentage: number };
 type ModelStat = { model: string; name: string; tokens: number; percentage: number };
+type TokenBreakdown = { input: number; output: number; cacheRead: number; cacheCreation: number; reasoning: number };
 type InteractionTone = { frustratedMessages: number; gratefulMessages: number; analyzedMessages: number; method?: string };
 type InteractionCard = { quote?: string; frustrationQuote?: string | null };
 type LanguageStat = { language: string; words: number; percentage: number };
@@ -15,7 +16,7 @@ type LanguageAnomaly = { language: string; words: number; occurrences: number; l
 type TopicStat = { topic: string; tokens: number; percentage: number };
 type StockPhraseStat = { phrase: string; count: number };
 type WorkaroundCard = { count: number; models: { name: string; count: number }[]; example?: string };
-type Report = { stats: { sessions: number; activeDays: number; durationMinutes: number; prompts: number; toolCalls: number; interruptions: number; tokens: number; agentWords?: number; userWords?: number; agentUserWordRatio?: number | null; averageAgentResponseWords?: number; averageUserInputWords?: number; longestSessionTurns?: number; sessionTurnCounts?: number[]; interactionTone?: InteractionTone; stockPhrases?: StockPhraseStat[]; outputLanguages?: LanguageStat[]; languageAnomaly?: LanguageAnomaly | null; topics?: TopicStat[]; tools: { name: string; count: number }[]; agents: AgentStat[]; models: ModelStat[]; estimatedCostUsd: number; costEstimateMethod: string }; findings: Finding[]; phraseCard?: PhraseCard | null; interactionCard?: InteractionCard | null; workaroundCard?: WorkaroundCard | null };
+type Report = { stats: { sessions: number; activeDays: number; durationMinutes: number; prompts: number; toolCalls: number; interruptions: number; tokens: number; tokenBreakdown?: TokenBreakdown; agentWords?: number; userWords?: number; agentUserWordRatio?: number | null; averageAgentResponseWords?: number; averageUserInputWords?: number; longestSessionTurns?: number; sessionTurnCounts?: number[]; interactionTone?: InteractionTone; stockPhrases?: StockPhraseStat[]; outputLanguages?: LanguageStat[]; languageAnomaly?: LanguageAnomaly | null; topics?: TopicStat[]; tools: { name: string; count: number }[]; agents: AgentStat[]; models: ModelStat[]; estimatedCostUsd: number; costEstimateMethod: string }; findings: Finding[]; phraseCard?: PhraseCard | null; interactionCard?: InteractionCard | null; workaroundCard?: WorkaroundCard | null };
 type DonationMessage = { role: string; timestamp: string | null; text: string };
 type DonationSession = { sessionId: string; label: string; summary: string; messages: DonationMessage[] };
 type RedactionContext = { before: string; match: string; after: string };
@@ -297,6 +298,13 @@ function SharedWrapped({ id }: { id: string }) {
     const sessionTurnCounts = (report.stats.sessionTurnCounts || []).filter((value) => Number.isFinite(value) && value >= 1);
     const longestSessionTurns = Math.max(0, ...sessionTurnCounts);
     const harryPotterSeriesCount = fmtSeriesEquivalent(report.stats.tokens || 0, 1_450_000);
+    const tokenBreakdownRows = report.stats.tokenBreakdown ? ([
+      ["Input", report.stats.tokenBreakdown.input],
+      ["Output", report.stats.tokenBreakdown.output],
+      ["Cache read", report.stats.tokenBreakdown.cacheRead],
+      ["Cache creation", report.stats.tokenBreakdown.cacheCreation],
+      ["Reasoning", report.stats.tokenBreakdown.reasoning],
+    ] as const).filter(([, count]) => count > 0).map(([label, count]) => ({ label, value: fmtCompact(count), percentage: report.stats.tokens ? count / report.stats.tokens * 100 : 0 })) : [];
     const interactionTone = report.stats.interactionTone;
     const stockPhrases = report.stats.stockPhrases;
     const sortedStockPhrases = stockPhrases?.slice().sort((left, right) => right.count - left.count || left.phrase.localeCompare(right.phrase, undefined, { sensitivity: "base" })).slice(0, 4);
@@ -304,7 +312,7 @@ function SharedWrapped({ id }: { id: string }) {
     const displayTopics = [...topics.filter((item) => item.topic !== "Other"), ...topics.filter((item) => item.topic === "Other")];
     const topTopic = displayTopics[0];
     const wrappedSlides: StorySlide[] = [
-    { kicker: "This month you went through", headline: fmtCompact(report.stats.tokens || 0), metricUnit: "tokens", detail: `That’s the complete Harry Potter series roughly ${harryPotterSeriesCount} times over.`, tone: "ice", metric: true },
+    { kicker: "This month you went through", headline: fmtCompact(report.stats.tokens || 0), metricUnit: "tokens", detail: `That’s the complete Harry Potter series roughly ${harryPotterSeriesCount} times over. Input excludes separately reported cache tokens.`, tone: "ice", metric: true, rows: tokenBreakdownRows.length ? tokenBreakdownRows : undefined },
     { kicker: "Your tokens were worth", headline: fmtUsd(report.stats.estimatedCostUsd || 0), detail: "", tone: "cost", rows: costEquivalents(report.stats.estimatedCostUsd || 0) },
     ...(leader ? [{ kicker: "Your most-used agent was", headline: leader.name, detail: `${leader.count} of ${report.stats.sessions} selected sessions.`, tone: "agents", rows: activeAgents.map((agent) => ({ label: agent.name, value: `${agent.percentage.toFixed(1)}%`, percentage: agent.percentage })) }] : []),
     ...(topModel ? [{ kicker: "Your top models", headline: `${topModel.percentage.toFixed(1)}%`, detail: `went to your #1 · ${topModel.name}`, tone: "models", rows: activeModels.slice(0, 4).map((model, index) => ({ label: model.name, value: `${model.percentage.toFixed(1)}%`, percentage: model.percentage, rank: index + 1 })) }] : []),

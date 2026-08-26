@@ -40,6 +40,16 @@ export function sanitizePublicReport(value) {
   if (!value || typeof value !== "object" || Array.isArray(value) || !/^[A-Za-z0-9_-]{8,32}$/.test(value.id || "")) return null;
   const stats = value.stats;
   if (!stats || typeof stats !== "object" || Array.isArray(stats)) return null;
+  const safeTokens = Math.round(safeNumber(stats.tokens));
+  const suppliedTokenBreakdown = stats.tokenBreakdown;
+  const tokenBreakdown = suppliedTokenBreakdown && typeof suppliedTokenBreakdown === "object" && !Array.isArray(suppliedTokenBreakdown) ? {
+    input: Math.round(safeNumber(suppliedTokenBreakdown.input)),
+    output: Math.round(safeNumber(suppliedTokenBreakdown.output)),
+    cacheRead: Math.round(safeNumber(suppliedTokenBreakdown.cacheRead)),
+    cacheCreation: Math.round(safeNumber(suppliedTokenBreakdown.cacheCreation)),
+    reasoning: Math.round(safeNumber(suppliedTokenBreakdown.reasoning)),
+  } : null;
+  const safeTokenBreakdown = tokenBreakdown && Object.values(tokenBreakdown).reduce((sum, count) => sum + count, 0) === safeTokens ? tokenBreakdown : null;
   const safeStockPhraseCounts = safeStockPhrases(stats.stockPhrases);
   const safeSessionTurnCounts = safeTurnCounts(stats.sessionTurnCounts);
   const phrase = value.phraseCard?.phrase;
@@ -79,7 +89,7 @@ export function sanitizePublicReport(value) {
     stats: {
       sessions: Math.round(safeNumber(stats.sessions, 1_000_000)), activeDays: Math.round(safeNumber(stats.activeDays, 1_000_000)),
       durationMinutes: Math.round(safeNumber(stats.durationMinutes)), prompts: Math.round(safeNumber(stats.prompts)), toolCalls: Math.round(safeNumber(stats.toolCalls)),
-      interruptions: Math.round(safeNumber(stats.interruptions)), tokens: Math.round(safeNumber(stats.tokens)), agentWords: Math.round(safeNumber(stats.agentWords)),
+      interruptions: Math.round(safeNumber(stats.interruptions)), tokens: safeTokens, ...(safeTokenBreakdown ? { tokenBreakdown: safeTokenBreakdown } : {}), agentWords: Math.round(safeNumber(stats.agentWords)),
       userWords: Math.round(safeNumber(stats.userWords)), agentUserWordRatio: safeNumber(stats.agentUserWordRatio, 10_000),
       averageAgentResponseWords: Math.round(safeNumber(stats.averageAgentResponseWords)), averageUserInputWords: Math.round(safeNumber(stats.averageUserInputWords)),
       longestSessionTurns: Math.max(0, ...safeSessionTurnCounts),

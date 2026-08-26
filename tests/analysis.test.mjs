@@ -49,6 +49,7 @@ test("computes deterministic stats and transparent behavior findings", () => {
   assert.equal(report.stats.interruptions, 1);
   assert.ok(report.stats.toolCalls >= 6);
   assert.equal(report.stats.tokens, 5500);
+  assert.deepEqual(report.stats.tokenBreakdown, { input: 1200, output: 300, cacheRead: 4000, cacheCreation: 0, reasoning: 0 });
   assert.deepEqual(report.stats.agents.map(({ name, count, percentage }) => ({ name, count, percentage })), [
     { name: "Claude Code", count: 3, percentage: 100 },
     { name: "Codex", count: 0, percentage: 0 },
@@ -73,7 +74,8 @@ test("discovers and normalizes Claude Code, Cowork, and Codex sessions together"
   assert.ok(!JSON.stringify(normalizedCodex).includes("synthetic build passed"));
   const report = analyzeSessions(entries);
   assert.equal(report.stats.sessions, 5);
-  assert.equal(report.stats.tokens, 7720);
+  assert.equal(report.stats.tokens, 7770);
+  assert.deepEqual(report.stats.tokenBreakdown, { input: 2150, output: 530, cacheRead: 5030, cacheCreation: 10, reasoning: 50 });
   assert.equal(report.stats.toolCalls, 10);
   assert.deepEqual(report.stats.agents.map(({ name, count, percentage }) => ({ name, count, percentage })), [
     { name: "Claude Code", count: 3, percentage: 60 },
@@ -153,6 +155,7 @@ test("backfills forked Codex models without recounting inherited token totals", 
     output_tokens: 50,
     cache_creation_input_tokens: 0,
     cache_read_input_tokens: 100,
+    reasoning_output_tokens: 0,
   });
   const report = analyzeSessions([{ sessionId: "forked", agent: "codex", records: normalized }]);
   assert.equal(report.stats.tokens, 350);

@@ -345,6 +345,7 @@ export function analyzeSessions(sessionRecords) {
   let interruptions = 0;
   let totalDurationMs = 0;
   let tokens = 0;
+  const tokenBreakdown = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, reasoning: 0 };
   let estimatedCostUsd = 0;
   let userInputWords = 0;
   let userInputCount = 0;
@@ -392,12 +393,18 @@ export function analyzeSessions(sessionRecords) {
         const output = Number(usage.output_tokens) || 0;
         const cacheWrite = Number(usage.cache_creation_input_tokens) || 0;
         const cacheRead = Number(usage.cache_read_input_tokens) || 0;
-        const recordTokens = input + output + cacheWrite + cacheRead;
+        const reasoning = Number(usage.reasoning_output_tokens) || 0;
+        const recordTokens = input + output + cacheWrite + cacheRead + reasoning;
         tokens += recordTokens;
+        tokenBreakdown.input += input;
+        tokenBreakdown.output += output;
+        tokenBreakdown.cacheCreation += cacheWrite;
+        tokenBreakdown.cacheRead += cacheRead;
+        tokenBreakdown.reasoning += reasoning;
         const model = record?.message?.model || `${agent === "codex" ? "Codex" : "Claude"} model`;
         modelTokens.set(model, (modelTokens.get(model) || 0) + recordTokens);
         const rates = ratesFor(model, agent);
-        estimatedCostUsd += (input * rates.input + output * rates.output + cacheWrite * rates.cacheWrite + cacheRead * rates.cacheRead) / 1_000_000;
+        estimatedCostUsd += (input * rates.input + (output + reasoning) * rates.output + cacheWrite * rates.cacheWrite + cacheRead * rates.cacheRead) / 1_000_000;
       }
       for (const tool of toolUses(record)) {
         toolCalls++;
@@ -428,6 +435,7 @@ export function analyzeSessions(sessionRecords) {
     toolCalls,
     interruptions,
     tokens,
+    tokenBreakdown,
     agentWords: agentResponseWords,
     userWords: userInputWords,
     agentUserWordRatio: userInputWords ? Number((agentResponseWords / userInputWords).toFixed(2)) : null,
