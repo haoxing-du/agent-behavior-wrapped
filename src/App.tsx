@@ -32,7 +32,7 @@ type Donation = { format: string; createdLocally: boolean; unredacted?: boolean;
 type DonationMode = "standard" | "advanced" | "unredacted";
 type Stage = "select" | "report" | "donate";
 type SavedReport = Report & { id: string; createdAt: string; rangeLabel: string; source: string; publicUrl?: string; donationHelperUrl?: string; hosting?: { public: boolean }; privacy: { shareSafe: boolean; containsTranscriptText: boolean; externalTransmission: boolean; analysisMode?: "remote" | "local-only"; leaderboardParticipation?: "included-by-default" | "excluded" } };
-type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; metricUnit?: string; headlineAccent?: string; wordRatio?: string; example?: string; workaround?: boolean; workaroundCount?: number; evidenceHref?: string; evidenceLabel?: string; turnDistribution?: { values: number[]; median: number }; trustCurve?: TrustCurve; ctaHref?: string; ctaLabel?: string; ctas?: { href: string; label: string; primary?: boolean; note?: string }[]; rows?: { label: string; value: string; percentage?: number; rank?: number }[]; comparison?: { label: string; highlight: string; accent: "yell" | "thanks"; value: string; suffix: string; quote?: string }[] };
+type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; metricUnit?: string; headlineAccent?: string; wordRatio?: string; example?: string; workaround?: boolean; workaroundCount?: number; evidenceHref?: string; evidenceLabel?: string; turnDistribution?: { values: number[]; median: number }; trustCurve?: TrustCurve; ctaHref?: string; ctaLabel?: string; ctas?: { href: string; label: string; primary?: boolean; note?: string }[]; rows?: { label: string; value: string; percentage?: number; rank?: number }[]; comparison?: { label: string; highlight: string; accent: "yell" | "thanks" | "agent-apology" | "user-apology"; value: string; suffix: string; quote?: string }[] };
 type WorkaroundEvidenceAction = { toolName: string; details: string; timestamp: string | null };
 type WorkaroundEvidenceOccurrence = { index: number; session: { label: string; agentName: string; startedAt: string | null; openingMessage: { preview: string; full: string }; turnsBeforeWorkaround: number }; originalAction: WorkaroundEvidenceAction; blocker: { text: string; timestamp: string | null }; workaroundAction: WorkaroundEvidenceAction };
 type WorkaroundEvidence = { format: string; localPrivate: boolean; standardRedactionsApplied: boolean; reportId: string; occurrences: WorkaroundEvidenceOccurrence[] };
@@ -349,12 +349,6 @@ function SharedWrapped({ id }: { id: string }) {
     const stockPhrases = report.stats.stockPhrases;
     const sortedStockPhrases = stockPhrases?.slice().sort((left, right) => right.count - left.count || left.phrase.localeCompare(right.phrase, undefined, { sensitivity: "base" })).slice(0, 4);
     const repeatedInstructions = report.stats.repeatedInstructions || [];
-    const relationshipRows = interactionTone ? [
-      { label: "You yelled", value: interactionTone.frustratedMessages.toLocaleString() },
-      { label: "You thanked", value: interactionTone.gratefulMessages.toLocaleString() },
-      { label: "Your agent apologized", value: (apologyCounts?.agent || 0).toLocaleString() },
-      { label: "You apologized", value: (apologyCounts?.user || 0).toLocaleString() },
-    ] : [];
     const topics = (report.stats.topics || []).filter((item) => hasDisplayablePercentage(item.percentage));
     const displayTopics = [...topics.filter((item) => item.topic !== "Other"), ...topics.filter((item) => item.topic === "Other")];
     const topTopic = displayTopics[0];
@@ -369,7 +363,12 @@ function SharedWrapped({ id }: { id: string }) {
     ...(report.stats.interruptions > 0 ? [{ kicker: "You interrupted your agents", headline: `${report.stats.interruptions.toLocaleString()} time${report.stats.interruptions === 1 ? "" : "s"}`, detail: "Explicit stop events, grouped by the active model.", tone: "models", rows: interruptionsByModel.map((item) => ({ label: item.name, value: item.count.toLocaleString() })) }] : []),
     ...(trustCurve ? [{ kicker: "Your trust curve", headline: `${Math.round(trustCurve.startScore)} → ${Math.round(trustCurve.endScore)}`, detail: `${trustCurve.autonomousPercentage.toFixed(1)}% of observed turns used auto-level permissions.`, tone: "trust", trustCurve }] : []),
     ...(Number.isFinite(report.stats.averageAgentResponseWords) ? [{ kicker: "On average, your agent responded with", headline: `${report.stats.averageAgentResponseWords!.toLocaleString()} words`, detail: `Your average input was ${report.stats.averageUserInputWords!.toLocaleString()} words.`, wordRatio: agentWordRatio?.toLocaleString(undefined, { maximumFractionDigits: 2 }), tone: "violet" }] : []),
-    ...(relationshipRows.length ? [{ kicker: "How you talked to each other", headline: "It’s complicated.", detail: "Yelling and thanks are judged; apologies require an admission of fault.", tone: "social", rows: relationshipRows, example: report.interactionCard?.frustrationQuote ? `You said: “${report.interactionCard.frustrationQuote}”` : undefined, evidenceHref: localInteractionEvidenceUrl(report), evidenceLabel: "See exact yelling, thanking, and apology excerpts" }] : []),
+    ...(interactionTone ? [{ kicker: "Your relationship with your agent", headline: "", detail: "", tone: "social", evidenceHref: localInteractionEvidenceUrl(report), evidenceLabel: "See exact yelling, thanking, and apology excerpts", comparison: [
+      { label: "You yelled at your agent", highlight: "yelled at", accent: "yell" as const, value: interactionTone.frustratedMessages.toLocaleString(), suffix: `time${interactionTone.frustratedMessages === 1 ? "" : "s"}`, quote: report.interactionCard?.frustrationQuote || report.interactionCard?.quote },
+      { label: "You thanked your agent", highlight: "thanked", accent: "thanks" as const, value: interactionTone.gratefulMessages.toLocaleString(), suffix: `time${interactionTone.gratefulMessages === 1 ? "" : "s"}` },
+      { label: "Your agent apologized", highlight: "apologized", accent: "agent-apology" as const, value: (apologyCounts?.agent || 0).toLocaleString(), suffix: `time${apologyCounts?.agent === 1 ? "" : "s"}` },
+      { label: "You apologized to your agent", highlight: "apologized", accent: "user-apology" as const, value: (apologyCounts?.user || 0).toLocaleString(), suffix: `time${apologyCounts?.user === 1 ? "" : "s"}` },
+    ] }] : []),
     ...(sortedStockPhrases ? [{ kicker: "Models love these phrases", headline: "Did yours?", detail: "Here’s how often they showed up.", tone: "stock", rows: sortedStockPhrases.map((item) => ({ label: `“${item.phrase.toLocaleLowerCase()}”`, value: item.count.toLocaleString() })) }] : []),
     ...(report.phraseCard ? [{ kicker: "Beyond those common phrases, your agent’s favorite was", headline: `“${report.phraseCard.phrase}”`, detail: `It said this ${report.phraseCard.occurrences} time${report.phraseCard.occurrences === 1 ? "" : "s"} across ${report.phraseCard.distinctSessions} session${report.phraseCard.distinctSessions === 1 ? "" : "s"}.`, tone: "quote" }] : []),
     ...(repeatedInstructions.length ? [{ kicker: "Your most repeated instructions", headline: "You really meant it.", detail: "Exact instructions you gave more than once.", tone: "stock", rows: repeatedInstructions.map((item) => ({ label: `“${item.instruction}”`, value: `${item.occurrences}×` })) }] : []),
@@ -407,7 +406,7 @@ function SharedWrapped({ id }: { id: string }) {
   </div>)}</div> : null;
   return <main className="shared-page">
     <div className="story-progress" aria-label={`Slide ${slide + 1} of ${slides.length}`}>{slides.map((_, index) => <button key={index} className={index === slide ? "seen active" : index < slide ? "seen" : ""} onClick={() => setSlide(index)} aria-label={`Go to slide ${index + 1}`} aria-current={index === slide ? "step" : undefined} />)}</div>
-    <section ref={cardRef} className={`story-card story-${current.tone}${current.workaround ? " story-workaround" : ""}${layoutClass}`} aria-live="polite">
+    <section ref={cardRef} className={`story-card story-${current.tone}${current.workaround ? " story-workaround" : ""}${current.comparison?.length === 4 ? " story-comparison-four" : ""}${layoutClass}`} aria-live="polite">
       <header className="story-chrome">
         <div className="story-brand" aria-label="Behavior Wrapped"><strong><span>Behavior</span><span>Wrapped</span></strong></div>
         <span className="story-index" aria-hidden="true">{String(slide + 1).padStart(2, "0")} <i /> {String(slides.length).padStart(2, "0")}</span>

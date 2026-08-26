@@ -761,7 +761,6 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .is-thanks .interaction-message.highlighted > span { color: #58713e; }
 .is-user-apology .interaction-message.highlighted > span { color: #6f57a0; }
 .is-agent-apology .interaction-message.highlighted > span { color: #3d687b; }
-.shared-page .story-social.story-split-card .story-copy h1 { font-size: clamp(52px, 6.2vw, 76px); }
 .interaction-message p { margin: 0; color: #332d36; font-size: 13px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 .interaction-message > button { margin-top: 9px; padding: 0; border: 0; background: transparent; color: #765782; font-size: 9px; font-weight: 850; cursor: pointer; }
 .interaction-message > button:hover { text-decoration: underline; }
@@ -1918,4 +1917,62 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
   .donation-preview { padding: 25px 21px 27px; border-radius: 24px; }
   .donation-controls::after,
   .donation-preview::after { inset: 6px; border-radius: 18px; }
+}
+
+/* Four-quadrant relationship card: preserves the original comparison-card language. */
+.shared-page .story-comparison-four .story-comparison-wrap { padding-block: 8px 12px; }
+.shared-page .story-comparison-four .story-comparison-kicker { margin-bottom: 12px; }
+.shared-page .story-comparison-four .story-comparison {
+  grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) 1px minmax(0, 1fr);
+  min-height: 310px;
+}
+.shared-page .story-comparison-four .story-comparison::before {
+  grid-column: 2;
+  grid-row: 1 / 4;
+  width: 1px;
+  height: 100%;
+}
+.shared-page .story-comparison-four .story-comparison::after {
+  content: "";
+  grid-column: 1 / 4;
+  grid-row: 2;
+  width: 100%;
+  height: 1px;
+  background: rgba(54,40,59,.12);
+}
+.shared-page .story-comparison-four .story-comparison > div,
+.shared-page .story-comparison-four .story-comparison > div:first-of-type,
+.shared-page .story-comparison-four .story-comparison > div + div { padding: 12px 30px 10px 18px; }
+.shared-page .story-comparison-four .story-comparison > div:nth-of-type(1) { grid-column: 1; grid-row: 1; }
+.shared-page .story-comparison-four .story-comparison > div:nth-of-type(2) { grid-column: 3; grid-row: 1; padding-left: 36px; }
+.shared-page .story-comparison-four .story-comparison > div:nth-of-type(3) { grid-column: 1; grid-row: 3; }
+.shared-page .story-comparison-four .story-comparison > div:nth-of-type(4) { grid-column: 3; grid-row: 3; padding-left: 36px; }
+.shared-page .story-comparison-four .story-comparison-item.is-agent-apology { --comparison-accent: #72519c; }
+.shared-page .story-comparison-four .story-comparison-item.is-user-apology { --comparison-accent: #417489; }
+.shared-page .story-comparison-four .story-comparison span { max-width: none; font-size: clamp(17px, 1.75vw, 22px); }
+.shared-page .story-comparison-four .story-comparison p { margin-top: 5px; }
+.shared-page .story-comparison-four .story-comparison strong { font-size: clamp(58px, 6.6vw, 78px); }
+.shared-page .story-comparison-four .story-comparison p b { font-size: 15px; }
+.shared-page .story-comparison-four .story-comparison-wrap blockquote { margin-top: 5px; padding-top: 5px; font-size: 12px; line-height: 1.3; }
+
+@media (max-width: 760px) {
+  .shared-page .story-comparison-four .story-comparison-wrap { padding: 10px 0 6px; }
+  .shared-page .story-comparison-four .story-comparison-kicker { margin-bottom: 10px; }
+  .shared-page .story-comparison-four .story-comparison {
+    grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) 1px minmax(0, 1fr);
+    gap: 0;
+    min-height: 410px;
+  }
+  .shared-page .story-comparison-four .story-comparison > div,
+  .shared-page .story-comparison-four .story-comparison > div:first-of-type,
+  .shared-page .story-comparison-four .story-comparison > div + div { padding: 16px 11px 12px 4px; }
+  .shared-page .story-comparison-four .story-comparison > div:nth-of-type(2),
+  .shared-page .story-comparison-four .story-comparison > div:nth-of-type(4) { padding-left: 14px; }
+  .shared-page .story-comparison-four .story-comparison span { font-size: 14px; }
+  .shared-page .story-comparison-four .story-comparison strong { font-size: clamp(46px, 14vw, 58px); }
+  .shared-page .story-comparison-four .story-comparison p { gap: 5px; }
+  .shared-page .story-comparison-four .story-comparison p b { font-size: 11px; }
+  .shared-page .story-comparison-four .story-comparison-wrap blockquote { margin-top: 7px; padding-top: 6px; font-size: 10px; }
 }
