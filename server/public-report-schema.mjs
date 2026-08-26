@@ -48,6 +48,32 @@ function safeRepeatedInstructions(value) {
   });
 }
 
+function safeTrustCurve(value) {
+  if (!value || typeof value !== "object" || !Array.isArray(value.points)) return null;
+  let previousOffset = -1;
+  const points = value.points.slice(0, 4_000).flatMap((item) => {
+    const dayOffset = Math.round(safeNumber(item?.dayOffset, 3_650));
+    const score = safeNumber(item?.score, 100);
+    const observations = Math.round(safeNumber(item?.observations, 1_000_000));
+    if (dayOffset <= previousOffset || observations < 1) return [];
+    previousOffset = dayOffset;
+    return [{ dayOffset, score: Number(score.toFixed(1)), observations }];
+  });
+  if (points.length < 2) return null;
+  const observations = Math.round(safeNumber(value.observations, 10_000_000));
+  const autonomousObservations = Math.round(safeNumber(value.autonomousObservations, observations));
+  if (!observations || autonomousObservations > observations) return null;
+  return {
+    points,
+    startScore: points[0].score,
+    endScore: points.at(-1).score,
+    change: Number((points.at(-1).score - points[0].score).toFixed(1)),
+    observations,
+    autonomousObservations,
+    autonomousPercentage: Number((autonomousObservations / observations * 100).toFixed(1)),
+  };
+}
+
 export function sanitizePublicReport(value) {
   if (!value || typeof value !== "object" || Array.isArray(value) || !/^[A-Za-z0-9_-]{8,32}$/.test(value.id || "")) return null;
   const stats = value.stats;
@@ -119,6 +145,7 @@ export function sanitizePublicReport(value) {
       longestSessionTurns: Math.max(0, ...safeSessionTurnCounts),
       sessionTurnCounts: safeSessionTurnCounts,
       longestUninterruptedRun: safeLongestUninterruptedRun,
+      trustCurve: safeTrustCurve(stats.trustCurve),
       interactionTone: {
         frustratedMessages: Math.round(safeNumber(stats.interactionTone?.frustratedMessages, 1_000_000)),
         gratefulMessages: Math.round(safeNumber(stats.interactionTone?.gratefulMessages, 1_000_000)),

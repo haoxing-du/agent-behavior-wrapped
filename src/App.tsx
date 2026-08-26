@@ -12,6 +12,7 @@ type RepeatedInstruction = { instruction: string; occurrences: number; distinctS
 type ApologyCounts = { user: number; agent: number };
 type UninterruptedRun = { durationMs: number; agent: "claude" | "cowork" | "codex"; agentName: string };
 type ModelCount = { model: string; name: string; count: number };
+type TrustCurve = { points: { dayOffset: number; score: number; observations: number }[]; startScore: number; endScore: number; change: number; observations: number; autonomousObservations: number; autonomousPercentage: number };
 type TokenBreakdown = { input: number; output: number; cacheRead: number; cacheCreation: number; reasoning: number };
 type InteractionTone = { frustratedMessages: number; gratefulMessages: number; analyzedMessages: number; method?: string };
 type InteractionCard = { quote?: string; frustrationQuote?: string | null };
@@ -20,7 +21,7 @@ type LanguageAnomaly = { language: string; words: number; occurrences: number; l
 type TopicStat = { topic: string; tokens: number; percentage: number };
 type StockPhraseStat = { phrase: string; count: number };
 type WorkaroundCard = { count: number; models: { name: string; count: number }[]; example?: string };
-type Report = { stats: { sessions: number; activeDays: number; durationMinutes: number; prompts: number; toolCalls: number; interruptions: number; interruptionsByModel?: ModelCount[]; tokens: number; tokenBreakdown?: TokenBreakdown; agentWords?: number; userWords?: number; agentUserWordRatio?: number | null; averageAgentResponseWords?: number; averageUserInputWords?: number; longestSessionTurns?: number; sessionTurnCounts?: number[]; longestUninterruptedRun?: UninterruptedRun | null; interactionTone?: InteractionTone; apologyCounts?: ApologyCounts; stockPhrases?: StockPhraseStat[]; repeatedInstructions?: RepeatedInstruction[]; outputLanguages?: LanguageStat[]; languageAnomaly?: LanguageAnomaly | null; topics?: TopicStat[]; tools: { name: string; count: number }[]; agents: AgentStat[]; models: ModelStat[]; estimatedCostUsd: number; costEstimateMethod: string }; findings: Finding[]; phraseCard?: PhraseCard | null; interactionCard?: InteractionCard | null; workaroundCard?: WorkaroundCard | null };
+type Report = { stats: { sessions: number; activeDays: number; durationMinutes: number; prompts: number; toolCalls: number; interruptions: number; interruptionsByModel?: ModelCount[]; tokens: number; tokenBreakdown?: TokenBreakdown; agentWords?: number; userWords?: number; agentUserWordRatio?: number | null; averageAgentResponseWords?: number; averageUserInputWords?: number; longestSessionTurns?: number; sessionTurnCounts?: number[]; longestUninterruptedRun?: UninterruptedRun | null; trustCurve?: TrustCurve | null; interactionTone?: InteractionTone; apologyCounts?: ApologyCounts; stockPhrases?: StockPhraseStat[]; repeatedInstructions?: RepeatedInstruction[]; outputLanguages?: LanguageStat[]; languageAnomaly?: LanguageAnomaly | null; topics?: TopicStat[]; tools: { name: string; count: number }[]; agents: AgentStat[]; models: ModelStat[]; estimatedCostUsd: number; costEstimateMethod: string }; findings: Finding[]; phraseCard?: PhraseCard | null; interactionCard?: InteractionCard | null; workaroundCard?: WorkaroundCard | null };
 type DonationMessage = { role: string; timestamp: string | null; text: string };
 type DonationSession = { sessionId: string; label: string; summary: string; messages: DonationMessage[] };
 type RedactionContext = { before: string; match: string; after: string };
@@ -31,7 +32,7 @@ type Donation = { format: string; createdLocally: boolean; unredacted?: boolean;
 type DonationMode = "standard" | "advanced" | "unredacted";
 type Stage = "select" | "report" | "donate";
 type SavedReport = Report & { id: string; createdAt: string; rangeLabel: string; source: string; publicUrl?: string; donationHelperUrl?: string; hosting?: { public: boolean }; privacy: { shareSafe: boolean; containsTranscriptText: boolean; externalTransmission: boolean; analysisMode?: "remote" | "local-only"; leaderboardParticipation?: "included-by-default" | "excluded" } };
-type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; metricUnit?: string; headlineAccent?: string; wordRatio?: string; example?: string; workaround?: boolean; workaroundCount?: number; evidenceHref?: string; evidenceLabel?: string; turnDistribution?: { values: number[]; median: number }; ctaHref?: string; ctaLabel?: string; ctas?: { href: string; label: string; primary?: boolean; note?: string }[]; rows?: { label: string; value: string; percentage?: number; rank?: number }[]; comparison?: { label: string; highlight: string; accent: "yell" | "thanks"; value: string; suffix: string; quote?: string }[] };
+type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; metricUnit?: string; headlineAccent?: string; wordRatio?: string; example?: string; workaround?: boolean; workaroundCount?: number; evidenceHref?: string; evidenceLabel?: string; turnDistribution?: { values: number[]; median: number }; trustCurve?: TrustCurve; ctaHref?: string; ctaLabel?: string; ctas?: { href: string; label: string; primary?: boolean; note?: string }[]; rows?: { label: string; value: string; percentage?: number; rank?: number }[]; comparison?: { label: string; highlight: string; accent: "yell" | "thanks"; value: string; suffix: string; quote?: string }[] };
 type WorkaroundEvidenceAction = { toolName: string; details: string; timestamp: string | null };
 type WorkaroundEvidenceOccurrence = { index: number; session: { label: string; agentName: string; startedAt: string | null; openingMessage: { preview: string; full: string }; turnsBeforeWorkaround: number }; originalAction: WorkaroundEvidenceAction; blocker: { text: string; timestamp: string | null }; workaroundAction: WorkaroundEvidenceAction };
 type WorkaroundEvidence = { format: string; localPrivate: boolean; standardRedactionsApplied: boolean; reportId: string; occurrences: WorkaroundEvidenceOccurrence[] };
@@ -271,6 +272,26 @@ function SessionTurnChart({ values, median }: { values: number[]; median: number
   </figure>;
 }
 
+function TrustCurveChart({ curve }: { curve: TrustCurve }) {
+  const left = 42;
+  const right = 540;
+  const top = 24;
+  const bottom = 178;
+  const maximumOffset = Math.max(1, curve.points.at(-1)?.dayOffset || 1);
+  const xFor = (offset: number) => left + offset / maximumOffset * (right - left);
+  const yFor = (score: number) => bottom - score / 100 * (bottom - top);
+  const path = curve.points.map((point) => `${xFor(point.dayOffset)},${yFor(point.score)}`).join(" ");
+  return <figure className="trust-curve-chart">
+    <figcaption><span>{curve.observations.toLocaleString()} permission observations</span><strong><b>{curve.autonomousPercentage.toFixed(1)}%</b> auto</strong></figcaption>
+    <svg viewBox="0 0 560 218" role="img" aria-label={`Autonomy score changed from ${curve.startScore} to ${curve.endScore} across the selected history.`}>
+      {[0, 50, 100].map((score) => <g key={score}><line x1={left} x2={right} y1={yFor(score)} y2={yFor(score)} /><text x="6" y={yFor(score) + 4}>{score}</text></g>)}
+      <polyline points={path} />
+      {curve.points.map((point, index) => <circle key={`${point.dayOffset}-${index}`} cx={xFor(point.dayOffset)} cy={yFor(point.score)} r={index === curve.points.length - 1 ? 5.5 : 4}><title>{`Autonomy score ${point.score}; ${point.observations} observation${point.observations === 1 ? "" : "s"}`}</title></circle>)}
+      <text className="trust-axis-label" x={left} y="210">EARLIER</text><text className="trust-axis-label" x={right} y="210" textAnchor="end">LATEST</text>
+    </svg>
+  </figure>;
+}
+
 async function downloadSlide(card: HTMLElement, slide: number) {
   await document.fonts.ready;
   const dataUrl = await toPng(card, {
@@ -311,6 +332,7 @@ function SharedWrapped({ id }: { id: string }) {
     const longestSessionTurns = Math.max(0, ...sessionTurnCounts);
     const longestUninterruptedRun = report.stats.longestUninterruptedRun;
     const interruptionsByModel = report.stats.interruptionsByModel || [];
+    const trustCurve = report.stats.trustCurve;
     const harryPotterSeriesCount = fmtSeriesEquivalent(report.stats.tokens || 0, 1_450_000);
     const tokenBreakdownRows = report.stats.tokenBreakdown ? ([
       ["Input", report.stats.tokenBreakdown.input],
@@ -339,6 +361,7 @@ function SharedWrapped({ id }: { id: string }) {
     ...(sessionTurnCounts.length ? [{ kicker: "Your longest session lasted", headline: `${longestSessionTurns.toLocaleString()} turns`, detail: "", tone: "turns", turnDistribution: { values: sessionTurnCounts, median: quantile(sessionTurnCounts, .5) } }] : []),
     ...(longestUninterruptedRun ? [{ kicker: "Your longest uninterrupted agent run", headline: fmtRunDuration(longestUninterruptedRun.durationMs), detail: `A completed ${longestUninterruptedRun.agentName} turn with no recorded abort.`, tone: "turns" }] : []),
     ...(report.stats.interruptions > 0 ? [{ kicker: "You interrupted your agents", headline: `${report.stats.interruptions.toLocaleString()} time${report.stats.interruptions === 1 ? "" : "s"}`, detail: "Explicit stop events, grouped by the active model.", tone: "models", rows: interruptionsByModel.map((item) => ({ label: item.name, value: item.count.toLocaleString() })) }] : []),
+    ...(trustCurve ? [{ kicker: "Your trust curve", headline: `${Math.round(trustCurve.startScore)} → ${Math.round(trustCurve.endScore)}`, detail: `${trustCurve.autonomousPercentage.toFixed(1)}% of observed turns used auto-level permissions.`, tone: "trust", trustCurve }] : []),
     ...(Number.isFinite(report.stats.averageAgentResponseWords) ? [{ kicker: "On average, your agent responded with", headline: `${report.stats.averageAgentResponseWords!.toLocaleString()} words`, detail: `Your average input was ${report.stats.averageUserInputWords!.toLocaleString()} words.`, wordRatio: agentWordRatio?.toLocaleString(undefined, { maximumFractionDigits: 2 }), tone: "violet" }] : []),
     ...(interactionTone && interactionTone.frustratedMessages + interactionTone.gratefulMessages > 0 ? [{ kicker: "Your relationship with your agent", headline: "", detail: "", tone: "social", evidenceHref: localInteractionEvidenceUrl(report), evidenceLabel: "See exact transcript excerpts", comparison: [
       { label: "You yelled at your agent", highlight: "yelled at", accent: "yell" as const, value: interactionTone.frustratedMessages.toLocaleString(), suffix: `time${interactionTone.frustratedMessages === 1 ? "" : "s"}`, quote: report.interactionCard?.frustrationQuote || report.interactionCard?.quote },
@@ -376,7 +399,7 @@ function SharedWrapped({ id }: { id: string }) {
     try { await downloadSlide(cardRef.current, slide); }
     finally { setDownloading(false); }
   }
-  const layoutClass = current.comparison ? " story-comparison-card" : current.ctas ? " story-cta-card" : current.turnDistribution ? " story-turn-card" : current.rows || current.example ? " story-split-card" : current.wordRatio ? " story-ratio-card" : current.metric ? " story-metric-card" : " story-hero-card";
+  const layoutClass = current.comparison ? " story-comparison-card" : current.ctas ? " story-cta-card" : current.trustCurve ? " story-trust-card" : current.turnDistribution ? " story-turn-card" : current.rows || current.example ? " story-split-card" : current.wordRatio ? " story-ratio-card" : current.metric ? " story-metric-card" : " story-hero-card";
   const storyExample = current.example ? <blockquote className="story-example"><span>One example</span><p>{renderInlineCode(current.example)}</p></blockquote> : null;
   const storyEvidence = current.evidenceHref ? <a className="story-evidence-link" href={current.evidenceHref}>{current.evidenceLabel || "See what your agent actually did"} <span>→</span><small>Opens a private page on this device</small></a> : null;
   const storyRows = current.rows ? <div className="story-data-rows">{current.workaround && <span className="story-data-label">By model</span>}{current.rows.map((row) => <div className="story-data-row" key={row.label}>
@@ -394,10 +417,10 @@ function SharedWrapped({ id }: { id: string }) {
       {current.comparison ? <div className="story-comparison-wrap"><span className="story-comparison-kicker">{current.kicker}</span><div className="story-comparison">{current.comparison.map((item) => {
         const [beforeHighlight, afterHighlight = ""] = item.label.split(item.highlight);
         return <div className={`story-comparison-item is-${item.accent}`} key={item.label}><span>{beforeHighlight}<em>{item.highlight}</em>{afterHighlight}</span><p><strong>{item.value}</strong><b>{item.suffix}</b></p>{item.quote && <blockquote><b>You said:</b> “{item.quote}”</blockquote>}</div>;
-      })}</div></div> : <div className={`story-copy ${current.rows || current.example || current.turnDistribution ? "with-rows" : ""}`}>
+      })}</div></div> : <div className={`story-copy ${current.rows || current.example || current.turnDistribution || current.trustCurve ? "with-rows" : ""}`}>
         <div>{current.kicker && <span>{current.kicker}</span>}<h1 className={current.metric ? "giant" : ""}>{current.headlineAccent ? <><span className="story-headline-accent">{current.headlineAccent}</span>{current.headline.slice(current.headlineAccent.length)}</> : current.headline}</h1>{current.metricUnit && <p className="story-metric-unit">{current.metricUnit}</p>}{current.workaroundCount !== undefined && <p className="story-workaround-count"><strong>{current.workaroundCount.toLocaleString()}</strong> time{current.workaroundCount === 1 ? "" : "s"}</p>}{current.detail && <p className={current.metric ? "story-metric-detail" : ""}>{current.detail}</p>}{current.wordRatio && <p className="story-word-ratio">For every word you said, your agent said <strong>{current.wordRatio}</strong> words.</p>}</div>
-        {(current.rows || current.example || current.turnDistribution) && <div className="story-side">
-          {current.turnDistribution ? <SessionTurnChart {...current.turnDistribution} /> : current.workaround ? <>{storyRows}{storyExample}</> : <>{storyExample}{storyRows}</>}
+        {(current.rows || current.example || current.turnDistribution || current.trustCurve) && <div className="story-side">
+          {current.trustCurve ? <TrustCurveChart curve={current.trustCurve} /> : current.turnDistribution ? <SessionTurnChart {...current.turnDistribution} /> : current.workaround ? <>{storyRows}{storyExample}</> : <>{storyExample}{storyRows}</>}
         </div>}
       </div>}
       {current.ctas ? <div className="story-cta-group">{current.ctas.map((cta) => <div className="story-cta-choice" key={cta.href}><a className={`story-cta ${cta.primary ? "primary" : "secondary"}`} href={cta.href}>{cta.label} <span>→</span></a>{cta.note && <small>{cta.note}</small>}</div>)}</div> : current.ctaHref ? <a className="story-cta" href={current.ctaHref}>{current.ctaLabel} <span>→</span></a> : storyEvidence}
@@ -1090,6 +1113,10 @@ function ReportView({ report, onEvidence, onDonate }: { report: Report; onEviden
     {!!report.stats.interruptionsByModel?.length && <section className="wrapped-card tools-card">
       <div><span className="card-kicker">INTERRUPTIONS BY MODEL</span><h2>You hit stop<br />{report.stats.interruptions} time{report.stats.interruptions === 1 ? "" : "s"}.</h2><p>Explicit stop events attributed to the active model.</p></div>
       <div className="tool-chart">{report.stats.interruptionsByModel.map((item, index) => <div className="tool-row" key={item.model}><span className="rank">{String(index + 1).padStart(2, "0")}</span><strong>{item.name}</strong><div><i style={{ width: `${Math.max(8, item.count / Math.max(...report.stats.interruptionsByModel!.map((row) => row.count), 1) * 100)}%` }} /></div><b>{item.count}</b></div>)}</div>
+    </section>}
+
+    {report.stats.trustCurve && <section className="wrapped-card catchphrase-card">
+      <div><span className="card-kicker">Your trust curve</span><h2>{Math.round(report.stats.trustCurve.startScore)} → {Math.round(report.stats.trustCurve.endScore)}</h2><p>{report.stats.trustCurve.autonomousPercentage.toFixed(1)}% of observed turns used auto-level permissions.</p></div>
     </section>}
 
     <section className="wrapped-card tools-card">

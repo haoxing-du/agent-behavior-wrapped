@@ -427,6 +427,14 @@ function normalizeCodexRecords(records, { includePrivateToolDetails = false } = 
     if (record.type === "turn_context" && typeof payload.model === "string") {
       currentModel = payload.model;
       hasSeenModelContext = true;
+      const sandboxPolicy = payload.sandbox_policy?.type || payload.permission_profile?.type || (typeof payload.sandbox_policy === "string" ? payload.sandbox_policy : null);
+      if (payload.approval_policy || sandboxPolicy) normalized.push({
+        type: "system",
+        subtype: "permission_mode",
+        timestamp: record.timestamp,
+        approvalPolicy: typeof payload.approval_policy === "string" ? payload.approval_policy : null,
+        sandboxPolicy,
+      });
     } else if (record.type === "response_item" && payload.type === "message" && (payload.role === "user" || payload.role === "assistant")) {
       const content = textBlocks(payload.content);
       if (content.length) normalized.push({ type: payload.role, timestamp: record.timestamp, message: { content, ...(payload.role === "assistant" ? { model: currentModel } : {}) } });
@@ -496,6 +504,7 @@ function normalizeCoworkRecords(records) {
       ...(record.subtype ? { subtype: record.subtype } : {}),
       ...(record.content !== undefined ? { content: record.content } : {}),
       ...(typeof record.model === "string" ? { model: record.model } : {}),
+      ...(typeof record.permissionMode === "string" ? { permissionMode: record.permissionMode } : {}),
       ...(message ? { message } : {}),
     };
     const messageId = record.type === "assistant" && typeof record?.message?.id === "string" ? record.message.id : null;

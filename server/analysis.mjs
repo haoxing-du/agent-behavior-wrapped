@@ -110,6 +110,58 @@ function repeatedInstructions(sessionRecords) {
     .map((item) => ({ instruction: item.instruction, occurrences: item.occurrences, distinctSessions: item.sessions.size }));
 }
 
+function permissionScore(record, agent) {
+  const mode = String(record.permissionMode || "").toLowerCase();
+  if (mode) {
+    const scores = { plan: 0, default: agent === "cowork" ? 40 : 25, acceptedits: 65, dontask: 80, bypasspermissions: 100 };
+    return scores[mode] ?? null;
+  }
+  if (agent !== "codex" || (!record.approvalPolicy && !record.sandboxPolicy)) return null;
+  const approvalScores = { untrusted: 0, "on-request": 20, "on-failure": 40, never: 60 };
+  const sandboxScores = { "read-only": 0, "workspace-write": 25, "danger-full-access": 40 };
+  const approval = approvalScores[String(record.approvalPolicy || "").toLowerCase()] ?? 0;
+  const sandbox = sandboxScores[String(record.sandboxPolicy || "").toLowerCase()] ?? 0;
+  return Math.min(100, approval + sandbox);
+}
+
+function buildTrustCurve(sessionRecords) {
+  const days = new Map();
+  let observations = 0;
+  let autonomousObservations = 0;
+  for (const { records, agent = "claude" } of sessionRecords) {
+    for (const record of records) {
+      const score = permissionScore(record, agent);
+      const timestamp = record.timestamp ? new Date(record.timestamp) : null;
+      if (score === null || !timestamp || !Number.isFinite(timestamp.getTime())) continue;
+      const date = timestamp.toISOString().slice(0, 10);
+      const item = days.get(date) || { total: 0, observations: 0 };
+      item.total += score;
+      item.observations++;
+      days.set(date, item);
+      observations++;
+      if (score >= 65) autonomousObservations++;
+    }
+  }
+  const ordered = [...days].sort((left, right) => left[0].localeCompare(right[0]));
+  if (ordered.length < 2) return null;
+  const firstDay = new Date(`${ordered[0][0]}T00:00:00.000Z`).getTime();
+  const points = ordered.map(([date, item]) => ({
+    dayOffset: Math.round((new Date(`${date}T00:00:00.000Z`).getTime() - firstDay) / 86_400_000),
+    score: Number((item.total / item.observations).toFixed(1)),
+    observations: item.observations,
+  }));
+  return {
+    points,
+    startScore: points[0].score,
+    endScore: points.at(-1).score,
+    change: Number((points.at(-1).score - points[0].score).toFixed(1)),
+    observations,
+    autonomousObservations,
+    autonomousPercentage: Number((autonomousObservations / observations * 100).toFixed(1)),
+    method: "Scores source-specific permission modes from 0 (planning/read-only with approvals) to 100 (no approvals with full access), then averages observations by day.",
+  };
+}
+
 const anomalyScripts = [
   { language: "Japanese", locale: "ja", expression: /[\p{Script=Hiragana}\p{Script=Katakana}]/gu },
   { language: "Korean", locale: "ko", expression: /\p{Script=Hangul}/gu },
@@ -504,6 +556,7 @@ export function analyzeSessions(sessionRecords) {
       method: "Counts visible messages containing explicit admissions of error or fault; generic capability apologies are excluded.",
     },
     longestUninterruptedRun,
+    trustCurve: buildTrustCurve(sessionRecords),
     stockPhrases: stockPhraseCounts(assistantProse),
     repeatedInstructions: repeatedInstructions(sessionRecords),
     outputLanguages: languageBreakdown(assistantProse),

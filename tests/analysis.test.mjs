@@ -163,6 +163,46 @@ test("attributes explicit interruptions to the active model", () => {
   ]);
 });
 
+test("builds a date-free trust curve from source-specific permission observations", () => {
+  const report = analyzeSessions([
+    { sessionId: "claude-trust", agent: "claude", records: [
+      { type: "user", timestamp: "2026-08-01T12:00:00.000Z", permissionMode: "default", message: { content: "Start" } },
+      { type: "user", timestamp: "2026-08-02T12:00:00.000Z", permissionMode: "acceptEdits", message: { content: "Continue" } },
+    ] },
+    { sessionId: "codex-trust", agent: "codex", records: [
+      { type: "system", subtype: "permission_mode", timestamp: "2026-08-03T12:00:00.000Z", approvalPolicy: "never", sandboxPolicy: "danger-full-access" },
+    ] },
+  ]);
+  assert.deepEqual(report.stats.trustCurve, {
+    points: [
+      { dayOffset: 0, score: 25, observations: 1 },
+      { dayOffset: 1, score: 65, observations: 1 },
+      { dayOffset: 2, score: 100, observations: 1 },
+    ],
+    startScore: 25,
+    endScore: 100,
+    change: 75,
+    observations: 3,
+    autonomousObservations: 2,
+    autonomousPercentage: 66.7,
+    method: "Scores source-specific permission modes from 0 (planning/read-only with approvals) to 100 (no approvals with full access), then averages observations by day.",
+  });
+  assert.equal(JSON.stringify(report.stats.trustCurve).includes("2026-08"), false);
+});
+
+test("normalizes Codex approval and sandbox settings without retaining turn context", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "behavior-wrapped-codex-trust-"));
+  const file = path.join(directory, "trust.jsonl");
+  fs.writeFileSync(file, `${JSON.stringify({ timestamp: "2026-08-03T12:00:00.000Z", type: "turn_context", payload: { model: "gpt-5.6-sol", approval_policy: "never", sandbox_policy: { type: "danger-full-access" }, cwd: "/private/project" } })}\n`);
+  assert.deepEqual(readRecords(file, "codex"), [{
+    type: "system",
+    subtype: "permission_mode",
+    timestamp: "2026-08-03T12:00:00.000Z",
+    approvalPolicy: "never",
+    sandboxPolicy: "danger-full-access",
+  }]);
+});
+
 test("normalizes structured Codex tool records into private-safe workaround evidence", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "behavior-wrapped-codex-"));
   const file = path.join(directory, "structured.jsonl");
