@@ -363,6 +363,7 @@ export function analyzeSessions(sessionRecords) {
   const toolCounts = new Map();
   const agentCounts = new Map(agentDefinitions.map(({ agent }) => [agent, 0]));
   const modelTokens = new Map();
+  const interruptionModels = new Map();
   const activeDays = new Set();
   let prompts = 0;
   let toolCalls = 0;
@@ -389,6 +390,7 @@ export function analyzeSessions(sessionRecords) {
     let currentResponseWords = 0;
     let hasCurrentPrompt = false;
     let sessionTurns = 0;
+    let currentModel = `${agent === "codex" ? "Codex" : agent === "cowork" ? "Cowork" : "Claude"} model`;
     const finishResponse = () => {
       if (hasCurrentPrompt && currentResponseWords > 0) {
         agentResponseWords += currentResponseWords;
@@ -398,6 +400,8 @@ export function analyzeSessions(sessionRecords) {
     };
     for (const record of records) {
       const text = visibleText(record);
+      const declaredModel = record?.message?.model || record?.model;
+      if (typeof declaredModel === "string" && declaredModel) currentModel = declaredModel;
       if (record.type === "system" && record.subtype === "turn_duration") {
         const durationMs = Number(record.durationMs);
         if (Number.isFinite(durationMs) && durationMs > 0 && (!longestUninterruptedRun || durationMs > longestUninterruptedRun.durationMs)) {
@@ -424,7 +428,10 @@ export function analyzeSessions(sessionRecords) {
       const d = day(record.timestamp);
       if (d) activeDays.add(d);
       if (record.type === "user" && !record.isMeta && text) prompts++;
-      if (record.type === "system" && /interrupt/i.test(`${record.subtype || ""} ${record.content || ""}`)) interruptions++;
+      if ((record.type === "system" && /interrupt/i.test(`${record.subtype || ""} ${record.content || ""}`)) || record.interruptedMessageId) {
+        interruptions++;
+        interruptionModels.set(currentModel, (interruptionModels.get(currentModel) || 0) + 1);
+      }
       const usage = record?.message?.usage;
       if (usage) {
         const input = Number(usage.input_tokens) || 0;
@@ -464,6 +471,9 @@ export function analyzeSessions(sessionRecords) {
     tokens: modelTokenCount,
     percentage: tokens ? Number((modelTokenCount / tokens * 100).toFixed(1)) : 0,
   }));
+  const interruptionsByModel = [...interruptionModels]
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .map(([model, count]) => ({ model, name: displayModelName(model), count }));
   const stats = {
     sessions: totalSessions,
     activeDays: activeDays.size,
@@ -471,6 +481,7 @@ export function analyzeSessions(sessionRecords) {
     prompts,
     toolCalls,
     interruptions,
+    interruptionsByModel,
     tokens,
     tokenBreakdown,
     agentWords: agentResponseWords,

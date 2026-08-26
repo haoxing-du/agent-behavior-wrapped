@@ -108,6 +108,12 @@ export function sanitizePublicReport(value) {
       sessions: Math.round(safeNumber(stats.sessions, 1_000_000)), activeDays: Math.round(safeNumber(stats.activeDays, 1_000_000)),
       durationMinutes: Math.round(safeNumber(stats.durationMinutes)), prompts: Math.round(safeNumber(stats.prompts)), toolCalls: Math.round(safeNumber(stats.toolCalls)),
       interruptions: Math.round(safeNumber(stats.interruptions)), tokens: safeTokens, ...(safeTokenBreakdown ? { tokenBreakdown: safeTokenBreakdown } : {}), agentWords: Math.round(safeNumber(stats.agentWords)),
+      interruptionsByModel: Array.isArray(stats.interruptionsByModel) ? stats.interruptionsByModel.slice(0, 10).flatMap((item) => {
+        const model = safeText(item?.model, 80);
+        const name = safeText(item?.name, 80);
+        const count = Math.round(safeNumber(item?.count, 1_000_000));
+        return model && name && count > 0 ? [{ model, name, count }] : [];
+      }) : [],
       userWords: Math.round(safeNumber(stats.userWords)), agentUserWordRatio: safeNumber(stats.agentUserWordRatio, 10_000),
       averageAgentResponseWords: Math.round(safeNumber(stats.averageAgentResponseWords)), averageUserInputWords: Math.round(safeNumber(stats.averageUserInputWords)),
       longestSessionTurns: Math.max(0, ...safeSessionTurnCounts),

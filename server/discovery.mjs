@@ -450,7 +450,7 @@ function normalizeCodexRecords(records, { includePrivateToolDetails = false } = 
     } else if (record.type === "event_msg" && payload.type === "task_complete" && Number(payload.duration_ms) > 0) {
       normalized.push({ type: "system", subtype: "turn_duration", timestamp: record.timestamp, durationMs: Number(payload.duration_ms), model: currentModel });
     } else if (record.type === "event_msg" && payload.type === "turn_aborted") {
-      normalized.push({ type: "system", subtype: "interrupt", timestamp: record.timestamp, content: "interrupt" });
+      normalized.push({ type: "system", subtype: "interrupt", timestamp: record.timestamp, content: "interrupt", model: currentModel });
     } else if (record.type === "event_msg" && payload.type === "token_count" && payload.info?.total_token_usage) {
       const total = payload.info.total_token_usage;
       const usage = Object.fromEntries(Object.keys(previousUsage).map((key) => [key, Math.max(0, (Number(total[key]) || 0) - previousUsage[key])]));
@@ -495,6 +495,7 @@ function normalizeCoworkRecords(records) {
       ...(record.isMeta ? { isMeta: true } : {}),
       ...(record.subtype ? { subtype: record.subtype } : {}),
       ...(record.content !== undefined ? { content: record.content } : {}),
+      ...(typeof record.model === "string" ? { model: record.model } : {}),
       ...(message ? { message } : {}),
     };
     const messageId = record.type === "assistant" && typeof record?.message?.id === "string" ? record.message.id : null;

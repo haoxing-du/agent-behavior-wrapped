@@ -149,6 +149,20 @@ test("uses explicit completed-turn durations for the longest uninterrupted run",
   assert.deepEqual(report.stats.longestUninterruptedRun, { durationMs: 182_450, agent: "codex", agentName: "Codex" });
 });
 
+test("attributes explicit interruptions to the active model", () => {
+  const report = analyzeSessions([{ sessionId: "interruptions", agent: "claude", records: [
+    { type: "assistant", message: { model: "claude-opus-4-8", content: "Working." } },
+    { type: "system", subtype: "interrupt", content: "User interrupted" },
+    { type: "assistant", message: { model: "claude-sonnet-5", content: "Trying again." } },
+    { type: "user", interruptedMessageId: "assistant-2", message: { content: "Stop there." } },
+  ] }]);
+  assert.equal(report.stats.interruptions, 2);
+  assert.deepEqual(report.stats.interruptionsByModel, [
+    { model: "claude-opus-4-8", name: "Claude Opus 4.8", count: 1 },
+    { model: "claude-sonnet-5", name: "Claude Sonnet 5", count: 1 },
+  ]);
+});
+
 test("normalizes structured Codex tool records into private-safe workaround evidence", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "behavior-wrapped-codex-"));
   const file = path.join(directory, "structured.jsonl");

@@ -12,6 +12,7 @@ function reportFixture() {
     sessionIds: ["private-session-id"],
     stats: {
       sessions: 4, activeDays: 3, durationMinutes: 90, prompts: 20, toolCalls: 12, interruptions: 1,
+      interruptionsByModel: [{ model: "claude-opus-4-8", name: "Claude Opus 4.8", count: 1, privateSessionId: "secret" }],
       tokens: 1_200_000, tokenBreakdown: { input: 300_000, output: 100_000, cacheRead: 700_000, cacheCreation: 90_000, reasoning: 10_000 }, agentWords: 8_000, userWords: 2_000, agentUserWordRatio: 4,
       averageAgentResponseWords: 400, averageUserInputWords: 100, estimatedCostUsd: 2.4,
       longestSessionTurns: 999,
@@ -43,6 +44,7 @@ test("sanitizes a hosted report to a strict share-safe shape", () => {
   assert.equal(safe.rangeLabel, "Your recent agent history");
   assert.equal(safe.donationHelperUrl, "http://localhost:4317/donate/shareSafe1234");
   assert.equal(safe.stats.agentUserWordRatio, 4);
+  assert.deepEqual(safe.stats.interruptionsByModel, [{ model: "claude-opus-4-8", name: "Claude Opus 4.8", count: 1 }]);
   assert.deepEqual(safe.stats.tokenBreakdown, { input: 300_000, output: 100_000, cacheRead: 700_000, cacheCreation: 90_000, reasoning: 10_000 });
   assert.equal(safe.stats.longestSessionTurns, 51);
   assert.deepEqual(safe.stats.sessionTurnCounts, [2, 12, 51]);

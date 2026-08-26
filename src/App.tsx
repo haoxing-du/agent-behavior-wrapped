@@ -11,6 +11,7 @@ type ModelStat = { model: string; name: string; tokens: number; percentage: numb
 type RepeatedInstruction = { instruction: string; occurrences: number; distinctSessions: number };
 type ApologyCounts = { user: number; agent: number };
 type UninterruptedRun = { durationMs: number; agent: "claude" | "cowork" | "codex"; agentName: string };
+type ModelCount = { model: string; name: string; count: number };
 type TokenBreakdown = { input: number; output: number; cacheRead: number; cacheCreation: number; reasoning: number };
 type InteractionTone = { frustratedMessages: number; gratefulMessages: number; analyzedMessages: number; method?: string };
 type InteractionCard = { quote?: string; frustrationQuote?: string | null };
@@ -19,7 +20,7 @@ type LanguageAnomaly = { language: string; words: number; occurrences: number; l
 type TopicStat = { topic: string; tokens: number; percentage: number };
 type StockPhraseStat = { phrase: string; count: number };
 type WorkaroundCard = { count: number; models: { name: string; count: number }[]; example?: string };
-type Report = { stats: { sessions: number; activeDays: number; durationMinutes: number; prompts: number; toolCalls: number; interruptions: number; tokens: number; tokenBreakdown?: TokenBreakdown; agentWords?: number; userWords?: number; agentUserWordRatio?: number | null; averageAgentResponseWords?: number; averageUserInputWords?: number; longestSessionTurns?: number; sessionTurnCounts?: number[]; longestUninterruptedRun?: UninterruptedRun | null; interactionTone?: InteractionTone; apologyCounts?: ApologyCounts; stockPhrases?: StockPhraseStat[]; repeatedInstructions?: RepeatedInstruction[]; outputLanguages?: LanguageStat[]; languageAnomaly?: LanguageAnomaly | null; topics?: TopicStat[]; tools: { name: string; count: number }[]; agents: AgentStat[]; models: ModelStat[]; estimatedCostUsd: number; costEstimateMethod: string }; findings: Finding[]; phraseCard?: PhraseCard | null; interactionCard?: InteractionCard | null; workaroundCard?: WorkaroundCard | null };
+type Report = { stats: { sessions: number; activeDays: number; durationMinutes: number; prompts: number; toolCalls: number; interruptions: number; interruptionsByModel?: ModelCount[]; tokens: number; tokenBreakdown?: TokenBreakdown; agentWords?: number; userWords?: number; agentUserWordRatio?: number | null; averageAgentResponseWords?: number; averageUserInputWords?: number; longestSessionTurns?: number; sessionTurnCounts?: number[]; longestUninterruptedRun?: UninterruptedRun | null; interactionTone?: InteractionTone; apologyCounts?: ApologyCounts; stockPhrases?: StockPhraseStat[]; repeatedInstructions?: RepeatedInstruction[]; outputLanguages?: LanguageStat[]; languageAnomaly?: LanguageAnomaly | null; topics?: TopicStat[]; tools: { name: string; count: number }[]; agents: AgentStat[]; models: ModelStat[]; estimatedCostUsd: number; costEstimateMethod: string }; findings: Finding[]; phraseCard?: PhraseCard | null; interactionCard?: InteractionCard | null; workaroundCard?: WorkaroundCard | null };
 type DonationMessage = { role: string; timestamp: string | null; text: string };
 type DonationSession = { sessionId: string; label: string; summary: string; messages: DonationMessage[] };
 type RedactionContext = { before: string; match: string; after: string };
@@ -309,6 +310,7 @@ function SharedWrapped({ id }: { id: string }) {
     const sessionTurnCounts = (report.stats.sessionTurnCounts || []).filter((value) => Number.isFinite(value) && value >= 1);
     const longestSessionTurns = Math.max(0, ...sessionTurnCounts);
     const longestUninterruptedRun = report.stats.longestUninterruptedRun;
+    const interruptionsByModel = report.stats.interruptionsByModel || [];
     const harryPotterSeriesCount = fmtSeriesEquivalent(report.stats.tokens || 0, 1_450_000);
     const tokenBreakdownRows = report.stats.tokenBreakdown ? ([
       ["Input", report.stats.tokenBreakdown.input],
@@ -336,6 +338,7 @@ function SharedWrapped({ id }: { id: string }) {
     ...(topTopic ? [{ kicker: "Your #1 use for agents was", headline: topTopic.topic, detail: "", tone: "topics", rows: displayTopics.slice(0, 5).map((item) => ({ label: item.topic === "Other" ? "Everything else" : item.topic, value: `${item.percentage.toFixed(1)}%`, percentage: item.percentage })) }] : []),
     ...(sessionTurnCounts.length ? [{ kicker: "Your longest session lasted", headline: `${longestSessionTurns.toLocaleString()} turns`, detail: "", tone: "turns", turnDistribution: { values: sessionTurnCounts, median: quantile(sessionTurnCounts, .5) } }] : []),
     ...(longestUninterruptedRun ? [{ kicker: "Your longest uninterrupted agent run", headline: fmtRunDuration(longestUninterruptedRun.durationMs), detail: `A completed ${longestUninterruptedRun.agentName} turn with no recorded abort.`, tone: "turns" }] : []),
+    ...(report.stats.interruptions > 0 ? [{ kicker: "You interrupted your agents", headline: `${report.stats.interruptions.toLocaleString()} time${report.stats.interruptions === 1 ? "" : "s"}`, detail: "Explicit stop events, grouped by the active model.", tone: "models", rows: interruptionsByModel.map((item) => ({ label: item.name, value: item.count.toLocaleString() })) }] : []),
     ...(Number.isFinite(report.stats.averageAgentResponseWords) ? [{ kicker: "On average, your agent responded with", headline: `${report.stats.averageAgentResponseWords!.toLocaleString()} words`, detail: `Your average input was ${report.stats.averageUserInputWords!.toLocaleString()} words.`, wordRatio: agentWordRatio?.toLocaleString(undefined, { maximumFractionDigits: 2 }), tone: "violet" }] : []),
     ...(interactionTone && interactionTone.frustratedMessages + interactionTone.gratefulMessages > 0 ? [{ kicker: "Your relationship with your agent", headline: "", detail: "", tone: "social", evidenceHref: localInteractionEvidenceUrl(report), evidenceLabel: "See exact transcript excerpts", comparison: [
       { label: "You yelled at your agent", highlight: "yelled at", accent: "yell" as const, value: interactionTone.frustratedMessages.toLocaleString(), suffix: `time${interactionTone.frustratedMessages === 1 ? "" : "s"}`, quote: report.interactionCard?.frustrationQuote || report.interactionCard?.quote },
@@ -1082,6 +1085,11 @@ function ReportView({ report, onEvidence, onDonate }: { report: Report; onEviden
 
     {report.stats.longestUninterruptedRun && <section className="wrapped-card catchphrase-card">
       <div><span className="card-kicker">Your longest uninterrupted agent run</span><h2>{fmtRunDuration(report.stats.longestUninterruptedRun.durationMs)}</h2><p>A completed {report.stats.longestUninterruptedRun.agentName} turn with no recorded abort.</p></div>
+    </section>}
+
+    {!!report.stats.interruptionsByModel?.length && <section className="wrapped-card tools-card">
+      <div><span className="card-kicker">INTERRUPTIONS BY MODEL</span><h2>You hit stop<br />{report.stats.interruptions} time{report.stats.interruptions === 1 ? "" : "s"}.</h2><p>Explicit stop events attributed to the active model.</p></div>
+      <div className="tool-chart">{report.stats.interruptionsByModel.map((item, index) => <div className="tool-row" key={item.model}><span className="rank">{String(index + 1).padStart(2, "0")}</span><strong>{item.name}</strong><div><i style={{ width: `${Math.max(8, item.count / Math.max(...report.stats.interruptionsByModel!.map((row) => row.count), 1) * 100)}%` }} /></div><b>{item.count}</b></div>)}</div>
     </section>}
 
     <section className="wrapped-card tools-card">
