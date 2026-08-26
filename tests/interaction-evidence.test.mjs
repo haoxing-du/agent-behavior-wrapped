@@ -16,17 +16,24 @@ test("rebuilds exact local yelling and thanking excerpts with adjacent context",
       frustrated: [{ candidateId: "interaction-1", location: { sessionId, recordIndex: 1, timestamp: records[1].timestamp } }],
       grateful: [{ candidateId: "interaction-2", location: { sessionId, recordIndex: 3, timestamp: records[3].timestamp } }],
     },
+    apologyReview: {
+      user: [{ candidateId: "apology-user-1", location: { sessionId, recordIndex: 1, timestamp: records[1].timestamp } }],
+      agent: [{ candidateId: "apology-agent-1", location: { sessionId, recordIndex: 2, timestamp: records[2].timestamp } }],
+    },
   };
   const metadata = new Map([[sessionId, { label: "Deployment feedback", agentName: "Codex", startedAt: records[0].timestamp }]]);
   const preview = makeInteractionEvidencePreview(report, [{ sessionId, records }], metadata);
 
-  assert.equal(preview.format, "behavior-wrapped-interaction-evidence-v1");
+  assert.equal(preview.format, "behavior-wrapped-interaction-evidence-v2");
   assert.equal(preview.localPrivate, true);
   assert.equal(preview.standardRedactionsApplied, false);
   assert.deepEqual(preview.frustrated[0].messages.map((message) => message.role), ["assistant", "user", "assistant"]);
   assert.equal(preview.frustrated[0].messages[1].highlighted, true);
   assert.match(preview.frustrated[0].messages[1].text, /sk-test_/);
   assert.equal(preview.grateful[0].messages.at(-1).text, "Perfect, thank you!");
+  assert.equal(preview.userApologies[0].messages[1].text, records[1].message.content);
+  assert.equal(preview.agentApologies[0].messages[1].role, "assistant");
+  assert.equal(preview.agentApologies[0].messages[1].text, "You're right. I'll restore it.");
 });
 
 test("falls back to timestamps when a stored record index no longer matches", () => {

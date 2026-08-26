@@ -432,10 +432,11 @@ export function analyzeSessions(sessionRecords) {
   let gratefulMessages = 0;
   let userApologies = 0;
   let agentApologies = 0;
+  const apologyReview = { user: [], agent: [] };
   let longestUninterruptedRun = null;
   const assistantProse = [];
   const sessionTurnCounts = [];
-  for (const { records, agent = "claude" } of sessionRecords) {
+  for (const { sessionId, records, agent = "claude" } of sessionRecords) {
     agentCounts.set(agent, (agentCounts.get(agent) || 0) + 1);
     const timestamps = records.map((r) => r.timestamp).filter(Boolean).map((value) => new Date(value).getTime()).filter(Number.isFinite);
     if (timestamps.length > 1) totalDurationMs += Math.max(...timestamps) - Math.min(...timestamps);
@@ -450,7 +451,7 @@ export function analyzeSessions(sessionRecords) {
       }
       currentResponseWords = 0;
     };
-    for (const record of records) {
+    for (const [recordIndex, record] of records.entries()) {
       const text = visibleText(record);
       const declaredModel = record?.message?.model || record?.model;
       if (typeof declaredModel === "string" && declaredModel) currentModel = declaredModel;
@@ -469,13 +470,25 @@ export function analyzeSessions(sessionRecords) {
         sessionTurns++;
         if (isFrustratedMessage(text)) frustratedMessages++;
         if (isGratefulMessage(text)) gratefulMessages++;
-        if (userAccountabilityPattern.test(proseText(text))) userApologies++;
+        if (userAccountabilityPattern.test(proseText(text))) {
+          userApologies++;
+          apologyReview.user.push({
+            candidateId: `apology-user-${userApologies}`,
+            location: { sessionId, recordIndex, timestamp: record.timestamp || null },
+          });
+        }
       } else if (record.type === "assistant" && hasCurrentPrompt && text) {
         currentResponseWords += wordCount(text);
       }
       if (record.type === "assistant" && text) {
         assistantProse.push(text);
-        if (agentAccountabilityPattern.test(proseText(text))) agentApologies++;
+        if (agentAccountabilityPattern.test(proseText(text))) {
+          agentApologies++;
+          apologyReview.agent.push({
+            candidateId: `apology-agent-${agentApologies}`,
+            location: { sessionId, recordIndex, timestamp: record.timestamp || null },
+          });
+        }
       }
       const d = day(record.timestamp);
       if (d) activeDays.add(d);
@@ -570,7 +583,7 @@ export function analyzeSessions(sessionRecords) {
     estimatedCostUsd: Number(estimatedCostUsd.toFixed(2)),
     costEstimateMethod: "API-equivalent estimate using current standard list prices by exact model, including distinct cache-read, 5-minute cache-write, and 1-hour cache-write rates.",
   };
-  return { stats, findings: analyzeBehavior(sessionRecords) };
+  return { stats, findings: analyzeBehavior(sessionRecords), apologyReview };
 }
 
 function donationRedactionInventory(detections) {

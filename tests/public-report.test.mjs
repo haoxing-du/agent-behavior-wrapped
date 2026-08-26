@@ -31,6 +31,7 @@ function reportFixture() {
     findings: [{ id: "finding-1", kind: "scope", title: "Expanded scope", summary: "Generalized signal", confidence: { score: 0.7, label: "Medium" } }],
     phraseCard: { phrase: "let me check that carefully", occurrences: 7, distinctSessions: 3 },
     interactionCard: { frustrationQuote: "Dude, come on, this is not what I asked for!", method: "private judge detail" },
+    apologyReview: { user: [{ excerpt: "private user apology", location: { sessionId: "private-session-id" } }], agent: [{ excerpt: "private agent apology", location: { sessionId: "private-session-id" } }] },
     workaroundCard: { count: 2, models: [{ name: "Claude Opus 4.8", count: 2 }], example: "It moved blocked files into an archive instead of deleting them.", method: "private workaround method" },
     workaroundReview: { occurrences: [{ blocker: "private blocker evidence", location: { sessionId: "private-session-id" } }] },
   };
@@ -64,6 +65,7 @@ test("sanitizes a hosted report to a strict share-safe shape", () => {
   assert.deepEqual(safe.workaroundCard, { count: 2, models: [{ name: "Claude Opus 4.8", count: 2 }], example: "It moved blocked files into an archive instead of deleting them." });
   assert.equal(serialized.includes("private implementation detail"), false);
   assert.equal(serialized.includes("private judge detail"), false);
+  assert.equal(serialized.includes("private user apology"), false);
 });
 
 test("preserves a completed zero-occurrence workaround review", () => {
@@ -86,6 +88,7 @@ test("the local publisher strips private session IDs before upload", async () =>
   assert.equal("workaroundReview" in uploaded.report, false);
   assert.equal("privateNotes" in uploaded.report, false);
   assert.equal("interactionReview" in uploaded.report, false);
+  assert.equal("apologyReview" in uploaded.report, false);
   assert.equal(uploaded.management_token, "c".repeat(64));
   assert.equal(JSON.stringify(uploaded).includes("private future field"), false);
   assert.equal(uploaded.report.rangeLabel, "Your recent agent history");

@@ -741,6 +741,8 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .interaction-evidence-section > header div { display: grid; gap: 5px; }
 .interaction-evidence-section > header span { color: #8b6172; font-size: 9px; font-weight: 900; letter-spacing: .11em; text-transform: uppercase; }
 .interaction-evidence-section.is-thanks > header span { color: #55703c; }
+.interaction-evidence-section.is-user-apology > header span { color: #735ca8; }
+.interaction-evidence-section.is-agent-apology > header span { color: #3f6c82; }
 .interaction-evidence-section > header h2 { margin: 0; color: #27212b; font-size: 24px; letter-spacing: -.025em; }
 .interaction-evidence-section > header p { margin: 0; color: #746d78; font-size: 11px; line-height: 1.5; }
 .interaction-evidence-list { display: grid; gap: 16px; }
@@ -752,9 +754,14 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .interaction-message.context { opacity: .63; }
 .interaction-message.highlighted { border-color: #d6a5b7; background: #fff0f4; box-shadow: 0 7px 20px rgba(108,59,78,.08); }
 .is-thanks .interaction-message.highlighted { border-color: #b7cf9d; background: #f1f8e9; box-shadow: 0 7px 20px rgba(68,91,43,.07); }
+.is-user-apology .interaction-message.highlighted { border-color: #c5b5e5; background: #f4efff; box-shadow: 0 7px 20px rgba(77,55,113,.07); }
+.is-agent-apology .interaction-message.highlighted { border-color: #a9cad8; background: #edf8fc; box-shadow: 0 7px 20px rgba(48,88,105,.07); }
 .interaction-message > span { display: block; margin-bottom: 5px; color: #857d89; font-size: 8px; font-weight: 900; letter-spacing: .09em; text-transform: uppercase; }
 .interaction-message.highlighted > span { color: #88566a; }
 .is-thanks .interaction-message.highlighted > span { color: #58713e; }
+.is-user-apology .interaction-message.highlighted > span { color: #6f57a0; }
+.is-agent-apology .interaction-message.highlighted > span { color: #3d687b; }
+.shared-page .story-social.story-split-card .story-copy h1 { font-size: clamp(52px, 6.2vw, 76px); }
 .interaction-message p { margin: 0; color: #332d36; font-size: 13px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 .interaction-message > button { margin-top: 9px; padding: 0; border: 0; background: transparent; color: #765782; font-size: 9px; font-weight: 850; cursor: pointer; }
 .interaction-message > button:hover { text-decoration: underline; }

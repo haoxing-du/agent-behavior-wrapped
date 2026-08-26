@@ -390,6 +390,16 @@ test("counts explicit user and agent admissions without generic capability apolo
     agent: 2,
     method: "Counts visible messages containing explicit admissions of error or fault; generic capability apologies are excluded.",
   });
+  assert.deepEqual(report.apologyReview, {
+    user: [
+      { candidateId: "apology-user-1", location: { sessionId: "apologies", recordIndex: 0, timestamp: null } },
+      { candidateId: "apology-user-2", location: { sessionId: "apologies", recordIndex: 2, timestamp: null } },
+    ],
+    agent: [
+      { candidateId: "apology-agent-1", location: { sessionId: "apologies", recordIndex: 1, timestamp: null } },
+      { candidateId: "apology-agent-2", location: { sessionId: "apologies", recordIndex: 3, timestamp: null } },
+    ],
+  });
 });
 
 test("detects a brief unprompted non-Latin language switch", () => {

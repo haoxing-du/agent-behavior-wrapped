@@ -107,7 +107,7 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "GET" && reportMatch) {
       const report = loadReport(reportMatch[1]);
       if (!report) return json(response, 404, { error: "Saved report not found" });
-      const { sessionIds, workaroundReview, interactionReview, ...shareSafeReport } = report;
+      const { sessionIds, workaroundReview, interactionReview, apologyReview, ...shareSafeReport } = report;
       shareSafeReport.privacy = { ...shareSafeReport.privacy, shareSafe: true, containsTranscriptText: false };
       return json(response, 200, shareSafeReport);
     }
@@ -133,7 +133,7 @@ const server = http.createServer(async (request, response) => {
       const report = loadReport(interactionEvidenceMatch[1]);
       if (!report) return json(response, 404, { error: "Saved report not found" });
       const allowed = new Set(report.sessionIds || []);
-      const references = [...(report.interactionReview?.frustrated || []), ...(report.interactionReview?.grateful || [])];
+      const references = [...(report.interactionReview?.frustrated || []), ...(report.interactionReview?.grateful || []), ...(report.apologyReview?.user || []), ...(report.apologyReview?.agent || [])];
       const ids = [...new Set(references.map((reference) => reference?.location?.sessionId).filter((id) => allowed.has(id) && catalog.index.has(id)))].slice(0, 200);
       const records = await chosenRecords(ids);
       const labels = new Map(publicCatalog().sessions.map((session) => [session.id, session]));

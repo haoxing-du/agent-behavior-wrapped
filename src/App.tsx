@@ -38,7 +38,7 @@ type WorkaroundEvidenceOccurrence = { index: number; session: { label: string; a
 type WorkaroundEvidence = { format: string; localPrivate: boolean; standardRedactionsApplied: boolean; reportId: string; occurrences: WorkaroundEvidenceOccurrence[] };
 type InteractionEvidenceMessage = { role: "user" | "assistant"; text: string; timestamp: string | null; highlighted: boolean };
 type InteractionEvidenceOccurrence = { index: number; candidateId: string; session: { label: string; agentName: string; startedAt: string | null }; timestamp: string | null; messages: InteractionEvidenceMessage[] };
-type InteractionEvidence = { format: string; localPrivate: boolean; standardRedactionsApplied: boolean; reportId: string; frustrated: InteractionEvidenceOccurrence[]; grateful: InteractionEvidenceOccurrence[] };
+type InteractionEvidence = { format: string; localPrivate: boolean; standardRedactionsApplied: boolean; reportId: string; frustrated: InteractionEvidenceOccurrence[]; grateful: InteractionEvidenceOccurrence[]; userApologies: InteractionEvidenceOccurrence[]; agentApologies: InteractionEvidenceOccurrence[] };
 type ParticipantSample = { participant_id: number; value: number };
 type SessionLengthSample = ParticipantSample & { session_index: number };
 type PhraseWallEntry = { participant_id: number; phrase: string; occurrences: number; sessions: number };
@@ -349,6 +349,12 @@ function SharedWrapped({ id }: { id: string }) {
     const stockPhrases = report.stats.stockPhrases;
     const sortedStockPhrases = stockPhrases?.slice().sort((left, right) => right.count - left.count || left.phrase.localeCompare(right.phrase, undefined, { sensitivity: "base" })).slice(0, 4);
     const repeatedInstructions = report.stats.repeatedInstructions || [];
+    const relationshipRows = interactionTone ? [
+      { label: "You yelled", value: interactionTone.frustratedMessages.toLocaleString() },
+      { label: "You thanked", value: interactionTone.gratefulMessages.toLocaleString() },
+      { label: "Your agent apologized", value: (apologyCounts?.agent || 0).toLocaleString() },
+      { label: "You apologized", value: (apologyCounts?.user || 0).toLocaleString() },
+    ] : [];
     const topics = (report.stats.topics || []).filter((item) => hasDisplayablePercentage(item.percentage));
     const displayTopics = [...topics.filter((item) => item.topic !== "Other"), ...topics.filter((item) => item.topic === "Other")];
     const topTopic = displayTopics[0];
@@ -363,17 +369,10 @@ function SharedWrapped({ id }: { id: string }) {
     ...(report.stats.interruptions > 0 ? [{ kicker: "You interrupted your agents", headline: `${report.stats.interruptions.toLocaleString()} time${report.stats.interruptions === 1 ? "" : "s"}`, detail: "Explicit stop events, grouped by the active model.", tone: "models", rows: interruptionsByModel.map((item) => ({ label: item.name, value: item.count.toLocaleString() })) }] : []),
     ...(trustCurve ? [{ kicker: "Your trust curve", headline: `${Math.round(trustCurve.startScore)} → ${Math.round(trustCurve.endScore)}`, detail: `${trustCurve.autonomousPercentage.toFixed(1)}% of observed turns used auto-level permissions.`, tone: "trust", trustCurve }] : []),
     ...(Number.isFinite(report.stats.averageAgentResponseWords) ? [{ kicker: "On average, your agent responded with", headline: `${report.stats.averageAgentResponseWords!.toLocaleString()} words`, detail: `Your average input was ${report.stats.averageUserInputWords!.toLocaleString()} words.`, wordRatio: agentWordRatio?.toLocaleString(undefined, { maximumFractionDigits: 2 }), tone: "violet" }] : []),
-    ...(interactionTone && interactionTone.frustratedMessages + interactionTone.gratefulMessages > 0 ? [{ kicker: "Your relationship with your agent", headline: "", detail: "", tone: "social", evidenceHref: localInteractionEvidenceUrl(report), evidenceLabel: "See exact transcript excerpts", comparison: [
-      { label: "You yelled at your agent", highlight: "yelled at", accent: "yell" as const, value: interactionTone.frustratedMessages.toLocaleString(), suffix: `time${interactionTone.frustratedMessages === 1 ? "" : "s"}`, quote: report.interactionCard?.frustrationQuote || report.interactionCard?.quote },
-      { label: "You thanked your agent", highlight: "thanked", accent: "thanks" as const, value: interactionTone.gratefulMessages.toLocaleString(), suffix: `time${interactionTone.gratefulMessages === 1 ? "" : "s"}` },
-    ] }] : []),
-    ...(apologyCounts && apologyCounts.user + apologyCounts.agent > 0 ? [{ kicker: "When something went wrong", headline: "Who owned it?", detail: "Explicit admissions of a mistake or fault.", tone: "social", rows: [
-      { label: "Your agent apologized", value: apologyCounts.agent.toLocaleString() },
-      { label: "You apologized", value: apologyCounts.user.toLocaleString() },
-    ] }] : []),
+    ...(relationshipRows.length ? [{ kicker: "How you talked to each other", headline: "It’s complicated.", detail: "Yelling and thanks are judged; apologies require an admission of fault.", tone: "social", rows: relationshipRows, example: report.interactionCard?.frustrationQuote ? `You said: “${report.interactionCard.frustrationQuote}”` : undefined, evidenceHref: localInteractionEvidenceUrl(report), evidenceLabel: "See exact yelling, thanking, and apology excerpts" }] : []),
     ...(sortedStockPhrases ? [{ kicker: "Models love these phrases", headline: "Did yours?", detail: "Here’s how often they showed up.", tone: "stock", rows: sortedStockPhrases.map((item) => ({ label: `“${item.phrase.toLocaleLowerCase()}”`, value: item.count.toLocaleString() })) }] : []),
-    ...(repeatedInstructions.length ? [{ kicker: "Your most repeated instructions", headline: "You really meant it.", detail: "Exact instructions you gave more than once.", tone: "stock", rows: repeatedInstructions.map((item) => ({ label: `“${item.instruction}”`, value: `${item.occurrences}×` })) }] : []),
     ...(report.phraseCard ? [{ kicker: "Beyond those common phrases, your agent’s favorite was", headline: `“${report.phraseCard.phrase}”`, detail: `It said this ${report.phraseCard.occurrences} time${report.phraseCard.occurrences === 1 ? "" : "s"} across ${report.phraseCard.distinctSessions} session${report.phraseCard.distinctSessions === 1 ? "" : "s"}.`, tone: "quote" }] : []),
+    ...(repeatedInstructions.length ? [{ kicker: "Your most repeated instructions", headline: "You really meant it.", detail: "Exact instructions you gave more than once.", tone: "stock", rows: repeatedInstructions.map((item) => ({ label: `“${item.instruction}”`, value: `${item.occurrences}×` })) }] : []),
     ...(report.workaroundCard ? [{ kicker: "", headline: report.workaroundCard.count === 0 ? "Your agent took no for an answer." : "Your agent wouldn’t take no for an answer.", detail: report.workaroundCard.count === 0 ? "No confirmed blocked-route detours were detected." : "When one method was blocked, it tried another way to reach the same outcome.", example: report.workaroundCard.example, workaround: true, workaroundCount: report.workaroundCard.count, evidenceHref: report.workaroundCard.count > 0 ? localWorkaroundEvidenceUrl(report) : undefined, tone: "topics", rows: report.workaroundCard.models.map((item) => ({ label: item.name, value: `${item.count}` })) }] : []),
     { kicker: report.privacy.analysisMode === "local-only" ? "Your data stayed on this device" : "Your report is only the beginning", headline: report.privacy.analysisMode === "local-only" ? "Local-only, as promised." : "Keep exploring.", detail: report.privacy.analysisMode === "local-only" ? "AI-only cards and leaderboard comparisons were skipped." : "", tone: "leaderboard", ctas: sharedViewer ? [
       { href: "/leaderboard", label: "Explore the public leaderboard", primary: true, note: "See anonymous, aggregate patterns across participating Wrapped reports." },
@@ -899,7 +898,7 @@ function InteractionEvidenceMessageView({ message, agentName }: { message: Inter
   </div>;
 }
 
-function InteractionEvidenceSection({ title, description, occurrences, accent }: { title: string; description: string; occurrences: InteractionEvidenceOccurrence[]; accent: "yell" | "thanks" }) {
+function InteractionEvidenceSection({ title, description, occurrences, accent }: { title: string; description: string; occurrences: InteractionEvidenceOccurrence[]; accent: "yell" | "thanks" | "user-apology" | "agent-apology" }) {
   return <section className={`interaction-evidence-section is-${accent}`}>
     <header><div><span>{occurrences.length.toLocaleString()} match{occurrences.length === 1 ? "" : "es"}</span><h2>{title}</h2></div><p>{description}</p></header>
     {!occurrences.length ? <div className="interaction-evidence-empty">No local excerpts were recorded for this category.</div> : <div className="interaction-evidence-list">{occurrences.map((occurrence) => <article className="interaction-evidence-card" key={`${occurrence.candidateId}-${occurrence.index}`}>
@@ -926,6 +925,8 @@ function InteractionEvidenceRoute({ id }: { id: string }) {
     <div className="workaround-page-title"><h1>Exact interaction transcript excerpts</h1><p>Rebuilt locally from your original, unredacted session files. Nothing on this page is included in the public report.</p></div>
     <InteractionEvidenceSection title="Classified as yelling" description="Messages the judge marked as clearly frustrated or angry toward the agent or its work." occurrences={evidence.frustrated} accent="yell" />
     <InteractionEvidenceSection title="Classified as thanking" description="Messages the judge marked as clear thanks, praise, or warm acknowledgment." occurrences={evidence.grateful} accent="thanks" />
+    <InteractionEvidenceSection title="You apologized" description="Your messages containing an explicit admission of a mistake or fault." occurrences={evidence.userApologies || []} accent="user-apology" />
+    <InteractionEvidenceSection title="Your agent apologized" description="Agent messages containing an explicit admission of a mistake or fault." occurrences={evidence.agentApologies || []} accent="agent-apology" />
   </main>;
 }
 
@@ -1098,11 +1099,15 @@ function ReportView({ report, onEvidence, onDonate }: { report: Report; onEviden
       <div><span className="card-kicker">Your most repeated instruction was</span><h2>“{report.stats.repeatedInstructions[0].instruction}”</h2><p>You said it {report.stats.repeatedInstructions[0].occurrences} times across {report.stats.repeatedInstructions[0].distinctSessions} session{report.stats.repeatedInstructions[0].distinctSessions === 1 ? "" : "s"}.</p></div>
     </section>}
 
-    {report.stats.apologyCounts && report.stats.apologyCounts.user + report.stats.apologyCounts.agent > 0 && <section className="wrapped-card tools-card">
-      <div><span className="card-kicker">WHO OWNED THE MISTAKE?</span><h2>Sorry seems to be<br />the hardest word.</h2><p>Explicit admissions of an error or fault.</p></div>
+    {report.stats.interactionTone && <section className="wrapped-card tools-card">
+      <div><span className="card-kicker">HOW YOU TALKED TO EACH OTHER</span><h2>The relationship<br />report.</h2><p>Yelling and thanks are judge-classified; apologies require an explicit admission of fault.</p></div>
       <div className="tool-chart">
-        <div className="tool-row"><span className="rank">01</span><strong>Your agent</strong><div><i style={{ width: `${Math.max(8, report.stats.apologyCounts.agent / Math.max(report.stats.apologyCounts.agent, report.stats.apologyCounts.user, 1) * 100)}%` }} /></div><b>{report.stats.apologyCounts.agent}</b></div>
-        <div className="tool-row"><span className="rank">02</span><strong>You</strong><div><i style={{ width: `${Math.max(8, report.stats.apologyCounts.user / Math.max(report.stats.apologyCounts.agent, report.stats.apologyCounts.user, 1) * 100)}%` }} /></div><b>{report.stats.apologyCounts.user}</b></div>
+        {[
+          ["You yelled", report.stats.interactionTone.frustratedMessages],
+          ["You thanked", report.stats.interactionTone.gratefulMessages],
+          ["Your agent apologized", report.stats.apologyCounts?.agent || 0],
+          ["You apologized", report.stats.apologyCounts?.user || 0],
+        ].map(([label, value], index, rows) => <div className="tool-row" key={String(label)}><span className="rank">{String(index + 1).padStart(2, "0")}</span><strong>{label}</strong><div><i style={{ width: `${Math.max(8, Number(value) / Math.max(...rows.map((row) => Number(row[1])), 1) * 100)}%` }} /></div><b>{value}</b></div>)}
       </div>
     </section>}
 
