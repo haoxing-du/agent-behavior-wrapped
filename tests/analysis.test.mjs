@@ -151,15 +151,16 @@ test("backfills forked Codex models without recounting inherited token totals", 
   const usageRecords = normalized.filter((record) => record.message?.usage);
   assert.equal(usageRecords.length, 1);
   assert.deepEqual(usageRecords[0].message.usage, {
-    input_tokens: 200,
+    input_tokens: 100,
     output_tokens: 50,
     cache_creation_input_tokens: 0,
     cache_read_input_tokens: 100,
     reasoning_output_tokens: 0,
   });
   const report = analyzeSessions([{ sessionId: "forked", agent: "codex", records: normalized }]);
-  assert.equal(report.stats.tokens, 350);
-  assert.deepEqual(report.stats.models.map(({ name, tokens }) => ({ name, tokens })), [{ name: "GPT-5.6 Sol", tokens: 350 }]);
+  assert.equal(report.stats.tokens, 250);
+  assert.deepEqual(report.stats.tokenBreakdown, { input: 100, output: 50, cacheRead: 100, cacheCreation: 0, reasoning: 0 });
+  assert.deepEqual(report.stats.models.map(({ name, tokens }) => ({ name, tokens })), [{ name: "GPT-5.6 Sol", tokens: 250 }]);
 });
 
 test("pairs interleaved Codex tool outputs with their call IDs", () => {

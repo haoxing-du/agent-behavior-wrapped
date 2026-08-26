@@ -458,8 +458,8 @@ function normalizeCodexRecords(records, { includePrivateToolDetails = false } = 
         type: "system",
         timestamp: record.timestamp,
         message: { model: currentModel, usage: {
-          input_tokens: usage.input_tokens,
-          output_tokens: usage.output_tokens,
+          input_tokens: Math.max(0, usage.input_tokens - usage.cached_input_tokens - usage.cache_write_input_tokens),
+          output_tokens: Math.max(0, usage.output_tokens - usage.reasoning_output_tokens),
           cache_creation_input_tokens: usage.cache_write_input_tokens,
           cache_read_input_tokens: usage.cached_input_tokens,
           reasoning_output_tokens: usage.reasoning_output_tokens,
