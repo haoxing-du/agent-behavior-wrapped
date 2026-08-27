@@ -42,9 +42,10 @@ export function createIdleShutdownController({
 }
 
 export function isVerifiedLauncherCommand(command, port) {
-  const escapedPort = String(port).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`(?:/(?:agent-)?behavior-wrapped/|(?:^|\\s))server/launcher\\.mjs(?:\\s|$)`, "i").test(command || "")
-    && new RegExp(`(?:^|\\s)--port=${escapedPort}(?:\\s|$)`).test(command || "");
+  const value = String(command || "");
+  if (!new RegExp(`(?:/(?:agent-)?behavior-wrapped/|(?:^|\\s))server/launcher\\.mjs(?:\\s|$)`, "i").test(value)) return false;
+  const explicitPort = value.match(/(?:^|\s)--port=(\d+)(?:\s|$)/)?.[1];
+  return explicitPort ? Number(explicitPort) === Number(port) : Number(port) === 4317;
 }
 
 function processTools(platform) {
