@@ -518,9 +518,10 @@ function TokenUsageFigure({ metric, participantId, included, publicView = false 
   const height = 292;
   const left = width < 520 ? 38 : 54;
   const right = width - 22;
-  const samples = metric.samples.filter((sample) => Number.isFinite(sample.value) && sample.value >= 0);
+  const samples = metric.samples.filter((sample) => Number.isFinite(sample.value) && sample.value > 0);
   const values = samples.map((sample) => sample.value);
-  const positive = [...values, ...(publicView ? [] : [metric.value]), 1].map((value) => Math.max(1, value));
+  const plottedValues = [...values, ...(publicView || metric.value <= 0 ? [] : [metric.value])];
+  const positive = plottedValues.length ? plottedValues : [Math.max(1, metric.value)];
   const rawMinimum = Math.min(...positive);
   const rawMaximum = Math.max(...positive);
   const minimum = Math.log10(rawMinimum) - .18;
