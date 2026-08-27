@@ -254,8 +254,8 @@ test("worker validates interaction candidates and returns classifications withou
   assert.equal(validateInteractionToneRelayPayload({ candidates: [{ ...interactionCandidate, text: "See https://private.example" }] }), null);
   let upstreamBody;
   const upstreamSelection = {
-    classifications: [{ candidate_id: "interaction-1", frustrated: true, grateful: false }],
-    funniest_frustration_candidate_id: "interaction-1",
+    classifications: [{ candidate_id: "interaction-1", yelling: true, thanking: false }],
+    funniest_yelling_candidate_id: "interaction-1",
   };
   const expectedSelection = {
     frustrated: [{ candidate_id: "interaction-1", confidence: 1 }],
@@ -281,8 +281,8 @@ test("worker always sends repeated interaction-tone requests upstream", async ()
     value: { default: { match: async () => { cacheReads++; return null; }, put: async () => {} } },
   });
   const selection = {
-    classifications: [{ candidate_id: "interaction-1", frustrated: true, grateful: false }],
-    funniest_frustration_candidate_id: "interaction-1",
+    classifications: [{ candidate_id: "interaction-1", yelling: true, thanking: false }],
+    funniest_yelling_candidate_id: "interaction-1",
   };
   try {
     const fetchImpl = async () => {
@@ -304,8 +304,8 @@ test("worker always sends repeated interaction-tone requests upstream", async ()
 test("worker retries one malformed interaction-tone completion", async () => {
   let calls = 0;
   const selection = {
-    classifications: [{ candidate_id: "interaction-1", frustrated: true, grateful: false }],
-    funniest_frustration_candidate_id: "interaction-1",
+    classifications: [{ candidate_id: "interaction-1", yelling: true, thanking: false }],
+    funniest_yelling_candidate_id: "interaction-1",
   };
   const response = await handleRequest(interactionRequest(), env(), async () => {
     calls++;
@@ -330,12 +330,12 @@ test("worker batches a full interaction corpus and restores the original candida
     const supplied = JSON.parse(requestBody.messages[1].content.split("\n\n")[1]);
     const classifications = supplied.map((item, index) => ({
       candidate_id: item.candidate_id,
-      frustrated: index === supplied.length - 1,
-      grateful: false,
+      yelling: index === supplied.length - 1,
+      thanking: false,
     }));
     return new Response(JSON.stringify({
       model: OPENROUTER_MODEL,
-      choices: [{ message: { content: JSON.stringify({ classifications, funniest_frustration_candidate_id: classifications.at(-1).candidate_id }) } }],
+      choices: [{ message: { content: JSON.stringify({ classifications, funniest_yelling_candidate_id: classifications.at(-1).candidate_id }) } }],
       usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 },
     }), { status: 200, headers: { "content-type": "application/json" } });
   });
