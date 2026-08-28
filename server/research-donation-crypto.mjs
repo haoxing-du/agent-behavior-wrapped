@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
-import { DONATION_CONSENT_VERSION, DONATION_ENCRYPTION_ALGORITHM, DONATION_ENVELOPE_FORMAT, DONATION_KEY_ID, encryptedDonationAAD, sanitizeEncryptedDonationEnvelope } from "./encrypted-donation-schema.mjs";
-import { sanitizeResearchDonation } from "./research-donation-schema.mjs";
+import { gunzipSync, gzipSync } from "node:zlib";
+import { DONATION_CONSENT_VERSION, DONATION_CONTENT_ENCODING, DONATION_ENCRYPTION_ALGORITHM, DONATION_ENVELOPE_FORMAT, DONATION_KEY_ID, MAX_COMPRESSED_DONATION_BYTES, encryptedDonationAAD, sanitizeEncryptedDonationEnvelope } from "./encrypted-donation-schema.mjs";
+import { MAX_DONATION_BYTES, researchDonationByteLength, sanitizeResearchDonation } from "./research-donation-schema.mjs";
 
 export const RESEARCH_DONATION_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
 MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEA0RaXFQBixAmtwKRz2I7Y
@@ -18,10 +19,14 @@ function base64url(value) {
   return Buffer.from(value).toString("base64url");
 }
 
-export function encryptResearchDonation(value, publicKey = RESEARCH_DONATION_PUBLIC_KEY) {
+export function encryptResearchDonation(value, publicKey = RESEARCH_DONATION_PUBLIC_KEY, { compress = true } = {}) {
+  const donationBytes = researchDonationByteLength(value);
+  if (donationBytes !== null && donationBytes > MAX_DONATION_BYTES) throw new Error("The reviewed donation is larger than 20 MB. Choose Advanced mode and select fewer sessions.");
   const donation = sanitizeResearchDonation(value);
   if (!donation) throw new Error("The reviewed donation does not match the research schema.");
   const plaintext = Buffer.from(JSON.stringify(donation));
+  const encryptedPlaintext = compress ? gzipSync(plaintext) : plaintext;
+  if (compress && encryptedPlaintext.byteLength > MAX_COMPRESSED_DONATION_BYTES) throw new Error("The reviewed donation is still too large after compression. Choose Advanced mode and select fewer sessions.");
   const contentKey = crypto.randomBytes(32);
   const iv = crypto.randomBytes(12);
   const envelope = {
@@ -37,11 +42,12 @@ export function encryptResearchDonation(value, publicKey = RESEARCH_DONATION_PUB
       automatedDetections: donation.redactionSummary.automatedDetections,
       sessions: donation.redactionSummary.sessions,
       messages: donation.redactionSummary.messages,
+      ...(compress ? { contentEncoding: DONATION_CONTENT_ENCODING } : {}),
     },
   };
   const cipher = crypto.createCipheriv("aes-256-gcm", contentKey, iv);
   cipher.setAAD(Buffer.from(encryptedDonationAAD(envelope)));
-  const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  const ciphertext = Buffer.concat([cipher.update(encryptedPlaintext), cipher.final()]);
   return sanitizeEncryptedDonationEnvelope({
     ...envelope,
     encryption: {
@@ -61,7 +67,10 @@ export function decryptResearchDonation(value, privateKey, passphrase) {
   const decipher = crypto.createDecipheriv("aes-256-gcm", contentKey, Buffer.from(envelope.encryption.iv, "base64url"));
   decipher.setAAD(Buffer.from(encryptedDonationAAD(envelope)));
   decipher.setAuthTag(Buffer.from(envelope.encryption.authTag, "base64url"));
-  const plaintext = Buffer.concat([decipher.update(Buffer.from(envelope.ciphertext, "base64url")), decipher.final()]);
+  const decrypted = Buffer.concat([decipher.update(Buffer.from(envelope.ciphertext, "base64url")), decipher.final()]);
+  const plaintext = envelope.metadata.contentEncoding === DONATION_CONTENT_ENCODING
+    ? gunzipSync(decrypted, { maxOutputLength: MAX_DONATION_BYTES + 1 })
+    : decrypted;
   const donation = sanitizeResearchDonation(JSON.parse(plaintext.toString("utf8")));
   if (!donation) throw new Error("The decrypted donation is invalid.");
   return donation;

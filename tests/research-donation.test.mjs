@@ -66,6 +66,30 @@ test("reviewed transcript text is encrypted locally and authenticated", () => {
   assert.throws(() => decryptResearchDonation(tampered, keys().privateKey), /authenticate data|unable to authenticate/i);
 });
 
+test("compresses reviewed donations that exceed the former transport limit", () => {
+  const repeatedText = "Repeated research context with enough detail to preserve. ".repeat(330);
+  const messages = Array.from({ length: 130 }, (_, index) => ({ role: index % 2 ? "assistant" : "user", text: `${index}: ${repeatedText}` }));
+  const value = fixture({ sessions: [{ label: "Large reviewed session", messages }] });
+  const sanitized = sanitizeResearchDonation(value);
+  assert.ok(Buffer.byteLength(JSON.stringify(sanitized)) > 1_800_000);
+  const envelope = encryptResearchDonation(value, keys().publicKey);
+  assert.equal(envelope.metadata.contentEncoding, "gzip");
+  assert.ok(Buffer.byteLength(JSON.stringify({ encryptedDonation: envelope })) < 1_800_000);
+  assert.deepEqual(decryptResearchDonation(envelope, keys().privateKey), sanitized);
+});
+
+test("continues to decrypt legacy uncompressed donation envelopes", () => {
+  const envelope = encryptResearchDonation(fixture(), keys().publicKey, { compress: false });
+  assert.equal("contentEncoding" in envelope.metadata, false);
+  assert.deepEqual(decryptResearchDonation(envelope, keys().privateKey), sanitizeResearchDonation(fixture()));
+});
+
+test("explains how to recover when a reviewed donation is genuinely too large", () => {
+  const maximumLengthText = "界".repeat(20_000);
+  const messages = Array.from({ length: 340 }, (_, index) => ({ role: index % 2 ? "assistant" : "user", text: maximumLengthText }));
+  assert.throws(() => encryptResearchDonation(fixture({ sessions: [{ messages }] }), keys().publicKey), /larger than 20 MB.*Advanced mode/i);
+});
+
 test("local submission sends only protocol-2 ciphertext", async () => {
   let transmitted;
   const result = await submitResearchDonation(fixture(), {

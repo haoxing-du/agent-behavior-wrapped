@@ -7,6 +7,7 @@ import { discoverAllSessionsAsync, readRecordsAsync, defaultDateRange, DEFAULT_W
 import { makeDonationPreview } from "./analysis.mjs";
 import { deleteDonationReceipt, getOrCreateClientId, loadDonationReceipt, loadReport, saveDonationReceipt } from "./store.mjs";
 import { deleteResearchDonation, RESEARCH_DONATION_URL, submitResearchDonation } from "./research-donation.mjs";
+import { MAX_DONATION_BYTES } from "./research-donation-schema.mjs";
 import { APP_VERSION, LOCAL_DONATION_PROTOCOL } from "./runtime-version.mjs";
 import { makeWorkaroundEvidencePreview } from "./workaround-evidence.mjs";
 import { makeInteractionEvidencePreview } from "./interaction-evidence.mjs";
@@ -154,7 +155,7 @@ const server = http.createServer(async (request, response) => {
       return json(response, 200, makeDonationPreview(records, labels, { disabledRedactions, disabledMatches, unredacted }));
     }
     if (request.method === "POST" && url.pathname === "/api/research-donations") {
-      const body = await readBody(request, 4_200_000);
+      const body = await readBody(request, MAX_DONATION_BYTES + 1_000_000);
       const report = loadReport(body?.donation?.reportId);
       if (!report) return json(response, 404, { error: "Saved report not found" });
       if (demo) return json(response, 201, { accepted: true, donation_id: "demo-not-transmitted", demo: true });

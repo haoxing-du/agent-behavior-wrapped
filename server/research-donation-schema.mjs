@@ -1,4 +1,4 @@
-const MAX_DONATION_BYTES = 1_800_000;
+const MAX_DONATION_BYTES = 20_000_000;
 const MAX_SESSIONS = 250;
 const MAX_MESSAGES = 50_000;
 const MAX_MESSAGE_LENGTH = 20_000;
@@ -7,7 +7,7 @@ function safeText(value, maximum) {
   return typeof value === "string" ? value.normalize("NFKC").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "").slice(0, maximum) : "";
 }
 
-export function sanitizeResearchDonation(value) {
+function normalizeResearchDonation(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   if (value.consent?.researchDonation !== true) return null;
   if (!/^[A-Za-z0-9_-]{8,32}$/.test(value.reportId || "")) return null;
@@ -49,7 +49,17 @@ export function sanitizeResearchDonation(value) {
       consentedAt: /^\d{4}-\d{2}-\d{2}T/.test(value.consent.consentedAt || "") ? value.consent.consentedAt : new Date().toISOString(),
     },
   };
-  return new TextEncoder().encode(JSON.stringify(donation)).byteLength <= MAX_DONATION_BYTES ? donation : null;
+  return donation;
+}
+
+export function researchDonationByteLength(value) {
+  const donation = normalizeResearchDonation(value);
+  return donation ? new TextEncoder().encode(JSON.stringify(donation)).byteLength : null;
+}
+
+export function sanitizeResearchDonation(value) {
+  const donation = normalizeResearchDonation(value);
+  return donation && new TextEncoder().encode(JSON.stringify(donation)).byteLength <= MAX_DONATION_BYTES ? donation : null;
 }
 
 export { MAX_DONATION_BYTES };

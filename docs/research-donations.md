@@ -4,7 +4,7 @@ Research donation is optional and separate from creating or publishing a Wrapped
 
 The localhost helper can construct a standard-redacted preview, a customizable redaction review, or a deliberately unredacted copy. Detailed modes let users exclude sessions and messages, edit text, and keep timestamps off by default. The unredacted path shows every included line and requires a separate warning and explicit acknowledgement that credentials and private details may be transmitted.
 
-Donation discovery, default redaction, preview, exclusions, editing, schema validation, and authenticated AES-256-GCM encryption happen on localhost. Each donation receives a fresh content key, wrapped with a rotation-versioned RSA-OAEP public key. The private key is absent from the npm package, Worker, D1, and R2.
+Donation discovery, default redaction, preview, exclusions, editing, schema validation, compression, and authenticated AES-256-GCM encryption happen on localhost. Compression is applied before encryption so substantial reviewed transcripts can be transmitted without weakening confidentiality. Each donation receives a fresh content key, wrapped with a rotation-versioned RSA-OAEP public key. The private key is absent from the npm package, Worker, D1, and R2.
 
 The receiving Worker accepts only encrypted protocol-2 envelopes. A private R2 bucket stores ciphertext. A separate D1 database stores pseudonymous consent, size, count, encryption-key, and object-location metadata—never transcript text. No automatic retention policy is currently configured. A locally retained deletion receipt lets the donor delete both records.
 
