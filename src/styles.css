@@ -578,7 +578,7 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .bundle-session-toggle small { color:#81798a; font-weight:600; }
 .bundle-session-toggle b { color:#6f43d6; }
 .remove-message { position:absolute; top:10px; right:10px; border:1px solid #493d55; border-radius:999px; padding:6px 10px; background:#1a1520; color:#c7bfce; cursor:pointer; }
-.landing-page { min-height: 100vh; padding: 24px; display: grid; place-items: center; background: radial-gradient(circle at 72% -12%, #e9ddf5 0, #f2ecf2 24%, #f7f4ed 58%); color: #19151e; text-align: center; }
+.landing-page { min-height: 100vh; padding: 24px 24px 28px; display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 20px; place-items: center; background: radial-gradient(circle at 72% -12%, #e9ddf5 0, #f2ecf2 24%, #f7f4ed 58%); color: #19151e; text-align: center; }
 .landing-page > div { width: min(860px, 100%); }
 .landing-page h1 { margin: 0 0 22px; font-size: clamp(58px, 10vw, 132px); line-height: .82; letter-spacing: -.075em; text-wrap: balance; }
 .landing-description { margin: 0 auto clamp(28px, 4vw, 40px); color: #89838d; font-size: clamp(16px, 2vw, 20px); line-height: 1.45; text-wrap: balance; }
@@ -590,13 +590,21 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .landing-command button:focus-visible { outline: 2px solid #f7f4ed; outline-offset: -3px; }
 .landing-leaderboard-link { color: inherit; font-weight: 750; text-decoration-color: rgba(117, 91, 128, .35); text-underline-offset: 3px; transition: color 150ms ease, text-decoration-color 150ms ease; }
 .landing-leaderboard-link:hover { color: #4f3c5b; text-decoration-color: currentColor; }
-.landing-alpha { width: min(100%, 540px); margin: 18px auto 0; padding-top: 16px; border-top: 1px solid rgba(117,106,126,.18); display: flex; align-items: flex-start; gap: 13px; color: #7c7480; text-align: left; }
-.landing-alpha > span { flex: none; margin-top: 1px; padding: 4px 7px; border: 1px solid rgba(146,119,38,.24); border-radius: 999px; background: rgba(247,229,171,.38); color: #7d6828; font-size: 9px; font-weight: 850; line-height: 1; letter-spacing: .12em; text-transform: uppercase; }
-.landing-alpha p { margin: 0; font-size: 12px; line-height: 1.5; text-wrap: pretty; }
-.landing-credit { position: absolute; inset: auto 24px 28px; margin: 0; color: #8a838d; font-size: 12px; letter-spacing: .01em; }
+.landing-more { width: min(100%, 540px); margin: 18px auto 0; padding-top: 14px; border-top: 1px solid rgba(117,106,126,.18); color: #756f79; text-align: left; }
+.landing-more summary { width: fit-content; margin: 0 auto; padding: 5px 2px; color: #756d7a; font-size: 12px; font-weight: 700; list-style: none; cursor: pointer; }
+.landing-more summary::-webkit-details-marker { display: none; }
+.landing-more summary::after { content: "+"; display: inline-block; width: 14px; margin-left: 7px; color: #9a919e; text-align: center; transition: transform 150ms ease; }
+.landing-more[open] summary::after { transform: rotate(45deg); }
+.landing-more summary:hover { color: #4f4654; }
+.landing-more summary:focus-visible { outline: 2px solid #756a7e; outline-offset: 4px; border-radius: 2px; }
+.landing-more ol { margin: 14px 0 0; padding: 0 0 0 24px; display: grid; gap: 8px; color: #777079; font-size: 12px; line-height: 1.5; text-wrap: pretty; }
+.landing-more li { padding-left: 3px; }
+.landing-credit { margin: 0; color: #8a838d; font-size: 12px; letter-spacing: .01em; }
+.landing-credit a { color: inherit; font-weight: 750; text-decoration-color: rgba(117, 91, 128, .35); text-underline-offset: 3px; transition: color 150ms ease, text-decoration-color 150ms ease; }
+.landing-credit a:hover { color: #4f3c5b; text-decoration-color: currentColor; }
 .susan-calvin-credit a { color: inherit; font-weight: 750; text-decoration-color: rgba(117, 91, 128, .35); text-underline-offset: 3px; transition: color 150ms ease, text-decoration-color 150ms ease; }
 .susan-calvin-credit a:hover { color: #4f3c5b; text-decoration-color: currentColor; }
-@media (max-width: 420px) { .landing-command code { padding-inline: 12px; font-size: 12px; }.landing-command button { padding-inline: 13px; }.landing-alpha { gap: 10px; }.landing-alpha p { font-size: 11px; } }
+@media (max-width: 420px) { .landing-command code { padding-inline: 12px; font-size: 12px; }.landing-command button { padding-inline: 13px; }.landing-more ol { font-size: 11px; }.landing-credit { font-size: 11px; } }
 
 /* Donation review, aligned with the cohort leaderboard. */
 .donation-shell { --donation-bg: #f7f4ed; --donation-text: #19151e; --donation-muted: #6f6873; background: var(--donation-bg); color: var(--donation-text); }
