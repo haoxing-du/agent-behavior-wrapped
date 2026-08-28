@@ -62,7 +62,7 @@ function proseText(value) {
     .replace(/`[^`\n]+`/g, " ")
     .replace(/^\s*>.*$/gm, " ")
     .replace(/https?:\/\/\S+/g, " ")
-    .replace(/\b(?:[A-Za-z]:)?[/.~][^\s]+/g, " ")
+    .replace(/(?:^|\s)(?:[A-Za-z]:)?[/.~][^\s]+/g, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -453,6 +453,8 @@ export function analyzeSessions(sessionRecords) {
     };
     for (const [recordIndex, record] of records.entries()) {
       const text = visibleText(record);
+      const userProse = record.type === "user" ? proseText(localOpeningPrompt(text)) : "";
+      const assistantResponseProse = record.type === "assistant" ? proseText(text) : "";
       const declaredModel = record?.message?.model || record?.model;
       if (typeof declaredModel === "string" && declaredModel) currentModel = declaredModel;
       if (record.type === "system" && record.subtype === "turn_duration") {
@@ -462,10 +464,10 @@ export function analyzeSessions(sessionRecords) {
           longestUninterruptedRun = { durationMs: Math.round(durationMs), agent, agentName: definition?.name || "Agent" };
         }
       }
-      if (record.type === "user" && !record.isMeta && text) {
+      if (record.type === "user" && !record.isMeta && userProse) {
         finishResponse();
         hasCurrentPrompt = true;
-        userInputWords += wordCount(text);
+        userInputWords += wordCount(userProse);
         userInputCount++;
         sessionTurns++;
         if (isFrustratedMessage(text)) frustratedMessages++;
@@ -477,8 +479,8 @@ export function analyzeSessions(sessionRecords) {
             location: { sessionId, recordIndex, timestamp: record.timestamp || null },
           });
         }
-      } else if (record.type === "assistant" && hasCurrentPrompt && text) {
-        currentResponseWords += wordCount(text);
+      } else if (record.type === "assistant" && hasCurrentPrompt && assistantResponseProse) {
+        currentResponseWords += wordCount(assistantResponseProse);
       }
       if (record.type === "assistant" && text) {
         assistantProse.push(text);
@@ -554,6 +556,7 @@ export function analyzeSessions(sessionRecords) {
     agentUserWordRatio: userInputWords ? Number((agentResponseWords / userInputWords).toFixed(2)) : null,
     averageAgentResponseWords: agentResponseCount ? Math.round(agentResponseWords / agentResponseCount) : 0,
     averageUserInputWords: userInputCount ? Math.round(userInputWords / userInputCount) : 0,
+    wordCountMethod: "Counts conversational prose only, excluding injected workspace instructions, code, URLs, paths, and markup.",
     longestSessionTurns: Math.max(0, ...sessionTurnCounts),
     sessionTurnCounts: [...sessionTurnCounts].sort((left, right) => left - right),
     sessionTurnMethod: "Counts each visible, non-meta user message as one turn.",

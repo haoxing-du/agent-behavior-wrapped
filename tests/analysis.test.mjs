@@ -300,6 +300,26 @@ test("averages human inputs and complete agent responses across tool-use records
   assert.equal(report.stats.agentUserWordRatio, 2.75);
 });
 
+test("word counts include only conversational prose", () => {
+  const report = analyzeSessions([{ sessionId: "prose-words", records: [
+    { type: "user", message: { content: `<recommended_plugins>Hundreds of injected plugin catalog words</recommended_plugins>
+# AGENTS.md instructions
+<INSTRUCTIONS>Many injected workspace instruction words</INSTRUCTIONS>
+<environment_context><cwd>/private/project</cwd></environment_context>
+Please review \`privateFunction()\` at https://example.com/private.` } },
+    { type: "assistant", message: { content: "I reviewed it. ```js\nconst manyCodeWords = privateFunction();\n``` See https://example.com/private and /Users/private/project. It works now." } },
+    { type: "user", message: { content: `<recommended_plugins>Injected catalog only</recommended_plugins>
+# AGENTS.md instructions
+<INSTRUCTIONS>Injected instructions only</INSTRUCTIONS>
+<environment_context><cwd>/private/project</cwd></environment_context>` } },
+  ] }]);
+  assert.equal(report.stats.userWords, 3);
+  assert.equal(report.stats.agentWords, 8);
+  assert.equal(report.stats.agentUserWordRatio, 2.67);
+  assert.equal(report.stats.averageUserInputWords, 3);
+  assert.equal(report.stats.averageAgentResponseWords, 8);
+});
+
 test("records the turn count for each session and the longest session", () => {
   const turnCounts = [51, 2, 21, 1, 11, 6];
   const report = analyzeSessions([...turnCounts.map((turns, sessionIndex) => ({
