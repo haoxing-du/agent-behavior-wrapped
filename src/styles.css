@@ -597,8 +597,11 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .landing-more[open] summary::after { transform: rotate(45deg); }
 .landing-more summary:hover { color: #4f4654; }
 .landing-more summary:focus-visible { outline: 2px solid #756a7e; outline-offset: 4px; border-radius: 2px; }
-.landing-more ol { margin: 14px 0 0; padding: 0 0 0 24px; display: grid; gap: 8px; color: #777079; font-size: 12px; line-height: 1.5; text-wrap: pretty; }
+.landing-more > p { margin: 14px 0 0; color: #5f5863; font-size: 12px; font-weight: 650; line-height: 1.5; text-wrap: pretty; }
+.landing-more ol { margin: 12px 0 0; padding: 0 0 0 24px; display: grid; gap: 8px; color: #777079; font-size: 12px; line-height: 1.5; text-wrap: pretty; }
 .landing-more li { padding-left: 3px; }
+.landing-more li a { color: #5f4b6b; font-weight: 750; text-decoration-color: rgba(117,91,128,.35); text-underline-offset: 2px; }
+.landing-more li a:hover { color: #4f3c5b; text-decoration-color: currentColor; }
 .landing-credit { margin: 0; color: #8a838d; font-size: 12px; letter-spacing: .01em; }
 .landing-credit a { color: inherit; font-weight: 750; text-decoration-color: rgba(117, 91, 128, .35); text-underline-offset: 3px; transition: color 150ms ease, text-decoration-color 150ms ease; }
 .landing-credit a:hover { color: #4f3c5b; text-decoration-color: currentColor; }

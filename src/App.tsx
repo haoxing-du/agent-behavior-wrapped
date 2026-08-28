@@ -1529,7 +1529,6 @@ function LandingPage() {
     "Your Claude Code and Codex sessions from the last 30 days are read and analyzed locally.",
     "With permission, redacted excerpts are sent to an LLM judge for additional analysis.",
     "Your public Wrapped contains aggregate statistics only.",
-    "At the end, you may optionally review and donate select transcripts to the Susan Calvin Project (susancalvin.org). Research donation is optional and is not required to create your Wrapped.",
   ];
   const [copied, setCopied] = useState(false);
 
@@ -1543,7 +1542,7 @@ function LandingPage() {
     }
   }
 
-  return <main className="landing-page"><div><h1>Behavior Wrapped</h1><p className="landing-description">A local-first behavior report for you and your AI agents.</p><div className="landing-command"><code><span aria-hidden="true">$</span>{command}</code><button type="button" onClick={copyCommand} aria-label="Copy npx command">{copied ? "Copied!" : "Copy"}</button></div><details className="landing-more"><summary>More information</summary><ol>{informationSteps.map((step) => <li key={step}>{step}</li>)}</ol></details></div><p className="landing-credit"><SusanCalvinCredit /><span aria-hidden="true"> · </span><a className="landing-leaderboard-link" href="/leaderboard">Public leaderboard</a><span aria-hidden="true"> · </span><a href="mailto:haoxingdu@gmail.com?subject=Behavior%20Wrapped%20issue">Report an issue</a></p></main>;
+  return <main className="landing-page"><div><h1>Behavior Wrapped</h1><p className="landing-description">A local-first behavior report for you and your AI agents.</p><div className="landing-command"><code><span aria-hidden="true">$</span>{command}</code><button type="button" onClick={copyCommand} aria-label="Copy npx command">{copied ? "Copied!" : "Copy"}</button></div><details className="landing-more"><summary>More information</summary><p>Behavior Wrapped is a “month in review” of your AI usage, built from your recent Claude Code and Codex sessions.</p><ol>{informationSteps.map((step) => <li key={step}>{step}</li>)}<li>At the end, you may optionally review and donate select transcripts to the <a href={SUSAN_CALVIN_PROJECT_URL} target="_blank" rel="noreferrer">Susan Calvin Project</a>. Research donation is optional and is not required to create your Wrapped.</li></ol></details></div><p className="landing-credit"><SusanCalvinCredit /><span aria-hidden="true"> · </span><a className="landing-leaderboard-link" href="/leaderboard">Public leaderboard</a><span aria-hidden="true"> · </span><a href="mailto:haoxingdu@gmail.com?subject=Behavior%20Wrapped%20issue">Report an issue</a></p></main>;
 }
 
 export default function App() {
