@@ -680,7 +680,6 @@ function PhraseWallFigure({ entries, participantId }: { entries: PhraseWallEntry
       <blockquote>“{entry.phrase}”</blockquote>
       <p>{entry.occurrences.toLocaleString()} time{entry.occurrences === 1 ? "" : "s"} · {entry.sessions.toLocaleString()} session{entry.sessions === 1 ? "" : "s"}</p>
     </article>)}</div> : <div className="leader-empty-wall"><strong>The wall is waiting for its first phrase.</strong><span>Favorite phrases from participating public Wrapped reports will appear here anonymously.</span></div>}
-    <p className="leader-figure-note">Phrases are anonymous and detached from the conversations where they appeared.</p>
   </section>;
 }
 
