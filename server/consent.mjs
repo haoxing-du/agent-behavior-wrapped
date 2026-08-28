@@ -5,7 +5,7 @@ const lime = "\x1b[38;2;201;242;75m";
 const purple = "\x1b[38;2;141;92;255m";
 const reset = "\x1b[0m";
 
-export const remoteAnalysisConsentText = "Send redacted excerpts to GPT-5.6 Luna for analysis?";
+export const remoteAnalysisConsentText = "Behavior Wrapped will send redacted excerpts from your session history to GPT-5.6 Luna via OpenRouter using zero-data-retention providers for analysis. OK to proceed?";
 export const localOnlyAnalysisText = "Local-only analysis keeps all session data on this device. It uses deterministic statistics and a locally counted favorite phrase, but omits AI-judged interaction tone, usage topics, and instrumental workarounds. Those omissions leave leaderboard plots 2 and 3 incomplete, so the report will not be published or included in the leaderboard.";
 export const researchDonationIntroText = [
   "Your selected sessions are read locally.",

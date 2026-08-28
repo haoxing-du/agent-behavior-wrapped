@@ -19,7 +19,7 @@ test("remote analysis consent defaults to remote and accepts an explicit yes", a
   const accepted = await answer("y");
   assert.equal(accepted.mode, "remote");
   assert.match(accepted.transcript, /Before we begin/);
-  assert.ok(accepted.transcript.indexOf("Before we begin") < accepted.transcript.indexOf("Send redacted excerpts"));
+  assert.ok(accepted.transcript.indexOf("Before we begin") < accepted.transcript.indexOf("Behavior Wrapped will send redacted excerpts"));
   assert.equal((await answer("YES")).mode, "remote");
   assert.equal((await answer("")).mode, "remote");
 });
@@ -33,9 +33,11 @@ test("declining remote analysis offers local-only mode and allows cancellation",
   assert.equal((await answer("n", "n")).mode, "cancel");
 });
 
-test("remote analysis consent identifies the redacted data and model", () => {
+test("remote analysis consent identifies the redacted data, model, and provider", () => {
   assert.match(remoteAnalysisConsentText, /redacted excerpts/);
   assert.match(remoteAnalysisConsentText, /GPT-5\.6 Luna/);
+  assert.match(remoteAnalysisConsentText, /OpenRouter/);
+  assert.match(remoteAnalysisConsentText, /zero-data-retention/);
   assert.match(localOnlyAnalysisText, /will not be published or included in the leaderboard/);
 });
 
