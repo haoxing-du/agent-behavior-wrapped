@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
 import test from "node:test";
-import { localOnlyAnalysisText, remoteAnalysisConsentText, requestAnalysisMode } from "../server/consent.mjs";
+import { localOnlyAnalysisText, remoteAnalysisConsentText, requestAnalysisMode, researchDonationIntroText, researchDonationSeparationText } from "../server/consent.mjs";
 
 async function answer(remoteAnswer, localAnswer) {
   const input = new PassThrough();
@@ -16,7 +16,10 @@ async function answer(remoteAnswer, localAnswer) {
 }
 
 test("remote analysis consent defaults to remote and accepts an explicit yes", async () => {
-  assert.equal((await answer("y")).mode, "remote");
+  const accepted = await answer("y");
+  assert.equal(accepted.mode, "remote");
+  assert.match(accepted.transcript, /Before we begin/);
+  assert.ok(accepted.transcript.indexOf("Before we begin") < accepted.transcript.indexOf("Send redacted excerpts"));
   assert.equal((await answer("YES")).mode, "remote");
   assert.equal((await answer("")).mode, "remote");
 });
@@ -30,9 +33,20 @@ test("declining remote analysis offers local-only mode and allows cancellation",
   assert.equal((await answer("n", "n")).mode, "cancel");
 });
 
-test("remote analysis consent identifies the model and provider", () => {
+test("remote analysis consent identifies the redacted data and model", () => {
+  assert.match(remoteAnalysisConsentText, /redacted excerpts/);
   assert.match(remoteAnalysisConsentText, /GPT-5\.6 Luna/);
-  assert.match(remoteAnalysisConsentText, /OpenRouter/);
-  assert.match(remoteAnalysisConsentText, /zero-data-retention/);
   assert.match(localOnlyAnalysisText, /will not be published or included in the leaderboard/);
+});
+
+test("research donation is explained before consent as a separate optional choice", () => {
+  const copy = researchDonationIntroText.join(" ");
+  assert.match(copy, /read locally/);
+  assert.match(copy, /With permission/);
+  assert.match(copy, /analyzed remotely/);
+  assert.match(copy, /share-safe aggregates only/);
+  assert.match(copy, /Susan Calvin Project/);
+  assert.match(copy, /optionally review and donate selected transcripts/);
+  assert.match(researchDonationSeparationText, /separate/);
+  assert.match(researchDonationSeparationText, /never required/);
 });
