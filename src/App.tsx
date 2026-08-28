@@ -277,7 +277,7 @@ async function downloadSlide(card: HTMLElement, slide: number) {
   const dataUrl = await toPng(card, {
     backgroundColor: "#f5f1ed",
     cacheBust: true,
-    pixelRatio: 2,
+    pixelRatio: 2.5,
   });
   const anchor = document.createElement("a");
   anchor.href = dataUrl;
