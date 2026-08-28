@@ -106,7 +106,7 @@ function repeatedInstructions(sessionRecords) {
   return [...instructions.values()]
     .filter((item) => item.occurrences >= 2)
     .sort((left, right) => right.sessions.size - left.sessions.size || right.occurrences - left.occurrences || left.instruction.localeCompare(right.instruction))
-    .slice(0, 4)
+    .slice(0, 2)
     .map((item) => ({ instruction: item.instruction, occurrences: item.occurrences, distinctSessions: item.sessions.size }));
 }
 

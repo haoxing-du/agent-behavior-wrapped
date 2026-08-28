@@ -376,6 +376,18 @@ test("finds repeated exact user instructions without counting tool results", () 
   ]);
 });
 
+test("keeps only the top two repeated user instructions", () => {
+  const repeated = "Always run the tests. Keep your responses short. Never skip verification.";
+  const report = analyzeSessions([
+    { sessionId: "instructions-one", records: [{ type: "user", message: { content: repeated } }] },
+    { sessionId: "instructions-two", records: [{ type: "user", message: { content: repeated } }] },
+  ]);
+  assert.deepEqual(report.stats.repeatedInstructions.map((item) => item.instruction), [
+    "Always run the tests.",
+    "Keep your responses short.",
+  ]);
+});
+
 test("counts explicit user and agent admissions without generic capability apologies", () => {
   const report = analyzeSessions([{ sessionId: "apologies", records: [
     { type: "user", message: { content: "You were right; my mistake." } },

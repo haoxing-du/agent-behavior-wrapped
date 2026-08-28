@@ -327,7 +327,7 @@ function SharedWrapped({ id }: { id: string }) {
     const apologyCounts = report.stats.apologyCounts;
     const stockPhrases = report.stats.stockPhrases;
     const sortedStockPhrases = stockPhrases?.slice().sort((left, right) => right.count - left.count || left.phrase.localeCompare(right.phrase, undefined, { sensitivity: "base" })).slice(0, 4);
-    const repeatedInstructions = report.stats.repeatedInstructions || [];
+    const repeatedInstructions = (report.stats.repeatedInstructions || []).slice(0, 2);
     const topics = (report.stats.topics || []).filter((item) => hasDisplayablePercentage(item.percentage));
     const displayTopics = [...topics.filter((item) => item.topic !== "Other"), ...topics.filter((item) => item.topic === "Other")];
     const topTopic = displayTopics[0];

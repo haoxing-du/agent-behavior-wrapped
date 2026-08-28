@@ -38,7 +38,7 @@ function safeStockPhrases(value) {
 
 function safeRepeatedInstructions(value) {
   if (!Array.isArray(value)) return [];
-  return value.slice(0, 4).flatMap((item) => {
+  return value.slice(0, 2).flatMap((item) => {
     const instruction = safeText(item?.instruction, 160).trim();
     const occurrences = Math.round(safeNumber(item?.occurrences, 1_000_000));
     const distinctSessions = Math.round(safeNumber(item?.distinctSessions, 1_000_000));
