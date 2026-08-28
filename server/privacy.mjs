@@ -74,7 +74,7 @@ function isSshIdentity(match, offset, source) {
   return localPart === "git" || /ssh:\/\/$/i.test(before) || after === ":";
 }
 
-const NON_PERSON_WORDS = new Set("agent assistant user system model tool team claude zulip github person someone anyone everyone nobody only the this that new latest direct explicit online private prior session status handoff instruction instructions message messages ping pings task work context state directory window".split(" "));
+const NON_PERSON_WORDS = new Set("agent assistant user system model tool team claude zulip github person someone anyone everyone nobody being only the this that new latest direct explicit online private prior session status handoff instruction instructions message messages ping pings task work context state directory window".split(" "));
 
 function replaceLikelyPersonNames(value) {
   return String(value)

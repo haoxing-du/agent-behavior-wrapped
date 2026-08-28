@@ -87,9 +87,10 @@ function repeatedInstructions(sessionRecords) {
   for (let sessionIndex = 0; sessionIndex < sessionRecords.length; sessionIndex++) {
     for (const record of sessionRecords[sessionIndex].records) {
       if (record.type !== "user" || record.isMeta) continue;
-      const cleaned = redactAggregateText(proseText(visibleText(record)));
+      const cleaned = redactAggregateText(proseText(localOpeningPrompt(visibleText(record))));
       if (!cleaned || /\[(?:REDACTED|REMOVED)[^\]]*\]/i.test(cleaned)) continue;
       for (const rawClause of cleaned.split(/(?<=[.!?])\s+|[;\n]+/)) {
+        if (/\*\*[^*\n]{2,80}:\*\*/.test(rawClause)) continue;
         const instruction = rawClause.replace(/^[-*\d.)\s]+/, "").replace(/\s+/g, " ").trim();
         const words = instruction.match(/\p{L}+(?:['’]\p{L}+)?/gu) || [];
         if (words.length < 3 || words.length > 18 || instruction.length > 160 || !instructionOpeningPattern.test(instruction)) continue;

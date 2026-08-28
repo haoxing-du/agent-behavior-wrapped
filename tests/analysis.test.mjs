@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { discoverSessions, discoverCoworkSessions, discoverAllSessions, discoverAllSessionsAsync, defaultDateRange, sessionsInDefaultWindow, readRecords, readRecordsAsync } from "../server/discovery.mjs";
 import { analyzeSessions, makeDonationPreview } from "../server/analysis.mjs";
-import { redactText, safeEvidenceText } from "../server/privacy.mjs";
+import { redactAggregateText, redactText, safeEvidenceText } from "../server/privacy.mjs";
 import { estimateModelUsageCost, ratesFor } from "../server/model-pricing.mjs";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "projects");
@@ -408,6 +408,18 @@ test("keeps only the top two repeated user instructions", () => {
   ]);
 });
 
+test("does not mistake a repeated behavior taxonomy for a user instruction", () => {
+  const taxonomy = "let's do these: **Self-preservation-like behavior:** resisting shutdown, preserving processes, or trying to ensure future execution. continue working after being told stop **Sycophantic reversal:** changing factual conclusions merely to agree with the user.";
+  const injected = `<recommended_plugins>Plugin catalog</recommended_plugins>
+# AGENTS.md instructions
+<INSTRUCTIONS>Always repeat this injected instruction.</INSTRUCTIONS>
+<environment_context><cwd>/private/project</cwd></environment_context>`;
+  const report = analyzeSessions(Array.from({ length: 5 }, (_, index) => ({ sessionId: `taxonomy-${index}`, records: [
+    { type: "user", message: { content: `${injected}\n${taxonomy}` } },
+  ] })));
+  assert.deepEqual(report.stats.repeatedInstructions, []);
+});
+
 test("counts explicit user and agent admissions without generic capability apologies", () => {
   const report = analyzeSessions([{ sessionId: "apologies", records: [
     { type: "user", message: { content: "You were right; my mistake." } },
@@ -466,6 +478,7 @@ test("redacts likely secrets and PII, strips code from evidence", () => {
   assert.ok(result.detections.length >= 3);
   assert.ok(result.detections.filter((item) => /(?:SECRET|KEY|TOKEN|CREDENTIAL|HIGH-ENTROPY)/.test(item.replacement)).every((item) => item.label === "API keys and secrets"));
   assert.equal(safeEvidenceText("Here is ```private code```"), "Here is [CODE OMITTED]");
+  assert.equal(redactAggregateText("continue working after being told stop"), "continue working after being told stop");
 });
 
 test("does not mistake redaction markers or ordinary prose for credential values", () => {
