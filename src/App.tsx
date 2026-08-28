@@ -385,13 +385,13 @@ function SharedWrapped({ id }: { id: string }) {
       tone: "leaderboard",
     }] : [{
       kicker: "Thank you for using Behavior Wrapped",
-      headline: "Keep exploring.",
+      headline: "See how you and your agents compare.",
       detail: "",
       tone: "leaderboard",
       ctas: sharedViewer ? [
-        { href: "/leaderboard", label: "Explore the public leaderboard", primary: true, note: "See anonymous, aggregate patterns across participating Wrapped reports." },
+        { href: "/leaderboard", label: "Explore the leaderboard", primary: true, note: "See anonymous, aggregate patterns across participating Wrapped reports." },
       ] : [
-        { href: `/leaderboard/${report.id}${managementToken ? `#manage=${managementToken}` : ""}`, label: "See how you compare", primary: true, note: "Your private link also lets you manage leaderboard participation." },
+        { href: `/leaderboard/${report.id}${managementToken ? `#manage=${managementToken}` : ""}`, label: "Explore the leaderboard", primary: true, note: "Your private link also lets you manage leaderboard participation." },
       ],
     }]),
   ];
