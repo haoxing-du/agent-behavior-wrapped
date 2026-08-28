@@ -1406,6 +1406,11 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
   align-self: center;
 }
 .shared-page .story-cta-card .story-copy h1 { font-size: clamp(68px, 7.1vw, 90px); line-height: .9; }
+.shared-page .story-leaderboard.story-cta-card .story-copy h1 {
+  max-width: 620px;
+  font-size: clamp(44px, 4.8vw, 58px);
+  line-height: .96;
+}
 .shared-page .story-cta-card .story-cta-group {
   grid-column: 2;
   grid-row: 2;
@@ -1535,6 +1540,7 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
     align-self: start;
   }
   .shared-page .story-cta-card .story-copy h1 { font-size: clamp(54px, 16vw, 64px); line-height: .92; }
+  .shared-page .story-leaderboard.story-cta-card .story-copy h1 { font-size: clamp(40px, 12vw, 48px); line-height: .96; }
   .shared-page .story-cta-card .story-cta-group {
     grid-column: 1;
     grid-row: 3;
