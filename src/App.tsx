@@ -913,8 +913,8 @@ function InteractionEvidenceMessageView({ message, agentName }: { message: Inter
   </div>;
 }
 
-function InteractionEvidenceSection({ title, description, occurrences, accent }: { title: string; description: string; occurrences: InteractionEvidenceOccurrence[]; accent: "yell" | "thanks" | "user-apology" | "agent-apology" }) {
-  return <section className={`interaction-evidence-section is-${accent}`}>
+function InteractionEvidenceSection({ id, labelledBy, title, description, occurrences, accent }: { id: string; labelledBy: string; title: string; description: string; occurrences: InteractionEvidenceOccurrence[]; accent: "yell" | "thanks" | "user-apology" | "agent-apology" }) {
+  return <section className={`interaction-evidence-section is-${accent}`} id={id} role="tabpanel" aria-labelledby={labelledBy}>
     <header><div><span>{occurrences.length.toLocaleString()} match{occurrences.length === 1 ? "" : "es"}</span><h2>{title}</h2></div><p>{description}</p></header>
     {!occurrences.length ? <div className="interaction-evidence-empty">No local excerpts were recorded for this category.</div> : <div className="interaction-evidence-list">{occurrences.map((occurrence) => <article className="interaction-evidence-card" key={`${occurrence.candidateId}-${occurrence.index}`}>
       <div className="workaround-session-meta"><strong>{occurrence.session.agentName} · {occurrence.session.label}</strong><time dateTime={occurrence.timestamp || undefined}>{fmtDateTime(occurrence.timestamp || occurrence.session.startedAt)}</time></div>
@@ -926,6 +926,7 @@ function InteractionEvidenceSection({ title, description, occurrences, accent }:
 function InteractionEvidenceRoute({ id }: { id: string }) {
   const [evidence, setEvidence] = useState<InteractionEvidence | null>(null);
   const [error, setError] = useState("");
+  const [activeCategory, setActiveCategory] = useState("yelling");
   useEffect(() => {
     fetch(`/api/reports/${id}/interactions`).then(async (response) => {
       const body = await response.json();
@@ -935,13 +936,25 @@ function InteractionEvidenceRoute({ id }: { id: string }) {
   }, [id]);
   if (error) return <main className="shared-error"><h1>Private evidence unavailable</h1><p>{error}</p><a href={`/w/${id}`}>Back to Wrapped</a></main>;
   if (!evidence) return <main className="shared-loading"><div className="orb" /><p>Rebuilding the local transcript excerpts…</p></main>;
+  const categories = [
+    { id: "yelling", label: "Yelling", title: "Classified as yelling", description: "Messages the judge marked as clearly frustrated or angry toward the agent or its work.", occurrences: evidence.frustrated, accent: "yell" as const },
+    { id: "thanking", label: "Thanking", title: "Classified as thanking", description: "Messages the judge marked as clear thanks, praise, or warm acknowledgment.", occurrences: evidence.grateful, accent: "thanks" as const },
+    { id: "user-apologies", label: "You apologized", title: "You apologized", description: "Your messages containing an explicit admission of a mistake or fault.", occurrences: evidence.userApologies || [], accent: "user-apology" as const },
+    { id: "agent-apologies", label: "Agent apologized", title: "Your agent apologized", description: "Agent messages containing an explicit admission of a mistake or fault.", occurrences: evidence.agentApologies || [], accent: "agent-apology" as const },
+  ];
+  const active = categories.find((category) => category.id === activeCategory) || categories[0];
   return <main className="interaction-evidence-page">
     <a className="workaround-back-link" href={`/w/${id}`}>← Back to Wrapped</a>
     <div className="workaround-page-title"><h1>Exact interaction transcript excerpts</h1><p>Rebuilt locally from your original, unredacted session files. Nothing on this page is included in the public report.</p></div>
-    <InteractionEvidenceSection title="Classified as yelling" description="Messages the judge marked as clearly frustrated or angry toward the agent or its work." occurrences={evidence.frustrated} accent="yell" />
-    <InteractionEvidenceSection title="Classified as thanking" description="Messages the judge marked as clear thanks, praise, or warm acknowledgment." occurrences={evidence.grateful} accent="thanks" />
-    <InteractionEvidenceSection title="You apologized" description="Your messages containing an explicit admission of a mistake or fault." occurrences={evidence.userApologies || []} accent="user-apology" />
-    <InteractionEvidenceSection title="Your agent apologized" description="Agent messages containing an explicit admission of a mistake or fault." occurrences={evidence.agentApologies || []} accent="agent-apology" />
+    <div className="interaction-evidence-tabs" role="tablist" aria-label="Interaction excerpt categories">{categories.map((category, index) => <button className={`is-${category.accent}${active.id === category.id ? " active" : ""}`} type="button" role="tab" id={`interaction-tab-${category.id}`} aria-controls={`interaction-panel-${category.id}`} aria-selected={active.id === category.id} tabIndex={active.id === category.id ? 0 : -1} onClick={() => setActiveCategory(category.id)} onKeyDown={(event) => {
+      const nextIndex = event.key === "ArrowRight" ? (index + 1) % categories.length : event.key === "ArrowLeft" ? (index - 1 + categories.length) % categories.length : event.key === "Home" ? 0 : event.key === "End" ? categories.length - 1 : null;
+      if (nextIndex === null) return;
+      event.preventDefault();
+      const next = categories[nextIndex];
+      setActiveCategory(next.id);
+      document.getElementById(`interaction-tab-${next.id}`)?.focus();
+    }} key={category.id}><span>{category.label}</span><strong>{category.occurrences.length.toLocaleString()}</strong></button>)}</div>
+    <InteractionEvidenceSection id={`interaction-panel-${active.id}`} labelledBy={`interaction-tab-${active.id}`} title={active.title} description={active.description} occurrences={active.occurrences} accent={active.accent} />
   </main>;
 }
 

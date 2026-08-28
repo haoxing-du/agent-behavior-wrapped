@@ -747,7 +747,18 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .workaround-evidence-empty h2 { margin: 0 0 8px; }
 .workaround-evidence-empty p { margin: 0; color: #746d78; }
 .interaction-evidence-page { width: min(980px, calc(100% - 40px)); }
-.interaction-evidence-section { margin-top: 34px; }
+.interaction-evidence-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; margin-top: 30px; padding: 6px; border: 1px solid #d4cdd6; border-radius: 16px; background: rgba(255,255,255,.55); box-shadow: 0 15px 42px rgba(55,39,66,.04); }
+.interaction-evidence-tabs button { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 13px; border: 0; border-radius: 11px; color: #625b67; background: transparent; font: inherit; cursor: pointer; }
+.interaction-evidence-tabs button span { overflow: hidden; font-size: 10px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.interaction-evidence-tabs button strong { min-width: 25px; padding: 3px 7px; border-radius: 999px; color: #776f7b; background: rgba(94,81,100,.08); font-size: 9px; text-align: center; }
+.interaction-evidence-tabs button:hover { background: rgba(255,255,255,.72); }
+.interaction-evidence-tabs button:focus-visible { outline: 2px solid #754ba8; outline-offset: 2px; }
+.interaction-evidence-tabs button.active { color: #352d39; background: white; box-shadow: 0 7px 20px rgba(55,39,66,.1); }
+.interaction-evidence-tabs button.is-yell.active strong { color: #8b405e; background: #f8e7ed; }
+.interaction-evidence-tabs button.is-thanks.active strong { color: #4f7133; background: #edf5e6; }
+.interaction-evidence-tabs button.is-user-apology.active strong { color: #694fa5; background: #eee9f8; }
+.interaction-evidence-tabs button.is-agent-apology.active strong { color: #32647b; background: #e5f1f6; }
+.interaction-evidence-section { margin-top: 28px; }
 .interaction-evidence-section > header { display: grid; grid-template-columns: minmax(250px, .7fr) minmax(280px, 1fr); gap: 30px; align-items: end; margin-bottom: 14px; padding: 0 3px; }
 .interaction-evidence-section > header div { display: grid; gap: 5px; }
 .interaction-evidence-section > header span { color: #8b6172; font-size: 9px; font-weight: 900; letter-spacing: .11em; text-transform: uppercase; }
@@ -783,6 +794,10 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
   .workaround-evidence-section { padding: 16px; }
   .workaround-sequence li { padding: 13px; }
   .interaction-evidence-section > header { grid-template-columns: 1fr; gap: 8px; }
+  .interaction-evidence-tabs { display: flex; overflow-x: auto; padding-bottom: 7px; scrollbar-color: #bdb4c3 transparent; scrollbar-width: thin; }
+  .interaction-evidence-tabs::-webkit-scrollbar { height: 4px; }
+  .interaction-evidence-tabs::-webkit-scrollbar-thumb { border-radius: 999px; background: #bdb4c3; }
+  .interaction-evidence-tabs button { flex: 0 0 auto; min-width: 140px; }
   .interaction-transcript { padding: 14px; }
   .interaction-message { width: 92%; }
 }
