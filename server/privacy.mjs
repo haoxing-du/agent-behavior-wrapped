@@ -108,7 +108,7 @@ export function redactText(input, manualTerms = [], { disabledKinds = [], disabl
     if (!labeledCredentialValue(match)) return match;
     const replacement = "[REDACTED CREDENTIAL]";
     const enabled = isEnabled("credential", match);
-    detections.push(detectionDetails({ kind: "credential", label: "Credential", value: match, replacement, offset, source, enabled }));
+    detections.push(detectionDetails({ kind: "credential", label: "API keys and secrets", value: match, replacement, offset, source, enabled }));
     return enabled ? replacement : protect(match);
   });
   for (const [pattern, replacement] of [...SECRET_PATTERNS, ...(includeHeuristicSecrets ? HEURISTIC_SECRET_PATTERNS : []), ...PII_PATTERNS]) {
@@ -117,7 +117,9 @@ export function redactText(input, manualTerms = [], { disabledKinds = [], disabl
       const enabled = isEnabled(kind, match);
       detections.push(detectionDetails({
         kind,
-        label: replacement.slice(1, -1).toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()),
+        label: /(?:SECRET|KEY|TOKEN|CREDENTIAL|HIGH-ENTROPY)/.test(replacement)
+          ? "API keys and secrets"
+          : replacement.slice(1, -1).toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()),
         value: match,
         replacement,
         offset,

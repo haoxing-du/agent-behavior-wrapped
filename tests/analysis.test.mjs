@@ -464,6 +464,7 @@ test("redacts likely secrets and PII, strips code from evidence", () => {
   assert.ok(!result.text.includes("sk-test"));
   assert.ok(!result.text.includes("/Users/ada"));
   assert.ok(result.detections.length >= 3);
+  assert.ok(result.detections.filter((item) => /(?:SECRET|KEY|TOKEN|CREDENTIAL|HIGH-ENTROPY)/.test(item.replacement)).every((item) => item.label === "API keys and secrets"));
   assert.equal(safeEvidenceText("Here is ```private code```"), "Here is [CODE OMITTED]");
 });
 
