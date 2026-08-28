@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
 import test from "node:test";
-import { localOnlyAnalysisText, remoteAnalysisConsentText, requestAnalysisMode, researchDonationIntroText, researchDonationSeparationText } from "../server/consent.mjs";
+import { localOnlyAnalysisText, remoteAnalysisConsentText, requestAnalysisMode, researchDonationIntroText } from "../server/consent.mjs";
 
 async function answer(remoteAnswer, localAnswer) {
   const input = new PassThrough();
@@ -18,6 +18,7 @@ async function answer(remoteAnswer, localAnswer) {
 test("remote analysis consent defaults to remote and accepts an explicit yes", async () => {
   const accepted = await answer("y");
   assert.equal(accepted.mode, "remote");
+  assert.equal(accepted.transcript.startsWith("\n"), true);
   assert.match(accepted.transcript, /Before we begin/);
   assert.ok(accepted.transcript.indexOf("Before we begin") < accepted.transcript.indexOf("Behavior Wrapped will send redacted excerpts"));
   assert.equal((await answer("YES")).mode, "remote");
@@ -43,12 +44,14 @@ test("remote analysis consent identifies the redacted data, model, and provider"
 
 test("research donation is explained before consent as a separate optional choice", () => {
   const copy = researchDonationIntroText.join(" ");
-  assert.match(copy, /read locally/);
+  assert.match(copy, /Claude Code and Codex sessions from the last 30 days/);
+  assert.match(copy, /read and analyzed locally/);
   assert.match(copy, /With permission/);
-  assert.match(copy, /analyzed remotely/);
-  assert.match(copy, /share-safe aggregates only/);
+  assert.match(copy, /LLM judge for additional analysis/);
+  assert.match(copy, /aggregate statistics only/);
   assert.match(copy, /Susan Calvin Project/);
-  assert.match(copy, /optionally review and donate selected transcripts/);
-  assert.match(researchDonationSeparationText, /separate/);
-  assert.match(researchDonationSeparationText, /never required/);
+  assert.match(copy, /susancalvin\.org/);
+  assert.match(copy, /optionally review and donate select transcripts/);
+  assert.match(copy, /Research donation is optional/);
+  assert.match(copy, /not required/);
 });

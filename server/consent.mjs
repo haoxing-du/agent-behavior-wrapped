@@ -8,27 +8,24 @@ const reset = "\x1b[0m";
 export const remoteAnalysisConsentText = "Behavior Wrapped will send redacted excerpts from your session history to GPT-5.6 Luna via OpenRouter using zero-data-retention providers for analysis. OK to proceed?";
 export const localOnlyAnalysisText = "Local-only analysis keeps all session data on this device. It uses deterministic statistics and a locally counted favorite phrase, but omits AI-judged interaction tone, usage topics, and instrumental workarounds. Those omissions leave leaderboard plots 2 and 3 incomplete, so the report will not be published or included in the leaderboard.";
 export const researchDonationIntroText = [
-  "Your selected sessions are read locally.",
-  "With permission, redacted excerpts are analyzed remotely.",
-  "Your public Wrapped contains share-safe aggregates only.",
-  "At the end, you may optionally review and donate selected transcripts to the Susan Calvin Project.",
+  "Your Claude Code and Codex sessions from the last 30 days are read and analyzed locally.",
+  "With permission, redacted excerpts are sent to an LLM judge for additional analysis.",
+  "Your public Wrapped contains aggregate statistics only.",
+  "At the end, you may optionally review and donate select transcripts to the Susan Calvin Project (susancalvin.org). Research donation is optional and is not required to create your Wrapped.",
 ];
-export const researchDonationSeparationText = "Research donation is separate and is never required to create your Wrapped.";
 
 export function formatResearchDonationIntro() {
   return [
     `${bright}Before we begin${reset}`,
     "",
     ...researchDonationIntroText.map((line, index) => `${purple}${index + 1}.${reset} ${line}`),
-    "",
-    `${bright}${researchDonationSeparationText}${reset}`,
   ].join("\n");
 }
 
 export async function requestAnalysisMode({ input = process.stdin, output = process.stdout } = {}) {
   const prompt = createInterface({ input, output });
   try {
-    output.write(`${formatResearchDonationIntro()}\n\n`);
+    output.write(`\n${formatResearchDonationIntro()}\n\n`);
     const question = `${lime}◇${reset} ${remoteAnalysisConsentText.replace("GPT-5.6 Luna", `${purple}${bright}GPT-5.6 Luna${reset}`)} ${bright}(Y/n)${reset} `;
     const answer = await prompt.question(question);
     if (/^(?:|y|yes)$/i.test(answer.trim())) return "remote";
