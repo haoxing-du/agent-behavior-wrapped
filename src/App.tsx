@@ -32,7 +32,7 @@ type Donation = { format: string; createdLocally: boolean; unredacted?: boolean;
 type DonationMode = "standard" | "advanced" | "unredacted";
 type Stage = "select" | "report" | "donate";
 type SavedReport = Report & { id: string; createdAt: string; rangeLabel: string; source: string; publicUrl?: string; donationHelperUrl?: string; hosting?: { public: boolean }; privacy: { shareSafe: boolean; containsTranscriptText: boolean; externalTransmission: boolean; analysisMode?: "remote" | "local-only"; leaderboardParticipation?: "included-by-default" | "excluded" } };
-type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; metricUnit?: string; headlineAccent?: string; wordRatio?: string; example?: string; workaround?: boolean; workaroundCount?: number; evidenceHref?: string; evidenceLabel?: string; turnDistribution?: { values: number[]; median: number }; ctaHref?: string; ctaLabel?: string; ctas?: { href: string; label: string; primary?: boolean; note?: string }[]; rows?: { label: string; value: string; percentage?: number; rank?: number }[]; comparison?: { label: string; highlight: string; accent: "yell" | "thanks" | "agent-apology" | "user-apology"; value: string; suffix: string; quote?: string }[] };
+type StorySlide = { kicker: string; headline: string; detail: string; tone: string; metric?: boolean; metricUnit?: string; headlineAccent?: string; wordRatio?: string; example?: string; workaround?: boolean; workaroundCount?: number; evidenceHref?: string; evidenceLabel?: string; turnDistribution?: { values: number[]; median: number }; ctaHref?: string; ctaLabel?: string; ctas?: { href: string; label: string; primary?: boolean; note?: string }[]; ctaPanel?: { eyebrow?: string; title: string; detailBeforeLink: string; linkLabel: string; detailAfterLink: string; href: string }; skipLabel?: string; rows?: { label: string; value: string; percentage?: number; rank?: number }[]; comparison?: { label: string; highlight: string; accent: "yell" | "thanks" | "agent-apology" | "user-apology"; value: string; suffix: string; quote?: string }[] };
 type WorkaroundEvidenceAction = { toolName: string; details: string; timestamp: string | null };
 type WorkaroundEvidenceOccurrence = { index: number; session: { label: string; agentName: string; startedAt: string | null; openingMessage: { preview: string; full: string }; turnsBeforeWorkaround: number }; originalAction: WorkaroundEvidenceAction; blocker: { text: string; timestamp: string | null }; workaroundAction: WorkaroundEvidenceAction };
 type WorkaroundEvidence = { format: string; localPrivate: boolean; standardRedactionsApplied: boolean; reportId: string; occurrences: WorkaroundEvidenceOccurrence[] };
@@ -331,6 +331,24 @@ function SharedWrapped({ id }: { id: string }) {
     const topics = (report.stats.topics || []).filter((item) => hasDisplayablePercentage(item.percentage));
     const displayTopics = [...topics.filter((item) => item.topic !== "Other"), ...topics.filter((item) => item.topic === "Other")];
     const topTopic = displayTopics[0];
+    // Research invitation copy is grouped here so it can be edited without touching the slide layout.
+    const researchInvitation = {
+      kicker: "",
+      headline: "Your sessions could help researchers study AI behavior in the wild.",
+      detail: report.workaroundCard?.count
+        ? `We found ${report.workaroundCard.count.toLocaleString()} example${report.workaroundCard.count === 1 ? "" : "s"} where an agent tried another route after its first attempt was blocked. Your data could help uncover more patterns like these.`
+        : "Real usage data help researchers understand how agents behave in the wild.",
+      action: "Review data for donation",
+      note: "You can choose sessions and redact anything before sharing any data.",
+      skip: "No thanks, take me to the leaderboard.",
+      panel: {
+        title: "Help build an independent AI behavior observatory.",
+        detailBeforeLink: "Your contribution supports the",
+        linkLabel: "Susan Calvin Project",
+        detailAfterLink: ", which studies how agents actually behave in real-world deployment.",
+        href: "https://susancalvin.org",
+      },
+    };
     const wrappedSlides: StorySlide[] = [
     { kicker: "This month you went through", headline: fmtCompact(report.stats.tokens || 0), metricUnit: "tokens", detail: `That’s the complete Harry Potter series roughly ${harryPotterSeriesCount} times over.`, tone: "ice", metric: true, rows: tokenBreakdownRows.length ? tokenBreakdownRows : undefined },
     { kicker: "Your tokens were worth", headline: fmtUsd(report.stats.estimatedCostUsd || 0), detail: "", tone: "cost", rows: costEquivalents(report.stats.estimatedCostUsd || 0) },
@@ -351,12 +369,31 @@ function SharedWrapped({ id }: { id: string }) {
     ...(report.phraseCard ? [{ kicker: "Beyond those common phrases, your agent’s favorite was", headline: `“${report.phraseCard.phrase}”`, detail: `It said this ${report.phraseCard.occurrences} time${report.phraseCard.occurrences === 1 ? "" : "s"} across ${report.phraseCard.distinctSessions} session${report.phraseCard.distinctSessions === 1 ? "" : "s"}.`, tone: "quote" }] : []),
     ...(repeatedInstructions.length ? [{ kicker: "Your most repeated instructions", headline: "You really meant it.", detail: "Exact instructions you gave more than once.", tone: "stock", rows: repeatedInstructions.map((item) => ({ label: `“${item.instruction}”`, value: `${item.occurrences}×` })) }] : []),
     ...(report.workaroundCard ? [{ kicker: "", headline: report.workaroundCard.count === 0 ? "Your agent took no for an answer." : "Your agent wouldn’t take no for an answer.", detail: report.workaroundCard.count === 0 ? "No confirmed blocked-route detours were detected." : "When one method was blocked, it tried another way to reach the same outcome.", example: report.workaroundCard.example, workaround: true, workaroundCount: report.workaroundCard.count, evidenceHref: report.workaroundCard.count > 0 ? localWorkaroundEvidenceUrl(report) : undefined, tone: "topics", rows: report.workaroundCard.models.map((item) => ({ label: item.name, value: `${item.count}` })) }] : []),
-    { kicker: report.privacy.analysisMode === "local-only" ? "Your data stayed on this device" : "Your report is only the beginning", headline: report.privacy.analysisMode === "local-only" ? "Local-only, as promised." : "Keep exploring.", detail: report.privacy.analysisMode === "local-only" ? "AI-only cards and leaderboard comparisons were skipped." : "", tone: "leaderboard", ctas: sharedViewer ? [
-      { href: "/leaderboard", label: "Explore the public leaderboard", primary: true, note: "See anonymous, aggregate patterns across participating Wrapped reports." },
-    ] : [
-      ...(report.privacy.analysisMode === "local-only" ? [] : [{ href: `/leaderboard/${report.id}${managementToken ? `#manage=${managementToken}` : ""}`, label: "See how you compare", primary: true, note: "Your private link also lets you manage leaderboard participation." }]),
-      { href: `${report.donationHelperUrl || `http://localhost:4317/donate/${report.id}`}?mode=standard`, label: "Donate your transcripts for research", note: "Nothing is sent until you review the redactions and explicitly consent. Likely secrets and common personal details are removed locally; code, paths, and URLs remain available for context." },
-    ] },
+    ...(!sharedViewer ? [{
+      kicker: researchInvitation.kicker,
+      headline: researchInvitation.headline,
+      detail: researchInvitation.detail,
+      tone: "research",
+      ctas: [{ href: `${report.donationHelperUrl || `http://localhost:4317/donate/${report.id}`}?mode=standard`, label: researchInvitation.action, primary: true, note: researchInvitation.note }],
+      ctaPanel: researchInvitation.panel,
+      skipLabel: researchInvitation.skip,
+    }] : []),
+    ...(report.privacy.analysisMode === "local-only" ? [{
+      kicker: "Your data stayed on this device",
+      headline: "Local-only, as promised.",
+      detail: "AI-only cards and leaderboard comparisons were skipped.",
+      tone: "leaderboard",
+    }] : [{
+      kicker: "Thank you for using Behavior Wrapped",
+      headline: "Keep exploring.",
+      detail: "",
+      tone: "leaderboard",
+      ctas: sharedViewer ? [
+        { href: "/leaderboard", label: "Explore the public leaderboard", primary: true, note: "See anonymous, aggregate patterns across participating Wrapped reports." },
+      ] : [
+        { href: `/leaderboard/${report.id}${managementToken ? `#manage=${managementToken}` : ""}`, label: "See how you compare", primary: true, note: "Your private link also lets you manage leaderboard participation." },
+      ],
+    }]),
   ];
     return wrappedSlides;
   }, [report, managementToken]);
@@ -399,7 +436,7 @@ function SharedWrapped({ id }: { id: string }) {
           {current.turnDistribution ? <SessionTurnChart {...current.turnDistribution} /> : current.workaround ? <>{storyRows}{storyExample}</> : <>{storyExample}{storyRows}</>}
         </div>}
       </div>}
-      {current.ctas ? <div className="story-cta-group">{current.ctas.map((cta) => <div className="story-cta-choice" key={cta.href}><a className={`story-cta ${cta.primary ? "primary" : "secondary"}`} href={cta.href}>{cta.label} <span>→</span></a>{cta.note && <small>{cta.note}</small>}</div>)}</div> : current.ctaHref ? <a className="story-cta" href={current.ctaHref}>{current.ctaLabel} <span>→</span></a> : storyEvidence}
+      {current.ctas ? <div className="story-cta-group">{current.ctaPanel && <div className="story-cta-panel-copy">{current.ctaPanel.eyebrow && <span>{current.ctaPanel.eyebrow}</span>}<strong>{current.ctaPanel.title}</strong><p>{current.ctaPanel.detailBeforeLink} <a href={current.ctaPanel.href} target="_blank" rel="noreferrer">{current.ctaPanel.linkLabel} <span aria-hidden="true">↗</span></a>{current.ctaPanel.detailAfterLink}</p></div>}{current.ctas.map((cta) => <div className="story-cta-choice" key={cta.href}><a className={`story-cta ${cta.primary ? "primary" : "secondary"}`} href={cta.href}>{cta.label} <span>→</span></a>{cta.note && <small>{cta.note}</small>}</div>)}{current.skipLabel && <button className="story-cta-skip" type="button" onClick={() => setSlide((value) => Math.min(slides.length - 1, value + 1))}>{current.skipLabel}</button>}</div> : current.ctaHref ? <a className="story-cta" href={current.ctaHref}>{current.ctaLabel} <span>→</span></a> : storyEvidence}
       <div className="story-tag">behaviorwrapped.com</div>
       <button className="story-arrow prev" disabled={slide === 0} onClick={() => setSlide(slide - 1)} aria-label="Previous slide">‹</button>
       <button className="story-arrow next" disabled={slide === slides.length - 1} onClick={() => setSlide(slide + 1)} aria-label="Next slide">›</button>
