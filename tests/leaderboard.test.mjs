@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { leaderboardAggregateFromReport, syntheticLeaderboardSnapshot } from "../server/leaderboard.mjs";
+import { buildSessionLengthDistribution, parseSessionLengthDistribution } from "../server/session-length-distribution.mjs";
 import { handleRequest, validateLeaderboardAggregate } from "../worker/phrase-judge-worker.mjs";
 
 const aggregate = {
@@ -33,11 +34,13 @@ async function sha256(value) {
 function leaderboardDatabase(managementTokenHash) {
   let entry = null;
   let optedOut = false;
+  let sessionLengthDistribution = null;
   const modelEntries = new Map();
   return {
     get entry() { return entry; },
     get optedOut() { return optedOut; },
     get modelEntries() { return modelEntries; },
+    get sessionLengthDistribution() { return sessionLengthDistribution; },
     prepare(sql) {
       let values = [];
       return {
@@ -45,11 +48,13 @@ function leaderboardDatabase(managementTokenHash) {
         async first() {
           if (sql.includes("FROM public_reports")) return { report_json: JSON.stringify(publicReport), owner_hash: "owner-hash", management_token_hash: managementTokenHash };
           if (sql.includes("FROM leaderboard_opt_outs")) return optedOut ? { client_hash: "owner-hash" } : null;
+          if (sql.includes("FROM leaderboard_session_length_distribution")) return sessionLengthDistribution ? { distribution_json: JSON.stringify(sessionLengthDistribution) } : null;
           if (sql.includes("SUM(phrase_occurrences)")) return null;
           if (sql.includes("WHERE client_hash = ?")) return entry ? { participant_id: 1, display_name: entry.displayName, public_ranked: entry.publicRanked, shares_phrase: entry.sharesPhrase } : null;
           return null;
         },
         async all() {
+          if (sql.includes("SELECT session_turn_counts FROM leaderboard_entries")) return { results: entry ? [{ session_turn_counts: entry.sessionTurnCounts }] : [] };
           if (sql.includes("tokens, word_ratio, grateful_messages")) return { results: entry ? [{ participant_id: 1, tokens: entry.tokens, word_ratio: entry.wordRatio, grateful_messages: entry.gratefulMessages, frustrated_messages: entry.frustratedMessages, instrumental_workarounds: entry.workarounds, favorite_phrase: entry.phrase, phrase_occurrences: entry.phraseOccurrences, phrase_sessions: entry.phraseSessions, session_turn_counts: entry.sessionTurnCounts }] : [] };
           if (sql.includes("FROM leaderboard_model_workarounds")) return { results: [...modelEntries].map(([model, count]) => ({ model, detected_instances: count })).sort((left, right) => right.detected_instances - left.detected_instances || left.model.localeCompare(right.model)) };
           return { results: [] };
@@ -62,6 +67,7 @@ function leaderboardDatabase(managementTokenHash) {
           if (sql.startsWith("DELETE FROM leaderboard_entries")) entry = null;
           if (sql.startsWith("DELETE FROM leaderboard_model_workarounds")) modelEntries.clear();
           if (sql.startsWith("INSERT INTO leaderboard_model_workarounds")) modelEntries.set(values[1], values[2]);
+          if (sql.startsWith("INSERT INTO leaderboard_session_length_distribution")) sessionLengthDistribution = JSON.parse(values[0]);
           return { meta: { changes: 1 } };
         },
       };
@@ -102,9 +108,22 @@ test("builds a complete synthetic leaderboard without a network request", () => 
   assert.equal(snapshot.instrumental_workarounds.value, 4);
   assert.equal(snapshot.instrumental_workarounds.samples.length, 12);
   assert.deepEqual(snapshot.instrumental_workarounds.by_model, aggregate.instrumental_workarounds_by_model);
-  assert.equal(snapshot.session_lengths.samples.length, 29);
+  assert.equal(snapshot.session_lengths.distribution.session_count, 29);
+  assert.equal(snapshot.session_lengths.distribution.points.length, 64);
   assert.deepEqual(snapshot.session_lengths.values, aggregate.session_turn_counts);
   assert.equal(snapshot.phrases.entries[0].phrase, aggregate.favorite_phrase);
+});
+
+test("precomputes a bounded session-length density contour", () => {
+  const distribution = buildSessionLengthDistribution([1, 2, 3, 18, 42, 1_000]);
+  assert.equal(distribution.session_count, 6);
+  assert.equal(distribution.median_turns, 10.5);
+  assert.equal(distribution.min_turns, 1);
+  assert.equal(distribution.max_turns, 1_000);
+  assert.equal(distribution.points.length, 64);
+  assert.ok(distribution.points.some((point) => point.density === 1));
+  assert.deepEqual(parseSessionLengthDistribution(JSON.stringify(distribution)), distribution);
+  assert.equal(parseSessionLengthDistribution('{"session_count":1,"points":[]}'), null);
 });
 
 test("requires explicit consent before storing a leaderboard entry", async () => {
@@ -156,6 +175,8 @@ test("the public leaderboard exposes cohort medians without report management st
   assert.equal(snapshot.good_human_score.value, 70);
   assert.equal(snapshot.instrumental_workarounds.value, aggregate.instrumental_workarounds);
   assert.deepEqual(snapshot.session_lengths.values, []);
+  assert.equal(snapshot.session_lengths.distribution.session_count, 3);
+  assert.equal(snapshot.session_lengths.distribution.points.length, 64);
 });
 
 test("the creator can persistently opt out and later add anonymous stats back", async () => {
@@ -178,7 +199,9 @@ test("the creator can persistently opt out and later add anonymous stats back", 
   assert.deepEqual(snapshot.instrumental_workarounds.samples, [{ participant_id: 1, value: 4 }]);
   assert.deepEqual(snapshot.instrumental_workarounds.by_model, aggregate.instrumental_workarounds_by_model);
   assert.deepEqual(snapshot.session_lengths.values, [3, 18, 42]);
-  assert.deepEqual(snapshot.session_lengths.samples, [{ participant_id: 1, session_index: 0, value: 3 }, { participant_id: 1, session_index: 1, value: 18 }, { participant_id: 1, session_index: 2, value: 42 }]);
+  assert.equal(snapshot.session_lengths.distribution.session_count, 3);
+  assert.equal(snapshot.session_lengths.distribution.median_turns, 18);
+  assert.equal("samples" in snapshot.session_lengths, false);
   assert.deepEqual(snapshot.phrases.entries, [{ participant_id: 1, phrase: aggregate.favorite_phrase, occurrences: 12, sessions: 5 }]);
   assert.equal(database.entry.ownerHash, "owner-hash");
   assert.equal(database.entry.sharesPhrase, true);
@@ -191,6 +214,7 @@ test("the creator can persistently opt out and later add anonymous stats back", 
   assert.equal(database.entry, null);
   assert.equal(database.modelEntries.size, 0);
   assert.equal(database.optedOut, true);
+  assert.equal(database.sessionLengthDistribution.session_count, 0);
 
   const stillOut = await handleRequest(new Request("https://example.com/api/reports/leaderReport123/leaderboard", {
     method: "POST", headers, body: JSON.stringify({ action: "snapshot" }),

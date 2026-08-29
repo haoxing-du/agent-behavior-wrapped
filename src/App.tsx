@@ -40,7 +40,7 @@ type InteractionEvidenceMessage = { role: "user" | "assistant"; text: string; ti
 type InteractionEvidenceOccurrence = { index: number; candidateId: string; session: { label: string; agentName: string; startedAt: string | null }; timestamp: string | null; messages: InteractionEvidenceMessage[] };
 type InteractionEvidence = { format: string; localPrivate: boolean; standardRedactionsApplied: boolean; reportId: string; frustrated: InteractionEvidenceOccurrence[]; grateful: InteractionEvidenceOccurrence[]; userApologies: InteractionEvidenceOccurrence[]; agentApologies: InteractionEvidenceOccurrence[] };
 type ParticipantSample = { participant_id: number; value: number };
-type SessionLengthSample = ParticipantSample & { session_index: number };
+type SessionLengthDistribution = { session_count: number; median_turns: number; min_turns: number; max_turns: number; points: { turns: number; density: number }[] };
 type PhraseWallEntry = { participant_id: number; phrase: string; occurrences: number; sessions: number };
 type RelationshipPoint = { participant_id: number; yap_ratio: number; appreciation_index: number };
 type PlotTooltipState = { x: number; y: number; text: string } | null;
@@ -52,7 +52,7 @@ type LeaderboardSnapshot = {
   good_human_score: { value: number | null; percentile: number | null };
   relationship: { points: RelationshipPoint[] };
   instrumental_workarounds: { value: number; percentile: number | null; samples: ParticipantSample[]; by_model?: { model: string; count: number }[] };
-  session_lengths: { values: number[]; samples: SessionLengthSample[] };
+  session_lengths: { values: number[]; distribution: SessionLengthDistribution };
   phrases: { entries: PhraseWallEntry[] };
   participation: { joined: boolean; participant_id?: number; display_name?: string; public_ranked?: boolean; shares_phrase?: boolean };
   can_manage?: boolean;
@@ -352,8 +352,8 @@ function SharedWrapped({ id }: { id: string }) {
     const wrappedSlides: StorySlide[] = [
     { kicker: "This month you went through", headline: fmtCompact(report.stats.tokens || 0), metricUnit: "tokens", detail: `That’s the complete Harry Potter series roughly ${harryPotterSeriesCount} times over.`, tone: "ice", metric: true, rows: tokenBreakdownRows.length ? tokenBreakdownRows : undefined },
     { kicker: "Your tokens were worth", headline: fmtUsd(report.stats.estimatedCostUsd || 0), detail: "", tone: "cost", rows: costEquivalents(report.stats.estimatedCostUsd || 0) },
-    ...(leader ? [{ kicker: "Your most-used agent was", headline: leader.name, detail: `${leader.count} of ${report.stats.sessions} selected sessions.`, tone: "agents", rows: activeAgents.map((agent) => ({ label: agent.name, value: `${agent.percentage.toFixed(1)}%`, percentage: agent.percentage })) }] : []),
-    ...(topModel ? [{ kicker: "Your top models", headline: `${topModel.percentage.toFixed(1)}%`, detail: `went to your #1 · ${topModel.name}`, tone: "models", rows: activeModels.slice(0, 4).map((model, index) => ({ label: model.name, value: `${model.percentage.toFixed(1)}%`, percentage: model.percentage, rank: index + 1 })) }] : []),
+    ...(leader ? [{ kicker: "Your most-used agent by session was", headline: leader.name, detail: `${leader.count} of ${report.stats.sessions} selected sessions included this agent.`, tone: "agents", rows: activeAgents.map((agent) => ({ label: agent.name, value: `${agent.percentage.toFixed(1)}% of sessions`, percentage: agent.percentage })) }] : []),
+    ...(topModel ? [{ kicker: "Your top models by token usage", headline: `${topModel.percentage.toFixed(1)}%`, detail: `of model-attributed tokens went to your #1 · ${topModel.name}`, tone: "models", rows: activeModels.slice(0, 4).map((model, index) => ({ label: model.name, value: `${model.percentage.toFixed(1)}% of tokens`, percentage: model.percentage, rank: index + 1 })) }] : []),
     ...(topTopic ? [{ kicker: "Your #1 use for agents was", headline: topTopic.topic, detail: "", tone: "topics", rows: displayTopics.slice(0, 5).map((item) => ({ label: item.topic === "Other" ? "Everything else" : item.topic, value: `${item.percentage.toFixed(1)}%`, percentage: item.percentage })) }] : []),
     ...(sessionTurnCounts.length ? [{ kicker: "Your longest session lasted", headline: `${longestSessionTurns.toLocaleString()} turns`, detail: "", tone: "turns", turnDistribution: { values: sessionTurnCounts, median: quantile(sessionTurnCounts, .5) } }] : []),
     ...(longestUninterruptedRun ? [{ kicker: "Your longest uninterrupted agent run", headline: fmtRunDuration(longestUninterruptedRun.durationMs), detail: `A completed ${longestUninterruptedRun.agentName} turn with no recorded abort.`, tone: "turns" }] : []),
@@ -414,7 +414,7 @@ function SharedWrapped({ id }: { id: string }) {
   }
   const layoutClass = current.comparison ? " story-comparison-card" : current.ctas ? " story-cta-card" : current.turnDistribution ? " story-turn-card" : current.rows || current.example ? " story-split-card" : current.wordRatio ? " story-ratio-card" : current.metric ? " story-metric-card" : " story-hero-card";
   const storyExample = current.example ? <blockquote className="story-example"><span>One example</span><p>{renderInlineCode(current.example)}</p></blockquote> : null;
-  const storyEvidence = current.evidenceHref ? <a className="story-evidence-link" href={current.evidenceHref} target="_blank" rel="noreferrer">{current.evidenceLabel || "See what your agent actually did"} <span>→</span><small>Opens a private page on this device</small></a> : null;
+  const storyEvidence = current.evidenceHref ? <a className="story-evidence-link" href={current.evidenceHref} target="_blank" rel="noreferrer"><span className="story-evidence-label">{current.evidenceLabel || "See what your agent actually did"}</span><span aria-hidden="true">→</span><small>Opens a private page on this device</small></a> : null;
   const storyRows = current.rows ? <div className="story-data-rows">{current.workaround && <span className="story-data-label">By model</span>}{current.rows.map((row) => <div className="story-data-row" key={row.label}>
     <div><strong>{row.rank && <em>{row.rank}</em>}{row.label}</strong><b>{row.value}</b></div>
     {row.percentage !== undefined && <span><i style={{ width: `${Math.max(row.percentage, 1.5)}%` }} /></span>}
@@ -683,44 +683,40 @@ function PhraseWallFigure({ entries, participantId }: { entries: PhraseWallEntry
   </section>;
 }
 
-function SessionLengthFigure({ metric, participantId, included, publicView = false }: { metric: LeaderboardSnapshot["session_lengths"]; participantId?: number; included: boolean; publicView?: boolean }) {
+function SessionLengthFigure({ metric, included, publicView = false }: { metric: LeaderboardSnapshot["session_lengths"]; included: boolean; publicView?: boolean }) {
   const { ref, width } = usePlotWidth();
-  const [tooltip, setTooltip] = useState<PlotTooltipState>(null);
   const height = 286;
   const left = width < 520 ? 38 : 54;
   const right = width - 22;
   const currentValues = publicView ? [] : metric.values.filter((value) => Number.isInteger(value) && value > 0);
-  const cohortSamples = metric.samples.filter((sample) => Number.isInteger(sample.value) && sample.value > 0);
-  const plottedSamples: SessionLengthSample[] = included || !currentValues.length ? cohortSamples : [...cohortSamples, ...currentValues.map((value, session_index) => ({ participant_id: -1, session_index, value }))];
-  const values = plottedSamples.map((sample) => sample.value);
-  const positive = values.length ? values : [1];
-  const minimum = Math.log10(Math.min(...positive)) - .16;
-  const maximum = Math.max(minimum + 1, Math.log10(Math.max(...positive)) + .16);
+  const distribution = metric.distribution;
+  const contour = distribution.points.filter((point) => Number.isFinite(point.turns) && point.turns >= 1 && Number.isFinite(point.density) && point.density >= 0 && point.density <= 1);
+  const domainValues = [...contour.map((point) => point.turns), ...currentValues];
+  if (!domainValues.length) domainValues.push(1, 10);
+  const minimum = Math.log10(Math.min(...domainValues));
+  const maximum = Math.max(minimum + .32, Math.log10(Math.max(...domainValues)));
   const xFor = (value: number) => left + (Math.log10(Math.max(1, value)) - minimum) / (maximum - minimum) * (right - left);
-  const dots = swarm(values, xFor, 117, 58);
   const ticks = compactLogTicks(10 ** minimum, 10 ** maximum, width);
-  const median = quantile(cohortSamples.map((sample) => sample.value), .5);
+  const center = 117;
+  const halfHeight = 67;
+  const contourPath = contour.length ? `${contour.map((point, index) => `${index ? "L" : "M"} ${xFor(point.turns).toFixed(2)} ${(center - point.density * halfHeight).toFixed(2)}`).join(" ")} ${[...contour].reverse().map((point) => `L ${xFor(point.turns).toFixed(2)} ${(center + point.density * halfHeight).toFixed(2)}`).join(" ")} Z` : "";
+  const currentMedian = quantile(currentValues, .5);
   const longest = Math.max(0, ...currentValues);
   return <section className="leader-figure leader-session-figure">
-    <div className="leader-figure-head"><div><span>04 · Session lengths</span><h2>How long does everyone keep the conversation going?</h2></div><div className="leader-result"><strong>{publicView ? fmtCompact(cohortSamples.length) : longest.toLocaleString()}</strong><small>{publicView ? "sessions shown" : "your longest · turns"}</small></div></div>
-    <div className="leader-session-legend"><span><i className="all" />Everyone’s sessions</span>{!publicView && <span><i className="you" />Your sessions</span>}</div>
+    <div className="leader-figure-head"><div><span>04 · Session lengths</span><h2>How long does everyone keep the conversation going?</h2></div><div className="leader-result"><strong>{publicView ? fmtCompact(distribution.session_count) : longest.toLocaleString()}</strong><small>{publicView ? "sessions in contour" : "your longest · turns"}</small></div></div>
+    <div className="leader-session-legend"><span><i className="contour" />Cohort density</span>{!publicView && currentMedian > 0 && <span><i className="you" />Your median</span>}</div>
     <div className="leader-plot" ref={ref}>
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Session length distribution for ${cohortSamples.length} sessions.${publicView ? "" : ` Your ${currentValues.length} sessions are highlighted.`}`}>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Precomputed session length density contour for ${distribution.session_count} sessions.${publicView || !currentValues.length ? "" : ` Your median session length is ${currentMedian.toFixed(1)} turns.`}`}>
         <rect className="leader-chart-frame" x={left} y="28" width={right - left} height="178" />
-        {median > 0 && <line className="leader-median" x1={xFor(median)} x2={xFor(median)} y1="38" y2="196"><title>Median: {median.toFixed(1)} turns</title></line>}
-        {dots.points.map((point) => {
-          const sample = plottedSamples[point.index];
-          const isCurrent = !publicView && (sample.participant_id === participantId || sample.participant_id === -1);
-          const label = `${isCurrent ? "Your session" : `Participant #${sample.participant_id} · session ${sample.session_index + 1}`}: ${point.value.toLocaleString()} turn${point.value === 1 ? "" : "s"}`;
-          return <InteractivePlotPoint key={`${sample.participant_id}-${sample.session_index}`} className={isCurrent ? "leader-session-you-dot" : "leader-session-dot"} cx={point.x} cy={point.y} radius={isCurrent ? dots.radius + 1.2 : dots.radius} label={label} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} />;
-        })}
+        {contourPath && <path className="leader-session-violin" d={contourPath}><title>Density contour for {distribution.session_count.toLocaleString()} sessions</title></path>}
+        {distribution.median_turns > 0 && <line className="leader-median" x1={xFor(distribution.median_turns)} x2={xFor(distribution.median_turns)} y1="38" y2="196"><title>Cohort median: {distribution.median_turns.toFixed(1)} turns</title></line>}
+        {!publicView && currentMedian > 0 && <><line className={`leader-session-you-median ${included ? "" : "is-opted-out"}`} x1={xFor(currentMedian)} x2={xFor(currentMedian)} y1="48" y2="186"><title>Your median: {currentMedian.toFixed(1)} turns</title></line><text className="leader-you-label" x={Math.min(right - 4, xFor(currentMedian) + 10)} y="43" textAnchor={xFor(currentMedian) > right - 80 ? "end" : "start"}>YOUR MEDIAN</text></>}
         <line className="leader-axis" x1={left} x2={right} y1="218" y2="218" />
         {ticks.map((tick) => <g key={tick}><line className="leader-tick" x1={xFor(tick)} x2={xFor(tick)} y1="218" y2="224" /><text className="leader-tick-label" x={xFor(tick)} y="241" textAnchor="middle">{fmtAxisCompact(tick)}</text></g>)}
         <text className="leader-axis-title" x={(left + right) / 2} y="274" textAnchor="middle">Turns per session · log scale</text>
       </svg>
-      <PlotTooltip value={tooltip} />
     </div>
-    <p className="leader-figure-note">One turn is one human message. Dashed line = cohort median.{!publicView && !included ? " Your highlighted sessions are not included in the cohort." : ""}</p>
+    <p className="leader-figure-note">One turn is one human message. The violin contour is precomputed when cohort data changes; no individual cohort sessions are sent to this page. Dashed line = cohort median.{!publicView && !included ? " Your median is shown for comparison but is not included in the cohort." : ""}</p>
   </section>;
 }
 
@@ -731,7 +727,7 @@ function LeaderboardFigures({ snapshot, publicView = false }: { snapshot: Leader
     <TokenUsageFigure metric={snapshot.tokens} participantId={participantId} included={included} publicView={publicView} />
     <RelationshipFigure ratio={snapshot.word_ratio.value} appreciation={snapshot.good_human_score.value} points={snapshot.relationship.points} participantId={participantId} included={included} publicView={publicView} />
     <WorkaroundFigure metric={snapshot.instrumental_workarounds} participantId={participantId} included={included} publicView={publicView} />
-    <SessionLengthFigure metric={snapshot.session_lengths} participantId={participantId} included={included} publicView={publicView} />
+    <SessionLengthFigure metric={snapshot.session_lengths} included={included} publicView={publicView} />
     <PhraseWallFigure entries={snapshot.phrases.entries} participantId={publicView ? undefined : participantId} />
   </div>;
 }
@@ -1498,7 +1494,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
       </section>
       <section className={`donation-preview ${bundle ? "ready" : ""}`}>
         <div className="donation-step"><span>2</span><div><h2>{unredacted ? "Review every unredacted line" : mode === "advanced" ? "Review every line" : "Review the summary"}</h2><p>{unredacted ? "Nothing is hidden automatically. Read, edit, or exclude anything you do not want to share." : mode === "advanced" ? "Automated detection is imperfect. Edit or remove any message directly." : "The standard bundle contains redacted user and assistant prose from the selected sessions."}</p></div></div>
-        {!bundle ? <div className="preview-placeholder"><span>⌁</span><p>Your {unredacted ? "unredacted " : "redacted "}donation is being prepared locally.</p></div> : <>
+        {!bundle ? <div className="preview-placeholder" role="status" aria-live="polite"><i className="redaction-spinner" aria-hidden="true" /><p>{unredacted ? "Preparing your unredacted donation locally." : "Scanning every selected conversation for sensitive information…"}</p></div> : <>
           {unredacted ? <div className="unredacted-warning"><strong>No automatic redactions</strong><span>This preview may expose passwords, API keys, names, email addresses, private code, URLs, and local file paths.</span></div> : <><div className="redaction-banner"><strong>{bundle.detectionCount} likely sensitive item{bundle.detectionCount === 1 ? "" : "s"} removed</strong><span>High-confidence API keys and secrets, plus personal details</span></div><AutomaticRedactionReview redactions={bundle.redactions || []} onToggle={mode === "advanced" ? toggleAutomaticRedaction : undefined} onToggleMatch={mode === "advanced" ? toggleAutomaticMatch : undefined} loading={loading} /></>}
           {detailedReview && <>
             {mode === "advanced" && <>

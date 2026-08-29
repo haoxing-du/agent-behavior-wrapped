@@ -1,4 +1,5 @@
 import { BEHAVIOR_WRAPPED_ORIGIN } from "./origins.mjs";
+import { buildSessionLengthDistribution } from "./session-length-distribution.mjs";
 export const LEADERBOARD_RELAY_ORIGIN = BEHAVIOR_WRAPPED_ORIGIN;
 const REQUEST_TIMEOUT_MS = 15_000;
 const demoTokens = [820_000, 2_400_000, 8_900_000, 14_300_000, 31_000_000, 47_500_000, 83_000_000, 126_000_000, 210_000_000, 380_000_000, 620_000_000, 940_000_000];
@@ -88,7 +89,7 @@ export function syntheticLeaderboardSnapshot(aggregate, participation = null) {
     },
     session_lengths: {
       values: aggregate.session_turn_counts,
-      samples: demoSessionTurnCounts.flatMap((values, participantIndex) => values.map((value, sessionIndex) => ({ participant_id: participantIndex + 1, session_index: sessionIndex, value }))),
+      distribution: buildSessionLengthDistribution(demoSessionTurnCounts.flat()),
     },
     phrases: {
       entries: aggregate.favorite_phrase ? [{ participant_id: 1, phrase: aggregate.favorite_phrase, occurrences: aggregate.phrase_occurrences, sessions: aggregate.phrase_sessions }] : [],

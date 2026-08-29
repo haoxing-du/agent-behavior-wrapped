@@ -13,7 +13,7 @@ const stockPhraseDefinitions = [
   { phrase: "genuinely", expression: /\bgenuinely\b/giu },
   { phrase: "one wrinkle", expression: /\bone wrinkle\b/giu },
   { phrase: "load bearing", expression: /\bload(?:\s+|-)bearing\b/giu },
-  { phrase: "the full picture", expression: /\bthe full picture\b/giu },
+  { phrase: "full picture", expression: /\b(?:the\s+)?full picture\b/giu },
   { phrase: "delve", expression: /\bdelve\b/giu },
 ];
 const agentDefinitions = [

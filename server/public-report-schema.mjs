@@ -19,7 +19,7 @@ function safeBreakdown(value, labelKey, countKey, allowedLabels) {
   });
 }
 
-const stockPhraseLabels = ["You're right", "Say the word", "genuinely", "one wrinkle", "load bearing", "the full picture", "delve"];
+const stockPhraseLabels = ["You're right", "Say the word", "genuinely", "one wrinkle", "load bearing", "full picture", "the full picture", "delve"];
 const allowedAgents = new Set(["claude", "cowork", "codex"]);
 
 function safeTurnCounts(value) {

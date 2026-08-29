@@ -21,7 +21,7 @@ function reportFixture() {
       trustCurve: { points: [{ dayOffset: 0, score: 25, observations: 2 }, { dayOffset: 14, score: 100, observations: 3 }], startScore: 1, endScore: 2, change: 1, observations: 5, autonomousObservations: 3, autonomousPercentage: 1, method: "private scoring detail", privateDates: ["2026-08-01"] },
       interactionTone: { frustratedMessages: 3, gratefulMessages: 7, analyzedMessages: 20, method: "private implementation detail" },
       apologyCounts: { user: 2, agent: 5, method: "private apology method" },
-      stockPhrases: [{ phrase: "You're right", count: 8 }, { phrase: "Say the word", count: 5 }, { phrase: "genuinely", count: 3 }, { phrase: "one wrinkle", count: 2 }, { phrase: "load bearing", count: 7 }, { phrase: "the full picture", count: 6 }, { phrase: "delve", count: 4 }, { phrase: "private custom phrase", count: 99 }],
+      stockPhrases: [{ phrase: "You're right", count: 8 }, { phrase: "Say the word", count: 5 }, { phrase: "genuinely", count: 3 }, { phrase: "one wrinkle", count: 2 }, { phrase: "load bearing", count: 7 }, { phrase: "full picture", count: 9 }, { phrase: "the full picture", count: 6 }, { phrase: "delve", count: 4 }, { phrase: "private custom phrase", count: 99 }],
       repeatedInstructions: [{ instruction: "Please keep your responses short.", occurrences: 5, distinctSessions: 3 }, { instruction: "/Users/private/do this", occurrences: 9, distinctSessions: 2 }],
       outputLanguages: [{ language: "English", words: 6_000, percentage: 75 }, { language: "Spanish", words: 2_000, percentage: 25 }, { language: "Private language", words: 1, percentage: 1 }],
       languageAnomaly: { language: "Chinese", words: 2, occurrences: 1, privateEvidence: "你好 世界" },
@@ -55,7 +55,7 @@ test("sanitizes a hosted report to a strict share-safe shape", () => {
   assert.equal(serialized.includes("2026-08-01"), false);
   assert.deepEqual(safe.stats.interactionTone, { frustratedMessages: 3, gratefulMessages: 7, analyzedMessages: 20 });
   assert.deepEqual(safe.stats.apologyCounts, { user: 2, agent: 5 });
-  assert.deepEqual(safe.stats.stockPhrases, [{ phrase: "You're right", count: 8 }, { phrase: "Say the word", count: 5 }, { phrase: "genuinely", count: 3 }, { phrase: "one wrinkle", count: 2 }, { phrase: "load bearing", count: 7 }, { phrase: "the full picture", count: 6 }, { phrase: "delve", count: 4 }]);
+  assert.deepEqual(safe.stats.stockPhrases, [{ phrase: "You're right", count: 8 }, { phrase: "Say the word", count: 5 }, { phrase: "genuinely", count: 3 }, { phrase: "one wrinkle", count: 2 }, { phrase: "load bearing", count: 7 }, { phrase: "full picture", count: 9 }, { phrase: "the full picture", count: 6 }, { phrase: "delve", count: 4 }]);
   assert.deepEqual(safe.stats.repeatedInstructions, [{ instruction: "Please keep your responses short.", occurrences: 5, distinctSessions: 3 }]);
   assert.deepEqual(safe.stats.outputLanguages.map((item) => item.language), ["English", "Spanish"]);
   assert.deepEqual(safe.stats.languageAnomaly, { language: "Chinese", words: 2, occurrences: 1 });

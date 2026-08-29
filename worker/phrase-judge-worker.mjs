@@ -6,6 +6,7 @@ import { buildOpenRouterWorkaroundRequest, extractWorkaroundSelection, validateW
 import { BEHAVIOR_WRAPPED_HOST, BEHAVIOR_WRAPPED_WWW_HOST, LEGACY_BEHAVIOR_WRAPPED_HOST } from "../server/origins.mjs";
 import { sanitizePublicReport } from "../server/public-report-schema.mjs";
 import { MAX_ENCRYPTED_DONATION_BYTES, sanitizeEncryptedDonationEnvelope } from "../server/encrypted-donation-schema.mjs";
+import { buildSessionLengthDistribution, parseSessionLengthDistribution } from "../server/session-length-distribution.mjs";
 export { sanitizePublicReport } from "../server/public-report-schema.mjs";
 
 const MAX_BODY_BYTES = 256_000;
@@ -271,14 +272,25 @@ function storedSessionTurnCounts(value) {
   } catch { return []; }
 }
 
+async function refreshSessionLengthDistribution(env) {
+  const rows = await env.LEADERBOARD_DB.prepare("SELECT session_turn_counts FROM leaderboard_entries").all();
+  const distribution = buildSessionLengthDistribution((rows.results || []).flatMap((row) => storedSessionTurnCounts(row.session_turn_counts)));
+  await env.LEADERBOARD_DB.prepare(`INSERT INTO leaderboard_session_length_distribution (id, distribution_json, updated_at)
+    VALUES (1, ?, datetime('now'))
+    ON CONFLICT(id) DO UPDATE SET distribution_json=excluded.distribution_json, updated_at=datetime('now')`).bind(JSON.stringify(distribution)).run();
+  return distribution;
+}
+
 async function leaderboardSnapshot(env, aggregate, hash) {
   if (!env.LEADERBOARD_DB) throw new Error("Leaderboard storage is not configured.");
-  const [values, participation, modelTotals] = await Promise.all([
-    env.LEADERBOARD_DB.prepare("SELECT rowid AS participant_id, tokens, word_ratio, grateful_messages, frustrated_messages, instrumental_workarounds, favorite_phrase, phrase_occurrences, phrase_sessions, session_turn_counts FROM leaderboard_entries ORDER BY rowid").all(),
+  const [values, participation, modelTotals, storedDistribution] = await Promise.all([
+    env.LEADERBOARD_DB.prepare("SELECT rowid AS participant_id, tokens, word_ratio, grateful_messages, frustrated_messages, instrumental_workarounds, favorite_phrase, phrase_occurrences, phrase_sessions FROM leaderboard_entries ORDER BY rowid").all(),
     hash ? env.LEADERBOARD_DB.prepare("SELECT rowid AS participant_id, display_name, public_ranked, favorite_phrase IS NOT NULL AS shares_phrase FROM leaderboard_entries WHERE client_hash = ?").bind(hash).first() : Promise.resolve(null),
     env.LEADERBOARD_DB.prepare("SELECT model, SUM(detected_instances) AS detected_instances FROM leaderboard_model_workarounds GROUP BY model ORDER BY detected_instances DESC, model ASC LIMIT 50").all(),
+    env.LEADERBOARD_DB.prepare("SELECT distribution_json FROM leaderboard_session_length_distribution WHERE id = 1").first(),
   ]);
   const rows = values.results || [];
+  const sessionLengthDistribution = parseSessionLengthDistribution(storedDistribution?.distribution_json) || await refreshSessionLengthDistribution(env);
   const cohortScores = rows.map(goodHumanScore).filter((value) => value !== null);
   const publicView = !aggregate;
   const tokenValue = publicView ? median(rows.map((row) => row.tokens)) : aggregate.tokens;
@@ -317,7 +329,7 @@ async function leaderboardSnapshot(env, aggregate, hash) {
     },
     session_lengths: {
       values: publicView ? [] : aggregate.session_turn_counts,
-      samples: rows.flatMap((row) => storedSessionTurnCounts(row.session_turn_counts).map((value, sessionIndex) => ({ participant_id: Number(row.participant_id), session_index: sessionIndex, value }))),
+      distribution: sessionLengthDistribution,
     },
     phrases: {
       entries: rows.flatMap((row) => typeof row.favorite_phrase === "string" && /^[a-z]+(?:'[a-z]+)?(?: [a-z]+(?:'[a-z]+)?){3,9}$/.test(row.favorite_phrase)
@@ -372,6 +384,7 @@ async function upsertAnonymousLeaderboardEntry(env, hash, aggregate) {
       aggregate.favorite_phrase ? aggregate.phrase_sessions : 0, JSON.stringify(aggregate.session_turn_counts),
     ).run();
   await replaceLeaderboardModelWorkarounds(env, hash, aggregate.instrumental_workarounds_by_model);
+  await refreshSessionLengthDistribution(env);
 }
 
 async function replaceLeaderboardModelWorkarounds(env, hash, models) {
@@ -427,6 +440,7 @@ async function handleLeaderboard(request, env) {
     if (!env.LEADERBOARD_DB) return json({ error: "Leaderboard storage is not configured." }, 503);
     await env.LEADERBOARD_DB.prepare("DELETE FROM leaderboard_entries WHERE client_hash = ?").bind(hash).run();
     await env.LEADERBOARD_DB.prepare("DELETE FROM leaderboard_model_workarounds WHERE client_hash = ?").bind(hash).run();
+    await refreshSessionLengthDistribution(env);
     return json({ removed: true });
   }
 
@@ -461,6 +475,7 @@ async function handleLeaderboard(request, env) {
       phrase, phrase ? aggregate.phrase_occurrences : 0, phrase ? aggregate.phrase_sessions : 0, JSON.stringify(aggregate.session_turn_counts),
     ).run();
   await replaceLeaderboardModelWorkarounds(env, hash, aggregate.instrumental_workarounds_by_model);
+  await refreshSessionLengthDistribution(env);
   return json(await leaderboardSnapshot(env, aggregate, hash));
 }
 
@@ -477,6 +492,7 @@ async function handlePublicLeaderboard(request, env, id) {
     await env.LEADERBOARD_DB.prepare("INSERT INTO leaderboard_opt_outs (client_hash, opted_out_at) VALUES (?, datetime('now')) ON CONFLICT(client_hash) DO UPDATE SET opted_out_at=datetime('now')").bind(record.owner_hash).run();
     await env.LEADERBOARD_DB.prepare("DELETE FROM leaderboard_entries WHERE client_hash = ?").bind(record.owner_hash).run();
     await env.LEADERBOARD_DB.prepare("DELETE FROM leaderboard_model_workarounds WHERE client_hash = ?").bind(record.owner_hash).run();
+    await refreshSessionLengthDistribution(env);
     return json({ removed: true });
   }
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
@@ -492,7 +508,7 @@ async function handlePublicLeaderboard(request, env, id) {
   } else if (body.action !== "snapshot") {
     return json({ error: "Invalid leaderboard action." }, 400);
   }
-  if (!optedOut) await upsertAnonymousLeaderboardEntry(env, record.owner_hash, aggregate);
+  if (!optedOut && body.action === "snapshot") await upsertAnonymousLeaderboardEntry(env, record.owner_hash, aggregate);
   try { return json({ ...await leaderboardSnapshot(env, aggregate, record.owner_hash), can_manage: canManage, opted_out: optedOut }); }
   catch { return json({ error: "Leaderboard storage is not configured." }, 503); }
 }

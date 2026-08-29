@@ -364,7 +364,7 @@ test("counts fixed stock phrases only in assistant prose", () => {
   const report = analyzeSessions([{ sessionId: "stock-phrases", records: [
     { type: "user", message: { content: "You're right, genuinely. Say the word. One wrinkle." } },
     { type: "assistant", message: { content: "You're right. You’re right! Genuinely, say the word—there is one wrinkle. Let's delve into the full picture and find the load-bearing detail." } },
-    { type: "assistant", message: { content: "Delve into the full picture. This is load bearing." } },
+    { type: "assistant", message: { content: "Delve into the full picture. Show me the full picture. This is load bearing." } },
     { type: "assistant", message: { content: "`genuinely` ```text\nSay the word.\n```" } },
   ] }]);
   assert.deepEqual(report.stats.stockPhrases, [
@@ -373,7 +373,7 @@ test("counts fixed stock phrases only in assistant prose", () => {
     { phrase: "genuinely", count: 1 },
     { phrase: "one wrinkle", count: 1 },
     { phrase: "load bearing", count: 2 },
-    { phrase: "the full picture", count: 2 },
+    { phrase: "full picture", count: 3 },
     { phrase: "delve", count: 2 },
   ]);
 });
