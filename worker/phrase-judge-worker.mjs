@@ -12,6 +12,7 @@ export { sanitizePublicReport } from "../server/public-report-schema.mjs";
 const MAX_BODY_BYTES = 256_000;
 const MAX_CANDIDATES = 100;
 const JUDGE_ATTEMPTS = 2;
+const JUDGE_ATTEMPT_TIMEOUT_MS = 25_000;
 const ZULIP_NOTIFICATION_TIMEOUT_MS = 5_000;
 const candidateKeys = ["candidate_id", "distinct_sessions", "end_boundary_rate", "occurrences", "opening_rate", "phrase", "start_boundary_rate"];
 const leaderboardAggregateKeys = ["agent_words", "favorite_phrase", "frustrated_messages", "grateful_messages", "instrumental_workarounds", "instrumental_workarounds_by_model", "phrase_occurrences", "phrase_sessions", "session_turn_counts", "tokens", "user_words", "word_ratio"];
@@ -622,6 +623,7 @@ async function requestOpenRouter(env, fetchImpl, requestBody) {
         authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
         "x-title": "Behavior Wrapped",
       },
+      signal: AbortSignal.timeout(JUDGE_ATTEMPT_TIMEOUT_MS),
       body: JSON.stringify(routedRequestBody),
     });
   } catch (error) {

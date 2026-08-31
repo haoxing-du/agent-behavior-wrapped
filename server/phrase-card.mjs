@@ -208,6 +208,14 @@ export function buildLocalPhraseCard(candidates) {
   });
 }
 
+export async function phraseCardWithLocalFallback(candidates, judgedCard, { onFallback } = {}) {
+  try { return await judgedCard; }
+  catch (error) {
+    onFallback?.(error);
+    return buildLocalPhraseCard(candidates);
+  }
+}
+
 function timeoutMessage(error, timeoutMs) {
   if (error?.name === "TimeoutError" || error?.name === "AbortError") return new Error(`${PHRASE_JUDGE_NAME} timed out after ${Math.round(timeoutMs / 1000)} seconds.`);
   return error;

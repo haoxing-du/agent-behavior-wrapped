@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { discoverSessions, readRecords } from "../server/discovery.mjs";
-import { buildLocalPhraseCard, buildPhraseCandidates, OPENROUTER_MODEL, judgePhraseCard, judgePhraseCardViaRelay } from "../server/phrase-card.mjs";
+import { buildLocalPhraseCard, buildPhraseCandidates, OPENROUTER_MODEL, judgePhraseCard, judgePhraseCardViaRelay, phraseCardWithLocalFallback } from "../server/phrase-card.mjs";
 import { judgeErrorDetails } from "../server/judge-debug.mjs";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "projects");
@@ -42,6 +42,17 @@ test("builds a deterministic local phrase card without a judge call", () => {
   assert.equal(card.provider, "Local deterministic analysis");
   assert.equal(card.latencyMs, 0);
   assert.equal(buildLocalPhraseCard([]), null);
+});
+
+test("falls back to the deterministic local phrase when the judge fails", async () => {
+  const candidates = buildPhraseCandidates(fixtureRecords());
+  let failure;
+  const card = await phraseCardWithLocalFallback(candidates, Promise.reject(new Error("relay timed out")), {
+    onFallback(error) { failure = error; },
+  });
+  assert.equal(failure.message, "relay timed out");
+  assert.equal(card.phrase, candidates[0].phrase);
+  assert.equal(card.provider, "Local deterministic analysis");
 });
 
 test("requires four tokens and rejects dangling or predictably truncated endings", () => {

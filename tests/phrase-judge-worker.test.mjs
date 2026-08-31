@@ -148,6 +148,22 @@ test("worker retries a transient provider error before returning a valid judge r
   assert.equal((await response.json()).candidate_id, "phrase-1");
 });
 
+test("worker gives each upstream retry a bounded timeout", async () => {
+  let calls = 0;
+  const response = await handleRequest(relayRequest(), env(), async (_url, init) => {
+    calls += 1;
+    assert.equal(init.signal instanceof AbortSignal, true);
+    const error = new Error("provider stalled");
+    error.name = "TimeoutError";
+    throw error;
+  });
+  const body = await response.json();
+  assert.equal(response.status, 502);
+  assert.equal(calls, 2);
+  assert.equal(body.diagnostic.code, "upstream_fetch_error");
+  assert.equal(body.diagnostic.name, "TimeoutError");
+});
+
 test("worker returns privacy-safe diagnostics after both structured-output attempts fail", async () => {
   let calls = 0;
   const response = await handleRequest(relayRequest(), env(), async () => {

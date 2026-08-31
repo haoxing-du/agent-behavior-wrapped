@@ -25,12 +25,30 @@ const portArg = process.argv.find((arg) => arg.startsWith("--port="));
 const port = Number(portArg?.split("=")[1] || 4317);
 const configuredIdleMs = Number(process.env.BEHAVIOR_WRAPPED_HELPER_IDLE_MS);
 const helperIdleMs = Number.isFinite(configuredIdleMs) && configuredIdleMs >= 100 ? configuredIdleMs : 5 * 60 * 1_000;
-let catalog = await loadCatalog();
+const configuredTestCatalogDelayMs = process.env.NODE_ENV === "test" ? Number(process.env.BEHAVIOR_WRAPPED_TEST_CATALOG_DELAY_MS) : 0;
+const testCatalogDelayMs = Number.isFinite(configuredTestCatalogDelayMs) && configuredTestCatalogDelayMs > 0 ? configuredTestCatalogDelayMs : 0;
+let catalog = null;
+let catalogPromise = null;
 
 async function loadCatalog() {
+  if (testCatalogDelayMs) await new Promise((resolve) => setTimeout(resolve, testCatalogDelayMs));
   const found = await discoverAllSessionsAsync(demo ? { claudeRoot: fixtureRoot, coworkRoot: coworkFixtureRoot, codexRoots: [codexFixtureRoot], cache: false } : undefined);
   if (demo) found.sessions = found.sessions.map((session, index) => ({ ...session, synthetic: true, label: `Demo session ${index + 1}` }));
   return found;
+}
+
+async function catalogForRequest({ refresh = false } = {}) {
+  if (refresh || !catalogPromise) {
+    const loading = loadCatalog();
+    catalogPromise = loading;
+    try {
+      catalog = await loading;
+    } catch (error) {
+      if (catalogPromise === loading) catalogPromise = null;
+      throw error;
+    }
+  }
+  return catalogPromise;
 }
 
 function securityHeaders(extra = {}) {
@@ -71,23 +89,24 @@ function readBody(request, maximumBytes = 1_000_000) {
   });
 }
 
-async function chosenRecords(ids, options = {}) {
+async function chosenRecords(ids, options = {}, activeCatalog = null) {
+  const availableCatalog = activeCatalog || await catalogForRequest();
   const selected = [];
   for (const id of ids) {
-    const session = catalog.index.get(id);
+    const session = availableCatalog.index.get(id);
     if (session) selected.push({ sessionId: id, agent: session.agent, records: await readRecordsAsync(session.file, session.agent, options) });
   }
   return selected;
 }
 
-function publicCatalog() {
+function publicCatalog(availableCatalog) {
   const agentNames = supportedAgentNames(process.platform, { includeCowork: demo || process.platform === "darwin" });
   return {
-    rootAvailable: catalog.rootAvailable,
+    rootAvailable: availableCatalog.rootAvailable,
     demo,
-    projects: catalog.projects,
-    sessions: catalog.sessions.map((session, index) => ({ ...session, label: session.label || `Session ${index + 1}` })),
-    defaultRange: defaultDateRange(catalog.sessions, { days: DEFAULT_WINDOW_DAYS, anchorLatest: demo }),
+    projects: availableCatalog.projects,
+    sessions: availableCatalog.sessions.map((session, index) => ({ ...session, label: session.label || `Session ${index + 1}` })),
+    defaultRange: defaultDateRange(availableCatalog.sessions, { days: DEFAULT_WINDOW_DAYS, anchorLatest: demo }),
     agentNames,
     privacy: { canonicalDirectories: canonicalSessionDirectoryLabels(), networkRequests: "only-after-final-donation-consent" },
   };
@@ -99,10 +118,10 @@ const server = http.createServer(async (request, response) => {
     if (!new Set([`127.0.0.1:${port}`, `localhost:${port}`]).has(request.headers.host || "")) return json(response, 403, { error: "Local access only" });
     idleShutdown.touch();
     const url = new URL(request.url || "/", `http://${request.headers.host}`);
-    if (request.method === "GET" && url.pathname === "/api/health") return json(response, 200, { app: "behavior-wrapped", version: APP_VERSION, local: true, purpose: "research-donation", donationProtocol: LOCAL_DONATION_PROTOCOL, pid: process.pid, demo });
+    if (request.method === "GET" && url.pathname === "/api/health") return json(response, 200, { app: "behavior-wrapped", version: APP_VERSION, local: true, purpose: "research-donation", donationProtocol: LOCAL_DONATION_PROTOCOL, pid: process.pid, demo, catalogState: catalog ? "ready" : catalogPromise ? "loading" : "not-loaded" });
     if (request.method === "GET" && url.pathname === "/api/discover") {
-      catalog = await loadCatalog();
-      return json(response, 200, publicCatalog());
+      const availableCatalog = await catalogForRequest({ refresh: true });
+      return json(response, 200, publicCatalog(availableCatalog));
     }
     const reportMatch = url.pathname.match(/^\/api\/reports\/([A-Za-z0-9_-]{8,32})$/);
     if (request.method === "GET" && reportMatch) {
@@ -116,39 +135,43 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "GET" && selectionMatch) {
       const report = loadReport(selectionMatch[1]);
       if (!report) return json(response, 404, { error: "Saved report not found" });
-      const available = new Set(catalog.sessions.map((session) => session.id));
+      const availableCatalog = await catalogForRequest();
+      const available = new Set(availableCatalog.sessions.map((session) => session.id));
       return json(response, 200, { sessionIds: (report.sessionIds || []).filter((id) => available.has(id)), localPrivateSelection: true });
     }
     const workaroundEvidenceMatch = url.pathname.match(/^\/api\/reports\/([A-Za-z0-9_-]{8,32})\/workarounds$/);
     if (request.method === "GET" && workaroundEvidenceMatch) {
       const report = loadReport(workaroundEvidenceMatch[1]);
       if (!report) return json(response, 404, { error: "Saved report not found" });
+      const availableCatalog = await catalogForRequest();
       const allowed = new Set(report.sessionIds || []);
-      const ids = [...new Set((report.workaroundReview?.occurrences || []).map((occurrence) => occurrence?.location?.sessionId).filter((id) => allowed.has(id) && catalog.index.has(id)))].slice(0, 100);
-      const records = await chosenRecords(ids, { includePrivateToolDetails: true });
-      const labels = new Map(publicCatalog().sessions.map((session) => [session.id, session]));
+      const ids = [...new Set((report.workaroundReview?.occurrences || []).map((occurrence) => occurrence?.location?.sessionId).filter((id) => allowed.has(id) && availableCatalog.index.has(id)))].slice(0, 100);
+      const records = await chosenRecords(ids, { includePrivateToolDetails: true }, availableCatalog);
+      const labels = new Map(publicCatalog(availableCatalog).sessions.map((session) => [session.id, session]));
       return json(response, 200, makeWorkaroundEvidencePreview(report, records, labels));
     }
     const interactionEvidenceMatch = url.pathname.match(/^\/api\/reports\/([A-Za-z0-9_-]{8,32})\/interactions$/);
     if (request.method === "GET" && interactionEvidenceMatch) {
       const report = loadReport(interactionEvidenceMatch[1]);
       if (!report) return json(response, 404, { error: "Saved report not found" });
+      const availableCatalog = await catalogForRequest();
       const allowed = new Set(report.sessionIds || []);
       const references = [...(report.interactionReview?.frustrated || []), ...(report.interactionReview?.grateful || []), ...(report.apologyReview?.user || []), ...(report.apologyReview?.agent || [])];
-      const ids = [...new Set(references.map((reference) => reference?.location?.sessionId).filter((id) => allowed.has(id) && catalog.index.has(id)))].slice(0, 200);
-      const records = await chosenRecords(ids);
-      const labels = new Map(publicCatalog().sessions.map((session) => [session.id, session]));
+      const ids = [...new Set(references.map((reference) => reference?.location?.sessionId).filter((id) => allowed.has(id) && availableCatalog.index.has(id)))].slice(0, 200);
+      const records = await chosenRecords(ids, {}, availableCatalog);
+      const labels = new Map(publicCatalog(availableCatalog).sessions.map((session) => [session.id, session]));
       return json(response, 200, makeInteractionEvidencePreview(report, records, labels));
     }
     if (request.method === "POST" && url.pathname === "/api/donation-preview") {
       const body = await readBody(request);
       const report = loadReport(body.reportId);
       if (!report) return json(response, 404, { error: "Saved report not found" });
+      const availableCatalog = await catalogForRequest();
       const allowed = new Set(report.sessionIds || []);
-      const ids = Array.isArray(body.sessionIds) ? body.sessionIds.filter((id) => allowed.has(id) && catalog.index.has(id)).slice(0, 250) : [];
-      const records = await chosenRecords(ids);
+      const ids = Array.isArray(body.sessionIds) ? body.sessionIds.filter((id) => allowed.has(id) && availableCatalog.index.has(id)).slice(0, 250) : [];
+      const records = await chosenRecords(ids, {}, availableCatalog);
       if (!records.length) return json(response, 400, { error: "Choose at least one available session." });
-      const labels = new Map(publicCatalog().sessions.map((session) => [session.id, session]));
+      const labels = new Map(publicCatalog(availableCatalog).sessions.map((session) => [session.id, session]));
       const disabledRedactions = Array.isArray(body.disabledRedactions) ? body.disabledRedactions.filter((kind) => typeof kind === "string" && /^[a-z0-9-]{1,64}$/.test(kind)).slice(0, 20) : [];
       const disabledMatches = Array.isArray(body.disabledMatches) ? body.disabledMatches.filter((id) => typeof id === "string" && /^[a-f0-9]{24}$/.test(id)).slice(0, 5_000) : [];
       const unredacted = body.previewMode === "unredacted";

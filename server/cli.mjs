@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { discoverAllSessionsAsync, readRecordsAsync, sessionsInDefaultWindow, DEFAULT_WINDOW_DAYS } from "./discovery.mjs";
 import { analyzeSessions } from "./analysis.mjs";
-import { buildLocalPhraseCard, buildPhraseCandidates, judgePhraseCard, judgePhraseCardViaRelay, PHRASE_JUDGE_NAME, PHRASE_JUDGE_RELAY_URL } from "./phrase-card.mjs";
+import { buildLocalPhraseCard, buildPhraseCandidates, judgePhraseCard, judgePhraseCardViaRelay, phraseCardWithLocalFallback, PHRASE_JUDGE_NAME, PHRASE_JUDGE_RELAY_URL } from "./phrase-card.mjs";
 import { requestAnalysisMode } from "./consent.mjs";
 import { applyInteractionToneJudgment, buildInteractionToneCandidates, emptyInteractionToneJudgment, INTERACTION_TONE_RELAY_URL, judgeInteractionTone, judgeInteractionToneViaRelay } from "./interaction-tone.mjs";
 import { applySessionTopicJudgment, buildSessionTopicCandidates, emptySessionTopicJudgment, judgeSessionTopics, judgeSessionTopicsViaRelay, SESSION_TOPIC_RELAY_URL } from "./session-topics.mjs";
@@ -28,6 +28,10 @@ const baseUrl = `http://localhost:${port}`;
 const loopbackUrl = `http://127.0.0.1:${port}`;
 const command = process.argv[2];
 const verbose = process.argv.includes("--verbose") || process.argv.includes("--debug") || process.env.BEHAVIOR_WRAPPED_DEBUG === "1";
+const HELPER_HEALTH_TIMEOUT_MS = 500;
+const HELPER_POLL_MS = 100;
+const HELPER_STOP_TIMEOUT_MS = 5_000;
+const HELPER_START_TIMEOUT_MS = 10_000;
 const muted = "\x1b[2m"; const bright = "\x1b[1m"; const lime = "\x1b[38;2;201;242;75m"; const purple = "\x1b[38;2;141;92;255m"; const reset = "\x1b[0m";
 const progress = createCliProgress();
 
@@ -78,7 +82,7 @@ function printJudgeDebug(label, error) {
 
 async function helperStatus(expectedDemo = false) {
   try {
-    const response = await fetch(`${loopbackUrl}/api/health`);
+    const response = await fetch(`${loopbackUrl}/api/health`, { signal: AbortSignal.timeout(HELPER_HEALTH_TIMEOUT_MS) });
     const body = await response.json();
     const recognized = response.ok && body.app === "behavior-wrapped" && body.local === true && body.purpose === "research-donation";
     return { recognized, compatible: recognized && helperHealthMatches(body, { version: APP_VERSION, protocol: LOCAL_DONATION_PROTOCOL, demo: expectedDemo }), pid: Number(body.pid) || null };
@@ -91,18 +95,30 @@ async function ensureServer(demo = false) {
   if (current.recognized) {
     const stopped = await stopVerifiedStaleHelper(port, current.pid);
     if (!stopped) throw new Error(`An older Behavior Wrapped helper is using port ${port}. Stop it, then run this command again.`);
-    for (let attempt = 0; attempt < 30; attempt++) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
+    const stopDeadline = Date.now() + HELPER_STOP_TIMEOUT_MS;
+    while (Date.now() < stopDeadline) {
+      await new Promise((resolve) => setTimeout(resolve, HELPER_POLL_MS));
       if (!(await helperStatus(demo)).recognized) break;
     }
   }
   const child = spawn(process.execPath, [path.join(here, "launcher.mjs"), `--port=${port}`, "--no-open", ...(demo ? ["--demo"] : [])], { detached: true, stdio: "ignore", env: { ...process.env, BEHAVIOR_WRAPPED_DAEMON: "1" } });
+  let childFailure = null;
+  child.once("error", (error) => { childFailure = error; });
+  child.once("exit", (code, signal) => { childFailure = new Error(`helper exited with ${signal ? `signal ${signal}` : `code ${code}`}`); });
   child.unref();
-  for (let attempt = 0; attempt < 30; attempt++) {
-    await new Promise((resolve) => setTimeout(resolve, 100));
+  const startDeadline = Date.now() + HELPER_START_TIMEOUT_MS;
+  while (Date.now() < startDeadline) {
+    await new Promise((resolve) => setTimeout(resolve, HELPER_POLL_MS));
     if ((await helperStatus(demo)).compatible) return;
+    if (childFailure) break;
   }
-  throw new Error(`Could not start the local donation helper on port ${port}.`);
+  if ((await helperStatus(demo)).compatible) return;
+  if (!childFailure && child.pid && child.exitCode === null) {
+    try { process.kill(child.pid, "SIGTERM"); }
+    catch (error) { if (error?.code !== "ESRCH") throw error; }
+  }
+  const reason = childFailure ? `${childFailure.message}.` : `It did not become ready within ${HELPER_START_TIMEOUT_MS / 1_000} seconds and was stopped.`;
+  throw new Error(`Could not start the local donation helper on port ${port}. ${reason} Another application may already be using that port.`);
 }
 
 function openUrl(url) {
@@ -229,7 +245,9 @@ async function createWrapped() {
         : judgeWorkaroundsViaRelay(workaroundBundle, { endpoint: process.env.BEHAVIOR_WRAPPED_WORKAROUND_URL || WORKAROUND_RELAY_URL, clientId: getOrCreateClientId(), onProgress: workaroundProgress })
       : Promise.resolve(emptyWorkaroundJudgment(workaroundBundle.coverage));
     [phraseCard, interactionTone, sessionTopics, workarounds] = await Promise.all([
-      trackJudge("phrase", phraseCardPromise),
+      phraseCardWithLocalFallback(candidates, trackJudge("phrase", phraseCardPromise), {
+        onFallback(error) { analysisWarnings.push({ label: "favorite-phrase judge", error, localPhraseFallback: true }); },
+      }),
       optionalAnalysis(trackJudge("tone", interactionTonePromise), "interaction card", analysisWarnings),
       optionalAnalysis(trackJudge("topics", sessionTopicsPromise), "usage-topic card", analysisWarnings),
       optionalAnalysis(trackJudge("workarounds", workaroundsPromise), "instrumental-workaround card", analysisWarnings),
@@ -253,7 +271,9 @@ async function createWrapped() {
     delete analyzed.workaroundReview;
   }
   for (const warning of analysisWarnings) {
-    console.log(`◇  ${muted}Skipped the ${warning.label}; the judge request failed or its response could not be validated.${reset}          `);
+    console.log(warning.localPhraseFallback
+      ? `◇  ${muted}The favorite-phrase judge was unavailable; used the deterministic local phrase instead.${reset}          `
+      : `◇  ${muted}Skipped the ${warning.label}; the judge request failed or its response could not be validated.${reset}          `);
     printJudgeDebug(warning.label, warning.error);
   }
   const id = createReportId();
@@ -278,8 +298,9 @@ async function createWrapped() {
   const localUrl = `${baseUrl}/w/${id}`;
   const url = localOnly ? localUrl : report.managementUrl || publicUrl || localUrl;
   const tokenLabel = formatNumber(report.stats.tokens || 0);
+  const localPhrasePick = localOnly || report.phraseCard?.provider === "Local deterministic analysis";
   console.log(`◇  ${bright}Wrapped ready${reset} · ${tokenLabel} tokens across ${report.stats.sessions} sessions          `);
-  if (report.phraseCard) console.log(`◇  ${localOnly ? "Local pick" : `${PHRASE_JUDGE_NAME}'s pick`} · “${report.phraseCard.phrase}” × ${report.phraseCard.occurrences}${localOnly ? "" : ` · ${(report.phraseCard.latencyMs / 1000).toFixed(1)}s`}          `);
+  if (report.phraseCard) console.log(`◇  ${localPhrasePick ? "Local pick" : `${PHRASE_JUDGE_NAME}'s pick`} · “${report.phraseCard.phrase}” × ${report.phraseCard.occurrences}${localPhrasePick ? "" : ` · ${(report.phraseCard.latencyMs / 1000).toFixed(1)}s`}          `);
   console.log(`│\n◇  Your wrapped is ${publicUrl ? "live" : "ready locally"} ───────────────────────────────╮`);
   console.log(`│                                                        │`);
   console.log(`│  ${purple}${bright}${publicUrl || localUrl}${reset}`);
