@@ -11,6 +11,7 @@ import { MAX_DONATION_BYTES } from "./research-donation-schema.mjs";
 import { APP_VERSION, LOCAL_DONATION_PROTOCOL } from "./runtime-version.mjs";
 import { makeWorkaroundEvidencePreview } from "./workaround-evidence.mjs";
 import { makeInteractionEvidencePreview } from "./interaction-evidence.mjs";
+import { publicInteractionFeedback, resolveInteractionFeedback, sanitizeInteractionFeedbackSubmission } from "./interaction-feedback.mjs";
 import { createIdleShutdownController } from "./local-helper-runtime.mjs";
 import { canonicalSessionDirectoryLabels, openExternalUrl, supportedAgentNames } from "./platform.mjs";
 
@@ -162,13 +163,30 @@ const server = http.createServer(async (request, response) => {
       const labels = new Map(publicCatalog(availableCatalog).sessions.map((session) => [session.id, session]));
       return json(response, 200, makeInteractionEvidencePreview(report, records, labels));
     }
+    const interactionFeedbackMatch = url.pathname.match(/^\/api\/reports\/([A-Za-z0-9_-]{8,32})\/interaction-feedback\/(yelling|thanking)-([1-9][0-9]{0,2})$/);
+    if (request.method === "GET" && interactionFeedbackMatch) {
+      const report = loadReport(interactionFeedbackMatch[1]);
+      if (!report) return json(response, 404, { error: "Saved report not found" });
+      const feedbackId = `${interactionFeedbackMatch[2]}-${interactionFeedbackMatch[3]}`;
+      const reference = resolveInteractionFeedback(report, feedbackId);
+      if (!reference) return json(response, 404, { error: "That interaction classification is no longer available." });
+      const availableCatalog = await catalogForRequest();
+      if (!availableCatalog.index.has(reference.sessionId)) return json(response, 404, { error: "The source session is no longer available on this device." });
+      const records = await chosenRecords([reference.sessionId], {}, availableCatalog);
+      const trusted = resolveInteractionFeedback(report, feedbackId, new Map(records.map((session) => [session.sessionId, session.records])));
+      return json(response, 200, { sessionIds: [reference.sessionId], feedback: publicInteractionFeedback(trusted), localPrivateSelection: true });
+    }
     if (request.method === "POST" && url.pathname === "/api/donation-preview") {
       const body = await readBody(request);
       const report = loadReport(body.reportId);
       if (!report) return json(response, 404, { error: "Saved report not found" });
       const availableCatalog = await catalogForRequest();
+      const feedback = body.feedbackId ? resolveInteractionFeedback(report, body.feedbackId) : null;
+      if (body.feedbackId && !feedback) return json(response, 400, { error: "Invalid classifier-feedback selection." });
       const allowed = new Set(report.sessionIds || []);
-      const ids = Array.isArray(body.sessionIds) ? body.sessionIds.filter((id) => allowed.has(id) && availableCatalog.index.has(id)).slice(0, 250) : [];
+      const ids = feedback
+        ? [feedback.sessionId].filter((id) => availableCatalog.index.has(id))
+        : Array.isArray(body.sessionIds) ? body.sessionIds.filter((id) => allowed.has(id) && availableCatalog.index.has(id)).slice(0, 250) : [];
       const records = await chosenRecords(ids, {}, availableCatalog);
       if (!records.length) return json(response, 400, { error: "Choose at least one available session." });
       const labels = new Map(publicCatalog(availableCatalog).sessions.map((session) => [session.id, session]));
@@ -181,8 +199,26 @@ const server = http.createServer(async (request, response) => {
       const body = await readBody(request, MAX_DONATION_BYTES + 1_000_000);
       const report = loadReport(body?.donation?.reportId);
       if (!report) return json(response, 404, { error: "Saved report not found" });
+      let donation = body.donation;
+      if (body.feedback) {
+        const reference = resolveInteractionFeedback(report, body.feedback.feedbackId);
+        const suppliedSession = donation?.sessions?.[0]?.sessionId;
+        if (!reference || donation?.sessions?.length !== 1 || suppliedSession !== reference.sessionId) return json(response, 400, { error: "Classifier feedback must contain only its original session." });
+        const availableCatalog = await catalogForRequest();
+        if (!availableCatalog.index.has(reference.sessionId)) return json(response, 404, { error: "The source session is no longer available on this device." });
+        const records = await chosenRecords([reference.sessionId], {}, availableCatalog);
+        const trusted = resolveInteractionFeedback(report, body.feedback.feedbackId, new Map(records.map((session) => [session.sessionId, session.records])));
+        const classifierFeedback = sanitizeInteractionFeedbackSubmission(body.feedback, trusted);
+        if (!classifierFeedback) return json(response, 400, { error: "Choose a valid corrected classification before donating." });
+        donation = {
+          ...donation,
+          purpose: "classifier_feedback",
+          classifierFeedback,
+          consent: { ...donation.consent, classifierFeedback: true },
+        };
+      } else donation = { ...donation, purpose: "general_research", classifierFeedback: undefined };
       if (demo) return json(response, 201, { accepted: true, donation_id: "demo-not-transmitted", demo: true });
-      const result = await submitResearchDonation(body.donation, {
+      const result = await submitResearchDonation(donation, {
         clientId: getOrCreateClientId(),
         endpoint: process.env.BEHAVIOR_WRAPPED_DONATION_URL || RESEARCH_DONATION_URL,
       });

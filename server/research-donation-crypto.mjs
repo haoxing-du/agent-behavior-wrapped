@@ -34,6 +34,7 @@ export function encryptResearchDonation(value, publicKey = RESEARCH_DONATION_PUB
     encryption: { algorithm: DONATION_ENCRYPTION_ALGORITHM, keyId: DONATION_KEY_ID },
     metadata: {
       reportId: donation.reportId,
+      purpose: donation.purpose,
       redactionMode: donation.redactionMode,
       createdAt: donation.createdAt,
       consentedAt: donation.consent.consentedAt,

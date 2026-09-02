@@ -72,8 +72,9 @@ export function donationAcceptedNotification(donation) {
   const sessions = Math.round(safeNumber(metadata.sessions, 1_000_000));
   const messages = Math.round(safeNumber(metadata.messages, 10_000_000));
   const detections = Math.round(safeNumber(metadata.automatedDetections, 10_000_000));
-  const mode = new Set(["standard", "advanced", "unredacted"]).has(metadata.redactionMode) ? metadata.redactionMode : "unknown";
-  return `**Encrypted research donation accepted**\n\n- Sessions: **${sessions.toLocaleString("en-US")}**\n- Messages: **${messages.toLocaleString("en-US")}**\n- Redaction mode: \`${mode}\`\n- Automated detections: **${detections.toLocaleString("en-US")}**`;
+  const mode = new Set(["standard", "custom", "unredacted"]).has(metadata.redactionMode) ? metadata.redactionMode : "unknown";
+  const purpose = metadata.purpose === "classifier_feedback" ? "Classifier feedback" : "General research";
+  return `**Encrypted research donation accepted**\n\n- Purpose: **${purpose}**\n- Sessions: **${sessions.toLocaleString("en-US")}**\n- Messages: **${messages.toLocaleString("en-US")}**\n- Redaction mode: \`${mode}\`\n- Automated detections: **${detections.toLocaleString("en-US")}**`;
 }
 
 function scheduleZulipNotification(context, env, topic, content, fetchImpl) {
@@ -530,7 +531,8 @@ async function handleResearchDonation(request, env, fetchImpl, context) {
   const ownerHash = await clientHash(clientId);
   const deletionToken = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
   const deletionTokenHash = await sha256Hex(deletionToken);
-  const objectKey = `donations/${donation.metadata.createdAt.slice(0, 7)}/${id}.json`;
+  const purpose = donation.metadata.purpose === "classifier_feedback" ? "classifier-feedback" : "general-research";
+  const objectKey = `donations/${purpose}/${donation.metadata.createdAt.slice(0, 7)}/${id}.json`;
   const serialized = JSON.stringify(donation);
   const objectBytes = new TextEncoder().encode(serialized).byteLength;
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(donation.ciphertext));
@@ -538,7 +540,7 @@ async function handleResearchDonation(request, env, fetchImpl, context) {
   try {
     await env.RESEARCH_DONATIONS.put(objectKey, serialized, {
       httpMetadata: { contentType: "application/json" },
-      customMetadata: { donationId: id, encryptionKeyId: donation.encryption.keyId },
+      customMetadata: { donationId: id, encryptionKeyId: donation.encryption.keyId, purpose },
     });
   } catch { return json({ error: "Encrypted research storage is temporarily unavailable." }, 503); }
   try {

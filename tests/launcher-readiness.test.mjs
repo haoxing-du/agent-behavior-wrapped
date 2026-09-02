@@ -1,8 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
+import fs from "node:fs";
 import http from "node:http";
 import net from "node:net";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -45,6 +47,65 @@ test("helper health does not wait for a slow session catalog", { timeout: 5_000 
   const health = await waitForHealth(port, 1_200);
   assert.equal(health.catalogState, "not-loaded");
   assert.ok(Date.now() - startedAt < 1_200);
+});
+
+test("classifier feedback preview and submission stay locked to the stored source session", { timeout: 8_000 }, async (t) => {
+  const port = await availablePort();
+  const store = fs.mkdtempSync(path.join(os.tmpdir(), "behavior-wrapped-feedback-"));
+  const child = spawn(process.execPath, [launcher, `--port=${port}`, "--demo", "--no-open"], {
+    cwd: root,
+    stdio: "ignore",
+    env: { ...process.env, NODE_ENV: "test", BEHAVIOR_WRAPPED_STORE_ROOT: store },
+  });
+  t.after(() => {
+    if (child.exitCode === null) child.kill("SIGTERM");
+    fs.rmSync(store, { recursive: true, force: true });
+  });
+  await waitForHealth(port, 1_500);
+  const origin = `http://127.0.0.1:${port}`;
+  const catalog = await (await fetch(`${origin}/api/discover`)).json();
+  assert.ok(catalog.sessions.length >= 2);
+  const source = catalog.sessions[0].id;
+  const other = catalog.sessions[1].id;
+  const reportId = "feedbackRoute1";
+  fs.mkdirSync(path.join(store, "reports"), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(path.join(store, "reports", `${reportId}.json`), JSON.stringify({
+    id: reportId,
+    sessionIds: [source, other],
+    interactionReview: {
+      model: "openai/gpt-5.6-luna",
+      promptVersion: 1,
+      frustrated: [{ candidateId: "interaction-1", judgedText: "This is worse than before.", occurrences: 1, confidence: 1, location: { sessionId: source, recordIndex: 0 } }],
+      grateful: [],
+    },
+  }), { mode: 0o600 });
+
+  const selectionResponse = await fetch(`${origin}/api/reports/${reportId}/interaction-feedback/yelling-1`);
+  assert.equal(selectionResponse.status, 200);
+  const selection = await selectionResponse.json();
+  assert.deepEqual(selection.sessionIds, [source]);
+  assert.equal("sessionId" in selection.feedback, false);
+
+  const previewResponse = await fetch(`${origin}/api/donation-preview`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ reportId, feedbackId: "yelling-1", sessionIds: [other], previewMode: "redacted" }),
+  });
+  assert.equal(previewResponse.status, 200);
+  const preview = await previewResponse.json();
+  assert.equal(preview.sessions.length, 1);
+  assert.equal(preview.sessions[0].sessionId, source);
+
+  const rejected = await fetch(`${origin}/api/research-donations`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      donation: { reportId, sessions: [{ sessionId: other, messages: [{ role: "user", text: "Reviewed text" }] }] },
+      feedback: { feedbackId: "yelling-1", correctedLabel: "neither" },
+    }),
+  });
+  assert.equal(rejected.status, 400);
+  assert.match((await rejected.json()).error, /only its original session/);
 });
 
 test("CLI explains when another application occupies the helper port", { timeout: 5_000 }, async (t) => {

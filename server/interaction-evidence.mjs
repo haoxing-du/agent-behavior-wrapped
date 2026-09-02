@@ -1,3 +1,5 @@
+import { interactionFeedbackId } from "./interaction-feedback.mjs";
+
 const MAX_OCCURRENCES_PER_KIND = 100;
 
 function contentBlocks(record) {
@@ -33,7 +35,7 @@ function adjacentMessage(records, fromIndex, direction) {
   return null;
 }
 
-function exactOccurrence(reference, index, records, metadata, expectedRole) {
+function exactOccurrence(reference, index, records, metadata, expectedRole, feedbackId = null) {
   const recordIndex = matchingRecordIndex(reference, records, expectedRole);
   if (recordIndex === null) return null;
   const record = records[recordIndex];
@@ -44,6 +46,7 @@ function exactOccurrence(reference, index, records, metadata, expectedRole) {
   return {
     index: index + 1,
     candidateId: reference.candidateId,
+    ...(feedbackId ? { feedbackId } : {}),
     session: {
       label: metadata?.label || `Session ${index + 1}`,
       agentName: metadata?.agentName || "AI agent",
@@ -59,7 +62,7 @@ function buildKind(review, kind, expectedRole, recordsById, metadataById) {
     const sessionId = reference?.location?.sessionId;
     const records = recordsById.get(sessionId);
     if (!records) return [];
-    const occurrence = exactOccurrence(reference, index, records, metadataById.get(sessionId), expectedRole);
+    const occurrence = exactOccurrence(reference, index, records, metadataById.get(sessionId), expectedRole, interactionFeedbackId(kind, index));
     return occurrence ? [occurrence] : [];
   });
 }

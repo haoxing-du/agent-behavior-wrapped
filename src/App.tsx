@@ -37,8 +37,10 @@ type WorkaroundEvidenceAction = { toolName: string; details: string; timestamp: 
 type WorkaroundEvidenceOccurrence = { index: number; session: { label: string; agentName: string; startedAt: string | null; openingMessage: { preview: string; full: string }; turnsBeforeWorkaround: number }; originalAction: WorkaroundEvidenceAction; blocker: { text: string; timestamp: string | null }; workaroundAction: WorkaroundEvidenceAction };
 type WorkaroundEvidence = { format: string; localPrivate: boolean; standardRedactionsApplied: boolean; reportId: string; occurrences: WorkaroundEvidenceOccurrence[] };
 type InteractionEvidenceMessage = { role: "user" | "assistant"; text: string; timestamp: string | null; highlighted: boolean };
-type InteractionEvidenceOccurrence = { index: number; candidateId: string; session: { label: string; agentName: string; startedAt: string | null }; timestamp: string | null; messages: InteractionEvidenceMessage[] };
+type InteractionEvidenceOccurrence = { index: number; candidateId: string; feedbackId?: string; session: { label: string; agentName: string; startedAt: string | null }; timestamp: string | null; messages: InteractionEvidenceMessage[] };
 type InteractionEvidence = { format: string; localPrivate: boolean; standardRedactionsApplied: boolean; reportId: string; frustrated: InteractionEvidenceOccurrence[]; grateful: InteractionEvidenceOccurrence[]; userApologies: InteractionEvidenceOccurrence[]; agentApologies: InteractionEvidenceOccurrence[] };
+type ClassifierFeedbackContext = { id: string; originalLabel: "yelling" | "thanking"; candidateId: string; judgedText: string; occurrences: number; confidence: number; judge: { model: string; promptVersion: number } };
+type ClassifierFeedbackLabel = "yelling" | "thanking" | "neither" | "unsure";
 type ParticipantSample = { participant_id: number; value: number };
 type SessionLengthDistribution = { session_count: number; median_turns: number; min_turns: number; max_turns: number; points: { turns: number; density: number }[] };
 type PhraseWallEntry = { participant_id: number; phrase: string; occurrences: number; sessions: number };
@@ -830,21 +832,25 @@ function SavedDonationRoute({ id }: { id: string }) {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [selection, setSelection] = useState<Set<string> | null>(null);
   const [report, setReport] = useState<SavedReport | null>(null);
+  const [feedback, setFeedback] = useState<ClassifierFeedbackContext | null>(null);
   const [error, setError] = useState("");
-  const requestedMode = new URLSearchParams(window.location.search).get("mode");
-  const mode: DonationMode = requestedMode === "advanced" || requestedMode === "unredacted" ? requestedMode : "standard";
+  const parameters = new URLSearchParams(window.location.search);
+  const requestedFeedbackId = parameters.get("feedback") || "";
+  const feedbackId = /^(?:yelling|thanking)-[1-9][0-9]{0,2}$/.test(requestedFeedbackId) ? requestedFeedbackId : "";
+  const requestedMode = parameters.get("mode");
+  const mode: DonationMode = feedbackId ? "advanced" : requestedMode === "advanced" || requestedMode === "unredacted" ? requestedMode : "standard";
   useEffect(() => {
     Promise.all([
       fetch("/api/discover").then((response) => { if (!response.ok) throw new Error("Could not read the local agent-session catalog."); return response.json(); }),
-      fetch(`/api/reports/${id}/selection`).then((response) => { if (!response.ok) throw new Error("This saved Wrapped was not found."); return response.json(); }),
+      fetch(feedbackId ? `/api/reports/${id}/interaction-feedback/${feedbackId}` : `/api/reports/${id}/selection`).then(async (response) => { const body = await response.json(); if (!response.ok) throw new Error(body.error || "This saved Wrapped was not found."); return body; }),
       fetch(`/api/reports/${id}`).then((response) => { if (!response.ok) throw new Error("This saved Wrapped was not found."); return response.json(); }),
-    ]).then(([nextCatalog, saved, nextReport]) => { setCatalog(nextCatalog); setSelection(new Set(saved.sessionIds)); setReport(nextReport); }).catch((e) => setError(e.message));
-  }, [id]);
+    ]).then(([nextCatalog, saved, nextReport]) => { setCatalog(nextCatalog); setSelection(new Set(saved.sessionIds)); setFeedback(saved.feedback || null); setReport(nextReport); }).catch((e) => setError(e.message));
+  }, [id, feedbackId]);
   if (error) return <main className="shared-error"><h1>Donation review unavailable</h1><p>{error}</p><a href={`/w/${id}`}>Back to Wrapped</a></main>;
   if (!catalog || !selection || !report) return <main className="shared-loading"><div className="orb" /><p>Preparing the private redaction review…</p></main>;
-  const backUrl = report.publicUrl || `/w/${id}`;
+  const backUrl = feedback ? `/interactions/${id}` : report.publicUrl || `/w/${id}`;
   return <div className="app-shell donation-shell">
-    <DonationView reportId={id} mode={mode} sessions={catalog.sessions} initialSelected={selection} onBack={() => { window.location.href = backUrl; }} />
+    <DonationView reportId={id} mode={mode} sessions={catalog.sessions} initialSelected={selection} feedback={feedback} onBack={() => { window.location.href = backUrl; }} />
     <footer><span>Behavior Wrapped</span><span className="donation-footer-meta"><span>Local donation review · Encrypted on this device before transmission</span><SusanCalvinCredit /></span></footer>
   </div>;
 }
@@ -908,12 +914,13 @@ function InteractionEvidenceMessageView({ message, agentName }: { message: Inter
   </div>;
 }
 
-function InteractionEvidenceSection({ id, labelledBy, title, description, occurrences, accent }: { id: string; labelledBy: string; title: string; description: string; occurrences: InteractionEvidenceOccurrence[]; accent: "yell" | "thanks" | "user-apology" | "agent-apology" }) {
+function InteractionEvidenceSection({ id, reportId, labelledBy, title, description, occurrences, accent }: { id: string; reportId: string; labelledBy: string; title: string; description: string; occurrences: InteractionEvidenceOccurrence[]; accent: "yell" | "thanks" | "user-apology" | "agent-apology" }) {
   return <section className={`interaction-evidence-section is-${accent}`} id={id} role="tabpanel" aria-labelledby={labelledBy}>
     <header><div><span>{occurrences.length.toLocaleString()} match{occurrences.length === 1 ? "" : "es"}</span><h2>{title}</h2></div><p>{description}</p></header>
     {!occurrences.length ? <div className="interaction-evidence-empty">No local excerpts were recorded for this category.</div> : <div className="interaction-evidence-list">{occurrences.map((occurrence) => <article className="interaction-evidence-card" key={`${occurrence.candidateId}-${occurrence.index}`}>
       <div className="workaround-session-meta"><strong>{occurrence.session.agentName} · {occurrence.session.label}</strong><time dateTime={occurrence.timestamp || undefined}>{fmtDateTime(occurrence.timestamp || occurrence.session.startedAt)}</time></div>
       <div className="interaction-transcript">{occurrence.messages.map((message, index) => <InteractionEvidenceMessageView message={message} agentName={occurrence.session.agentName} key={index} />)}</div>
+      {occurrence.feedbackId && <div className="interaction-feedback-cta"><div><strong>Does this classification look inaccurate?</strong><span>Share this one reviewed session to help improve the interaction judge.</span></div><a href={`/donate/${reportId}?feedback=${occurrence.feedbackId}`}>Review and share this session <span aria-hidden="true">→</span></a></div>}
     </article>)}</div>}
   </section>;
 }
@@ -949,7 +956,7 @@ function InteractionEvidenceRoute({ id }: { id: string }) {
       setActiveCategory(next.id);
       document.getElementById(`interaction-tab-${next.id}`)?.focus();
     }} key={category.id}><span>{category.label}</span><strong>{category.occurrences.length.toLocaleString()}</strong></button>)}</div>
-    <InteractionEvidenceSection id={`interaction-panel-${active.id}`} labelledBy={`interaction-tab-${active.id}`} title={active.title} description={active.description} occurrences={active.occurrences} accent={active.accent} />
+    <InteractionEvidenceSection id={`interaction-panel-${active.id}`} reportId={id} labelledBy={`interaction-tab-${active.id}`} title={active.title} description={active.description} occurrences={active.occurrences} accent={active.accent} />
   </main>;
 }
 
@@ -1255,7 +1262,7 @@ function DonationMessageEditor({ message, rules, onChange }: { message: Donation
   </div>;
 }
 
-function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { reportId: string; mode: DonationMode; sessions: Session[]; initialSelected: Set<string>; onBack: () => void }) {
+function DonationView({ reportId, mode, sessions, initialSelected, feedback, onBack }: { reportId: string; mode: DonationMode; sessions: Session[]; initialSelected: Set<string>; feedback?: ClassifierFeedbackContext | null; onBack: () => void }) {
   const [chosen, setChosen] = useState(new Set(initialSelected));
   const [bundle, setBundle] = useState<Donation | null>(null);
   const [reviewSessions, setReviewSessions] = useState<DonationSession[]>([]);
@@ -1275,10 +1282,14 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
   const [error, setError] = useState("");
   const [acceptedId, setAcceptedId] = useState("");
   const [deletionStatus, setDeletionStatus] = useState("");
+  const [correctedLabel, setCorrectedLabel] = useState<ClassifierFeedbackLabel>("neither");
+  const [feedbackNote, setFeedbackNote] = useState("");
   const selectableSessions = useMemo(() => sessions.filter((session) => initialSelected.has(session.id)), [sessions, initialSelected]);
   const selectedSessionCount = selectableSessions.filter((session) => chosen.has(session.id)).length;
   const allSessionsSelected = selectableSessions.length > 0 && selectedSessionCount === selectableSessions.length;
-  const modeDescription = mode === "standard"
+  const modeDescription = feedback
+    ? "This review is restricted to the one session containing the classification you flagged."
+    : mode === "standard"
     ? "Donate all sessions with automatic safeguards and a quick final review."
     : mode === "advanced"
       ? "Choose sessions and fine-tune what is hidden."
@@ -1287,7 +1298,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
   async function preview(ids = [...chosen], disabledRedactions = [...disabledAutomatic], disabledMatches = [...disabledAutomaticMatches]) {
     setLoading(true); setError(""); setConsent(false);
     try {
-      const response = await fetch("/api/donation-preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reportId, sessionIds: ids, disabledRedactions, disabledMatches, previewMode: mode === "unredacted" ? "unredacted" : "redacted" }) });
+      const response = await fetch("/api/donation-preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reportId, sessionIds: ids, disabledRedactions, disabledMatches, previewMode: mode === "unredacted" ? "unredacted" : "redacted", ...(feedback ? { feedbackId: feedback.id } : {}) }) });
       if (!response.ok) throw new Error((await response.json()).error || "Preview failed");
       const nextBundle = await response.json() as Donation;
       setBundle(nextBundle);
@@ -1423,14 +1434,15 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
     setLoading(true); setError("");
     const donation = {
       reportId,
+      purpose: feedback ? "classifier_feedback" : "general_research",
       redactionMode: mode === "advanced" ? "custom" : mode,
       createdAt: new Date().toISOString(),
       redactionSummary: { automatedDetections: bundle.detectionCount },
-      sessions: bundle.sessions.map((session) => ({ label: session.label, messages: session.messages.map((message) => ({ role: message.role, text: applyCustomRedactions(message.text, customRules), ...(includeTimestamps && message.timestamp ? { timestamp: message.timestamp } : {}) })) })),
-      consent: { researchDonation: true, ...(mode === "unredacted" ? { unredactedData: true } : {}), consentedAt: new Date().toISOString() },
+      sessions: bundle.sessions.map((session) => ({ sessionId: session.sessionId, label: session.label, messages: session.messages.map((message) => ({ role: message.role, text: applyCustomRedactions(message.text, customRules), ...(includeTimestamps && message.timestamp ? { timestamp: message.timestamp } : {}) })) })),
+      consent: { researchDonation: true, ...(feedback ? { classifierFeedback: true } : {}), ...(mode === "unredacted" ? { unredactedData: true } : {}), consentedAt: new Date().toISOString() },
     };
     try {
-      const response = await fetch("/api/research-donations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ donation }) });
+      const response = await fetch("/api/research-donations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ donation, ...(feedback ? { feedback: { feedbackId: feedback.id, correctedLabel, note: feedbackNote } } : {}) }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Donation failed");
       setAcceptedId(result.donation_id || "accepted");
@@ -1456,7 +1468,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
     <div className="donation-success-mark" aria-hidden="true">✓</div>
     <span className="eyebrow">Donation received</span>
     <h1>Thank you for contributing.</h1>
-    <p>Your reviewed {unredacted ? "unredacted " : ""}data was contributed to the Susan Calvin Project and encrypted on this device before transmission. The transcript is stored only as ciphertext; a separate record holds operational metadata.</p><p className="donation-success-policy"><a href={SUSAN_CALVIN_DATA_POLICY_URL} target="_blank" rel="noreferrer">Review the data use and storage policy <span aria-hidden="true">↗</span></a></p>
+    <p>Your reviewed {unredacted ? "unredacted " : ""}{feedback ? "session and classification correction were" : "data was"} contributed to the Susan Calvin Project and encrypted on this device before transmission. The transcript is stored only as ciphertext; a separate record holds operational metadata.</p><p className="donation-success-policy"><a href={SUSAN_CALVIN_DATA_POLICY_URL} target="_blank" rel="noreferrer">Review the data use and storage policy <span aria-hidden="true">↗</span></a></p>
     <div className="donation-reference"><span>Donation reference</span><code>{acceptedId}</code></div>
     {deletionStatus && <p className="donation-deletion-status">{deletionStatus}</p>}
     <div className="donation-success-actions">
@@ -1473,22 +1485,24 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
     </div>
     <section className="donation-hero">
       <div className="donation-hero-intro">
-        <h1>Review your data before you donate.</h1><p>Review the exact data you want to contribute. Your bundle is encrypted on this machine before it is transmitted to the storage service.</p>
+        <h1>{feedback ? "Help us correct the judge." : "Review your data before you donate."}</h1><p>{feedback ? "Review the one session behind this classification and tell us what the judge should have called it. Nothing is sent until you consent." : "Review the exact data you want to contribute. Your bundle is encrypted on this machine before it is transmitted to the storage service."}</p>
       </div>
       <div className="donation-hero-copy">
         <div className="donation-hero-controls">
           <aside className="local-review-notice"><span className="pulse" aria-hidden="true" /><div><strong>This is a local app.</strong><p> Nothing leaves this machine until you consent and press Donate.</p></div></aside>
-          <label className="donation-mode-control"><span>Donation mode</span><select value={mode} onChange={(event) => { window.location.href = `/donate/${reportId}?mode=${event.target.value}`; }}><option value="standard">All sessions and standard redactions</option><option value="advanced">Select sessions and customize redactions</option><option value="unredacted">Unredacted</option></select><small>{modeDescription}</small></label>
+          {feedback ? <div className="donation-mode-control"><span>Feedback donation</span><strong>One session · customizable redactions</strong><small>{modeDescription}</small></div> : <label className="donation-mode-control"><span>Donation mode</span><select value={mode} onChange={(event) => { window.location.href = `/donate/${reportId}?mode=${event.target.value}`; }}><option value="standard">All sessions and standard redactions</option><option value="advanced">Select sessions and customize redactions</option><option value="unredacted">Unredacted</option></select><small>{modeDescription}</small></label>}
         </div>
       </div>
       <div className="donation-hero-aside">
-        <aside className="donation-project-notice"><strong>Your donation contributes to the Susan Calvin Project.</strong><p>The project aims to collect and analyze data on how AI systems behave in the real world. If you choose to donate, your reviewed bundle becomes part of its research corpus.</p><div className="donation-project-links"><a href={SUSAN_CALVIN_DATA_POLICY_URL} target="_blank" rel="noreferrer">How your data is stored and used <span aria-hidden="true">↗</span></a><a href={SUSAN_CALVIN_PROJECT_URL} target="_blank" rel="noreferrer">About the Susan Calvin Project <span aria-hidden="true">↗</span></a></div></aside>
+        <aside className="donation-project-notice"><strong>{feedback ? "Your feedback is a research donation." : "Your donation contributes to the Susan Calvin Project."}</strong><p>{feedback ? "The reviewed session and your correction will join the same protected research corpus as a regular donation, with a classifier-feedback purpose attached." : "The project aims to collect and analyze data on how AI systems behave in the real world. If you choose to donate, your reviewed bundle becomes part of its research corpus."}</p><div className="donation-project-links"><a href={SUSAN_CALVIN_DATA_POLICY_URL} target="_blank" rel="noreferrer">How your data is stored and used <span aria-hidden="true">↗</span></a><a href={SUSAN_CALVIN_PROJECT_URL} target="_blank" rel="noreferrer">About the Susan Calvin Project <span aria-hidden="true">↗</span></a></div></aside>
       </div>
     </section>
     <div className="donation-layout">
       <section className="donation-controls">
-        <div className="donation-step"><span>1</span><div><h2>{detailedReview ? "Choose what to include" : "Standard redactions applied"}</h2><p>{unredacted ? "No automatic redactions are applied. Credentials, personal details, private code, URLs, and file paths may all be included." : "High-confidence API keys and secrets, plus personal details, are removed locally. Code, URLs, and paths remain so the transcript keeps its context; home-directory usernames are masked."}</p></div></div>
-        {detailedReview && <><div className="donation-session-picker"><div className="donation-session-select-all"><label><input type="checkbox" checked={allSessionsSelected} ref={(input) => { if (input) input.indeterminate = selectedSessionCount > 0 && !allSessionsSelected; }} disabled={loading} onChange={toggleAllDonationSessions} /><strong>Select all sessions</strong></label><span>{selectedSessionCount} of {selectableSessions.length} selected</span></div><div className="donation-sessions">{selectableSessions.map((session) => <label key={session.id}><input type="checkbox" checked={chosen.has(session.id)} disabled={loading} onChange={() => toggleDonationSession(session.id)} /><span>{session.label}<small className="donation-session-meta">{session.agentName} · {fmtDate(session.startedAt)}</small>{bundle && <small className="donation-session-summary">{openingPrompts.get(session.id) || "No opening prompt available"}</small>}</span></label>)}</div></div><button className="primary full" disabled={!chosen.size || loading} onClick={() => preview()}>{loading ? "Building preview…" : bundle ? `Refresh ${unredacted ? "unredacted " : "redacted "}preview` : `Build ${unredacted ? "unredacted " : "redacted "}preview`}</button></>}
+        <div className="donation-step"><span>1</span><div><h2>{feedback ? "Correct the classification" : detailedReview ? "Choose what to include" : "Standard redactions applied"}</h2><p>{feedback ? "Your correction and optional note are stored inside the same encrypted donation as the reviewed session." : unredacted ? "No automatic redactions are applied. Credentials, personal details, private code, URLs, and file paths may all be included." : "High-confidence API keys and secrets, plus personal details, are removed locally. Code, URLs, and paths remain so the transcript keeps its context; home-directory usernames are masked."}</p></div></div>
+        {feedback && <section className="classifier-feedback-form"><span>Originally classified as {feedback.originalLabel}</span><blockquote>{feedback.judgedText || "The original judged excerpt will be recovered from this session."}</blockquote><label>What should it be?<select value={correctedLabel} onChange={(event) => { setCorrectedLabel(event.target.value as ClassifierFeedbackLabel); setConsent(false); }}><option value="neither">Neither yelling nor thanking</option><option value="yelling">Yelling</option><option value="thanking">Thanking</option><option value="unsure">Unsure</option></select></label><label>Optional note<textarea maxLength={1000} rows={3} value={feedbackNote} onChange={(event) => { setFeedbackNote(event.target.value); setConsent(false); }} placeholder="What did the judge misunderstand?" /></label><small>Only the reviewed session below is eligible for this donation.</small></section>}
+        {detailedReview && !feedback && <><div className="donation-session-picker"><div className="donation-session-select-all"><label><input type="checkbox" checked={allSessionsSelected} ref={(input) => { if (input) input.indeterminate = selectedSessionCount > 0 && !allSessionsSelected; }} disabled={loading} onChange={toggleAllDonationSessions} /><strong>Select all sessions</strong></label><span>{selectedSessionCount} of {selectableSessions.length} selected</span></div><div className="donation-sessions">{selectableSessions.map((session) => <label key={session.id}><input type="checkbox" checked={chosen.has(session.id)} disabled={loading} onChange={() => toggleDonationSession(session.id)} /><span>{session.label}<small className="donation-session-meta">{session.agentName} · {fmtDate(session.startedAt)}</small>{bundle && <small className="donation-session-summary">{openingPrompts.get(session.id) || "No opening prompt available"}</small>}</span></label>)}</div></div><button className="primary full" disabled={!chosen.size || loading} onClick={() => preview()}>{loading ? "Building preview…" : bundle ? `Refresh ${unredacted ? "unredacted " : "redacted "}preview` : `Build ${unredacted ? "unredacted " : "redacted "}preview`}</button></>}
+        {feedback && <div className="donation-summary"><strong>{bundle ? `1 session · ${messageCount} messages` : "Preparing the source session…"}</strong><span>{bundle?.detectionCount || 0} sensitive items automatically removed</span></div>}
         {mode === "standard" && <div className="donation-summary"><strong>{bundle ? `${bundle.sessions.length} sessions · ${messageCount} messages` : "Preparing your redacted donation…"}</strong><span>{bundle?.detectionCount || 0} sensitive items automatically removed</span><a href={`/donate/${reportId}?mode=advanced`}>Want more control? Review every message.</a></div>}
         {error && <p className="error">{error}</p>}
       </section>
@@ -1517,14 +1531,14 @@ function DonationView({ reportId, mode, sessions, initialSelected, onBack }: { r
               const included = chosen.has(listedSession.sessionId) && sessionIndex >= 0;
               const session = included ? bundle.sessions[sessionIndex] : listedSession;
               return <div className={`bundle-session ${included ? "" : "excluded"}`} key={session.sessionId}>
-                <div className="bundle-session-heading"><label className="bundle-session-include"><input type="checkbox" checked={included} disabled={loading} onChange={() => toggleDonationSession(session.sessionId)} /><span><strong>{session.label}</strong><small>{session.summary}</small></span></label><span className="bundle-session-count">{included ? `${session.messages.length} messages` : "Excluded"}</span><button type="button" disabled={!included} onClick={() => setOpenSession(openSession === reviewIndex ? null : reviewIndex)}>{included ? openSession === reviewIndex ? "Hide" : "Review" : "Re-include to review"}</button></div>
+                <div className="bundle-session-heading">{feedback ? <div className="bundle-session-include"><span><strong>{session.label}</strong><small>{session.summary}</small></span></div> : <label className="bundle-session-include"><input type="checkbox" checked={included} disabled={loading} onChange={() => toggleDonationSession(session.sessionId)} /><span><strong>{session.label}</strong><small>{session.summary}</small></span></label>}<span className="bundle-session-count">{included ? `${session.messages.length} messages` : "Excluded"}</span><button type="button" disabled={!included} onClick={() => setOpenSession(openSession === reviewIndex ? null : reviewIndex)}>{included ? openSession === reviewIndex ? "Hide" : "Review" : "Re-include to review"}</button></div>
                 {included && openSession === reviewIndex && <div className="bundle-chat">{session.messages.map((message, messageIndex) => <div className={`donation-message-row ${message.role === "assistant" ? "assistant" : "user"}`} key={messageIndex}><DonationMessageEditor message={message} rules={customRules} onChange={(text) => editMessage(sessionIndex, messageIndex, text)} /><button className="remove-message" onClick={() => removeMessage(sessionIndex, messageIndex)}>Exclude</button></div>)}</div>}
               </div>;
             })}</div>
           </>}
           <div className="donation-step consent-step"><span>3</span><div><h2>Consent separately</h2><p>This consent applies only to the reviewed bundle above. It is protected with authenticated AES-256-GCM encryption before leaving localhost.</p></div></div>
-          <label className={`consent ${unredacted ? "unredacted-consent" : ""}`}><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /><span>{unredacted && <>I understand that this donation is not automatically redacted and may contain credentials, personal details, private code, URLs, and file paths. </>}I consent and confirm that I have read the <a href={SUSAN_CALVIN_DATA_POLICY_URL} target="_blank" rel="noreferrer">data policy <span aria-hidden="true">↗</span></a>.</span></label>
-          <button className={`export-button ${unredacted ? "unredacted" : ""}`} disabled={!consent || loading || !messageCount} onClick={donate}>{loading ? "Transmitting…" : unredacted ? "Donate unredacted data" : "Donate reviewed data"} <span>→</span></button>
+          <label className={`consent ${unredacted ? "unredacted-consent" : ""}`}><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /><span>{unredacted && <>I understand that this donation is not automatically redacted and may contain credentials, personal details, private code, URLs, and file paths. </>}{feedback ? "I consent to share this reviewed session and classification correction with the Susan Calvin Project for research and to evaluate and improve Behavior Wrapped. " : "I consent to share this reviewed bundle with the Susan Calvin Project for research. "}I confirm that I have read the <a href={SUSAN_CALVIN_DATA_POLICY_URL} target="_blank" rel="noreferrer">data policy <span aria-hidden="true">↗</span></a>.</span></label>
+          <button className={`export-button ${unredacted ? "unredacted" : ""}`} disabled={!consent || loading || !messageCount} onClick={donate}>{loading ? "Transmitting…" : feedback ? "Donate feedback and session" : unredacted ? "Donate unredacted data" : "Donate reviewed data"} <span>→</span></button>
         </>}
       </section>
     </div>

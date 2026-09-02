@@ -39,7 +39,34 @@ test("research donation schema requires consent and removes local identifiers", 
   assert.ok(donation);
   assert.equal(donation.sessions[0].label, "Session 1");
   assert.equal("sessionId" in donation.sessions[0], false);
+  assert.equal(donation.purpose, "general_research");
+  assert.equal(sanitizeResearchDonation(fixture({ purpose: "unexpected" })), null);
   assert.equal(donation.consent.statement, "I consent for this reviewed data to be transmitted to the Susan Calvin Project and used for research under the data policy.");
+});
+
+test("classifier feedback is a one-session research donation with purpose-specific consent", () => {
+  const classifierFeedback = {
+    originalLabel: "yelling",
+    correctedLabel: "neither",
+    candidateId: "interaction-3",
+    judgedText: "This is worse than the previous version.",
+    occurrences: 1,
+    confidence: 1,
+    judge: { model: "openai/gpt-5.6-luna", promptVersion: 1 },
+    note: "This was ordinary technical feedback.",
+  };
+  const value = fixture({ purpose: "classifier_feedback", classifierFeedback, consent: { researchDonation: true, classifierFeedback: true, consentedAt: "2026-08-06T12:01:00.000Z" } });
+  const donation = sanitizeResearchDonation(value);
+  assert.equal(donation.purpose, "classifier_feedback");
+  assert.deepEqual(donation.classifierFeedback, classifierFeedback);
+  assert.match(donation.consent.statement, /evaluate and improve Behavior Wrapped/);
+  assert.equal(sanitizeResearchDonation({ ...value, sessions: [...value.sessions, ...value.sessions] }), null);
+  assert.equal(sanitizeResearchDonation({ ...value, consent: { researchDonation: true } }), null);
+  const envelope = encryptResearchDonation(value, keys().publicKey);
+  assert.equal(envelope.metadata.purpose, "classifier_feedback");
+  assert.equal(envelope.metadata.sessions, 1);
+  assert.equal(JSON.stringify(envelope).includes(classifierFeedback.judgedText), false);
+  assert.deepEqual(decryptResearchDonation(envelope, keys().privateKey), donation);
 });
 
 test("unredacted donations require a separate explicit acknowledgement", () => {
@@ -129,12 +156,38 @@ test("worker stores ciphertext in R2 and consent metadata in a separate D1 datab
   assert.equal(body.encrypted, true);
   assert.equal("retention_days" in body, false);
   assert.match(body.deletion_token, /^[A-Za-z0-9_-]{43}$/);
-  assert.match(storedObject.key, /^donations\/2026-08\//);
+  assert.match(storedObject.key, /^donations\/general-research\/2026-08\//);
+  assert.equal(storedObject.options.customMetadata.purpose, "general-research");
   assert.equal(storedObject.value.includes("Reviewed text"), false);
   assert.equal(storedMetadata[3], "researchReport1");
   assert.equal(storedMetadata[9], "standard");
   assert.equal(storedMetadata.includes(body.deletion_token), false);
   assert.equal(storedMetadata.some((value) => String(value).includes("Reviewed text")), false);
+});
+
+test("worker stores classifier feedback in the same private bucket under its own purpose prefix", async () => {
+  let storedObject;
+  const bucket = { async put(key, value, options) { storedObject = { key, value, options }; }, async delete() {} };
+  const database = { prepare() { return { bind() { return { async run() { return { success: true }; } }; } }; } };
+  const classifierFeedback = {
+    originalLabel: "thanking",
+    correctedLabel: "neither",
+    candidateId: "interaction-2",
+    judgedText: "No thanks, leave it alone.",
+    occurrences: 1,
+    confidence: 1,
+    judge: { model: "openai/gpt-5.6-luna", promptVersion: 1 },
+  };
+  const envelope = encryptedFixture({ purpose: "classifier_feedback", classifierFeedback, consent: { researchDonation: true, classifierFeedback: true, consentedAt: "2026-08-06T12:01:00.000Z" } });
+  const response = await handleRequest(new Request("https://example.test/v1/research-donations", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-behavior-wrapped-protocol": "2", "x-behavior-wrapped-client": "f".repeat(32) },
+    body: JSON.stringify({ encryptedDonation: envelope }),
+  }), { RESEARCH_DB: database, RESEARCH_DONATIONS: bucket });
+  assert.equal(response.status, 201);
+  assert.match(storedObject.key, /^donations\/classifier-feedback\/2026-08\//);
+  assert.equal(storedObject.options.customMetadata.purpose, "classifier-feedback");
+  assert.equal(storedObject.value.includes(classifierFeedback.judgedText), false);
 });
 
 test("worker removes an R2 object if its metadata write fails", async () => {
@@ -148,7 +201,7 @@ test("worker removes an R2 object if its metadata write fails", async () => {
   });
   const response = await handleRequest(request, { RESEARCH_DB: database, RESEARCH_DONATIONS: bucket });
   assert.equal(response.status, 503);
-  assert.match(deleted, /^donations\//);
+  assert.match(deleted, /^donations\/general-research\//);
 });
 
 test("worker rejects plaintext and protocol-1 donations", async () => {

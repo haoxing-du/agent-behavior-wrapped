@@ -63,6 +63,9 @@ test("resolves judged IDs to local counts and the exact local quote", async () =
   assert.equal(result.frustrationQuote, dude.text);
   assert.deepEqual(result.review.frustrated.map((item) => item.location.recordIndex), [0, 1]);
   assert.deepEqual(result.review.grateful.map((item) => item.location.recordIndex), [2]);
+  assert.equal(result.review.model, "test-model");
+  assert.equal(result.review.promptVersion, 1);
+  assert.equal(result.review.frustrated[0].judgedText, dude.text);
   assert.equal(result.provider, "OpenRouter via Behavior Wrapped relay");
   const analyzed = { stats: { interactionTone: { analyzedMessages: 3 } } };
   applyInteractionToneJudgment(analyzed, result);

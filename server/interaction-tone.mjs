@@ -6,6 +6,7 @@ import { BEHAVIOR_WRAPPED_ORIGIN } from "./origins.mjs";
 export const INTERACTION_TONE_RELAY_URL = `${BEHAVIOR_WRAPPED_ORIGIN}/v1/interaction-tone`;
 export const INTERACTION_TONE_MAX_CANDIDATES = 120;
 export const INTERACTION_TONE_BATCH_SIZE = 30;
+export const INTERACTION_TONE_PROMPT_VERSION = 1;
 const MAX_TEXT_LENGTH = 240;
 const MIN_CONFIDENCE = 0.75;
 const JUDGE_TIMEOUT_MS = 90_000;
@@ -53,6 +54,10 @@ function safeInteractionExcerpt(value) {
     excerpt = `${shortened.slice(0, Math.max(shortened.lastIndexOf(" "), 1)).trim()}…`;
   }
   return isShareSafeInteractionText(excerpt) ? excerpt : null;
+}
+
+export function interactionToneCandidateText(value) {
+  return safeInteractionExcerpt(value);
 }
 
 function priority(text, occurrences) {
@@ -247,10 +252,16 @@ function resultFromSelection(candidates, selection, { model, provider, latencyMs
     occurrences: byId.get(item.candidate_id).occurrences,
     confidence: item.confidence,
   }));
-  const reviewRefs = (items) => items.flatMap((item) => (byId.get(item.candidate_id).locations || []).map((location) => ({
-    candidateId: item.candidate_id,
-    location,
-  })));
+  const reviewRefs = (items) => items.flatMap((item) => {
+    const candidate = byId.get(item.candidate_id);
+    return (candidate.locations || []).map((location) => ({
+      candidateId: item.candidate_id,
+      judgedText: candidate.text,
+      occurrences: candidate.occurrences,
+      confidence: item.confidence,
+      location,
+    }));
+  });
   return {
     frustratedMessages: count(selection.frustrated),
     gratefulMessages: count(selection.grateful),
@@ -261,6 +272,9 @@ function resultFromSelection(candidates, selection, { model, provider, latencyMs
     privateMatches: { frustrated: matches(selection.frustrated), grateful: matches(selection.grateful) },
     review: {
       format: "behavior-wrapped-interaction-review-v1",
+      model,
+      provider,
+      promptVersion: INTERACTION_TONE_PROMPT_VERSION,
       frustrated: reviewRefs(selection.frustrated),
       grateful: reviewRefs(selection.grateful),
     },

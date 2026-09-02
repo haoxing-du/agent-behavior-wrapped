@@ -40,7 +40,7 @@ With your consent, bounded redacted candidates and sanitized blocker context are
 
 Published reports use unguessable URLs and participate in the anonymous cohort leaderboard by default. You can opt out or delete a report using its private management link. If you decline remote analysis, the CLI offers a localhost-only report with deterministic statistics and no leaderboard participation.
 
-Research donation is separate and optional. Nothing is donated until you review the selected material, check the final consent box, and press **Donate**. The reviewed bundle is encrypted locally before leaving your machine.
+Research donation is separate and optional. Nothing is donated until you review the selected material, check the final consent box, and press **Donate**. The reviewed bundle is encrypted locally before leaving your machine. If an interaction-tone result looks wrong, its private evidence card can start the same protected donation flow with only that source session and the corrected classification.
 
 See the [privacy model](docs/privacy.md), [analysis methods](docs/analysis-methods.md), and [research donation design](docs/research-donations.md) for the detailed guarantees and boundaries.
 

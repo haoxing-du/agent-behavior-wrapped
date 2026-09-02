@@ -27,6 +27,9 @@ test("rebuilds exact local yelling and thanking excerpts with adjacent context",
   assert.equal(preview.format, "behavior-wrapped-interaction-evidence-v2");
   assert.equal(preview.localPrivate, true);
   assert.equal(preview.standardRedactionsApplied, false);
+  assert.equal(preview.frustrated[0].feedbackId, "yelling-1");
+  assert.equal(preview.grateful[0].feedbackId, "thanking-1");
+  assert.equal("feedbackId" in preview.userApologies[0], false);
   assert.deepEqual(preview.frustrated[0].messages.map((message) => message.role), ["assistant", "user", "assistant"]);
   assert.equal(preview.frustrated[0].messages[1].highlighted, true);
   assert.match(preview.frustrated[0].messages[1].text, /sk-test_/);

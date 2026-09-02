@@ -36,12 +36,16 @@ export function sanitizeEncryptedDonationEnvelope(value) {
   if (typeof value.encryption.iv !== "string" || value.encryption.iv.length !== 16 || !base64url.test(value.encryption.iv)) return null;
   if (typeof value.encryption.authTag !== "string" || value.encryption.authTag.length !== 22 || !base64url.test(value.encryption.authTag)) return null;
   if (typeof value.ciphertext !== "string" || !value.ciphertext.length || !base64url.test(value.ciphertext)) return null;
-  const baseMetadataKeys = ["automatedDetections", "consentVersion", "consentedAt", "createdAt", "messages", "redactionMode", "reportId", "sessions", "unredactedData"];
-  const compressed = exactKeys(value.metadata, [...baseMetadataKeys, "contentEncoding"]);
-  if (!compressed && !exactKeys(value.metadata, baseMetadataKeys)) return null;
+  const legacyMetadataKeys = ["automatedDetections", "consentVersion", "consentedAt", "createdAt", "messages", "redactionMode", "reportId", "sessions", "unredactedData"];
+  const baseMetadataKeys = [...legacyMetadataKeys, "purpose"];
+  const compressed = exactKeys(value.metadata, [...baseMetadataKeys, "contentEncoding"])
+    || exactKeys(value.metadata, [...legacyMetadataKeys, "contentEncoding"]);
+  if (!compressed && !exactKeys(value.metadata, baseMetadataKeys) && !exactKeys(value.metadata, legacyMetadataKeys)) return null;
   const metadata = value.metadata;
   if (compressed && metadata.contentEncoding !== DONATION_CONTENT_ENCODING) return null;
   if (!/^[A-Za-z0-9_-]{8,32}$/.test(metadata.reportId || "")) return null;
+  if ("purpose" in metadata && !new Set(["general_research", "classifier_feedback"]).has(metadata.purpose)) return null;
+  if (metadata.purpose === "classifier_feedback" && metadata.sessions !== 1) return null;
   if (!new Set(["standard", "custom", "unredacted"]).has(metadata.redactionMode)) return null;
   if (!timestamp.test(metadata.createdAt || "") || !timestamp.test(metadata.consentedAt || "")) return null;
   if (!new Set([1, DONATION_CONSENT_VERSION]).has(metadata.consentVersion) || typeof metadata.unredactedData !== "boolean" || metadata.unredactedData !== (metadata.redactionMode === "unredacted")) return null;
