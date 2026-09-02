@@ -28,7 +28,7 @@ Local-only reports omit AI-judged interaction tone, topics, and workarounds. The
 
 Confirmed workaround cards can link to a localhost-only evidence page. Interaction-tone cards can likewise show the exact locally reconstructed yelling, thanking, and apology excerpts. These excerpts do not enter the public report, share-card export, or remote payload merely by opening the page.
 
-Yelling and thanking occurrences include an optional **Is this inaccurate?** path. It resolves the occurrence to its original session on localhost and opens the normal research-donation review restricted to that one session. The user chooses a corrected label, can edit or exclude messages and customize redactions, then provides purpose-specific consent. Clicking the feedback link alone transmits nothing.
+Yelling and thanking occurrences include an optional **Is this inaccurate?** path. It resolves the occurrence to its original session on localhost and opens the normal research-donation review restricted to that one session. The user chooses a corrected label, can edit text and customize redactions, then provides purpose-specific consent. Every message remains in its original sequence. Clicking the feedback link alone transmits nothing.
 
 Accepted classifier feedback receives the same local encryption, private ciphertext storage, deletion receipt, and deletion controls as an ordinary research donation. Its encrypted contents include the reviewed session, original verdict, correction, judged excerpt, judge version, and optional note. Public reports, leaderboard payloads, share-card exports, and operational notifications never include this material.
 

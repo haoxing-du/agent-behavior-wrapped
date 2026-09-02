@@ -106,6 +106,17 @@ test("classifier feedback preview and submission stay locked to the stored sourc
   });
   assert.equal(rejected.status, 400);
   assert.match((await rejected.json()).error, /only its original session/);
+
+  const incomplete = await fetch(`${origin}/api/research-donations`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      donation: { reportId, sessions: [{ sessionId: source, messages: preview.sessions[0].messages.slice(1) }] },
+      feedback: { feedbackId: "yelling-1", correctedLabel: "neither" },
+    }),
+  });
+  assert.equal(incomplete.status, 400);
+  assert.match((await incomplete.json()).error, /keep every original message/);
 });
 
 test("CLI explains when another application occupies the helper port", { timeout: 5_000 }, async (t) => {

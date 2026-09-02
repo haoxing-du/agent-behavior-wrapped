@@ -12,6 +12,7 @@ import { APP_VERSION, LOCAL_DONATION_PROTOCOL } from "./runtime-version.mjs";
 import { makeWorkaroundEvidencePreview } from "./workaround-evidence.mjs";
 import { makeInteractionEvidencePreview } from "./interaction-evidence.mjs";
 import { publicInteractionFeedback, resolveInteractionFeedback, sanitizeInteractionFeedbackSubmission } from "./interaction-feedback.mjs";
+import { donationSessionIntegrityError } from "./donation-session-integrity.mjs";
 import { createIdleShutdownController } from "./local-helper-runtime.mjs";
 import { canonicalSessionDirectoryLabels, openExternalUrl, supportedAgentNames } from "./platform.mjs";
 
@@ -200,13 +201,20 @@ const server = http.createServer(async (request, response) => {
       const report = loadReport(body?.donation?.reportId);
       if (!report) return json(response, 404, { error: "Saved report not found" });
       let donation = body.donation;
+      const suppliedSessions = Array.isArray(donation?.sessions) ? donation.sessions : [];
+      const suppliedIds = suppliedSessions.map((session) => session?.sessionId);
+      const allowed = new Set(report.sessionIds || []);
+      const uniqueIds = new Set(suppliedIds);
+      if (!suppliedIds.length || uniqueIds.size !== suppliedIds.length || suppliedIds.some((id) => !allowed.has(id))) return json(response, 400, { error: "Donated sessions must come from this report." });
+      const feedbackReference = body.feedback ? resolveInteractionFeedback(report, body.feedback.feedbackId) : null;
+      if (body.feedback && (!feedbackReference || suppliedSessions.length !== 1 || suppliedIds[0] !== feedbackReference.sessionId)) return json(response, 400, { error: "Classifier feedback must contain only its original session." });
+      const availableCatalog = await catalogForRequest();
+      if (suppliedIds.some((id) => !availableCatalog.index.has(id))) return json(response, 404, { error: "A selected source session is no longer available on this device." });
+      const records = await chosenRecords(suppliedIds, {}, availableCatalog);
+      const sourceSessions = makeDonationPreview(records, new Map(), { unredacted: true }).sessions;
+      const integrityError = donationSessionIntegrityError(suppliedSessions, sourceSessions);
+      if (integrityError) return json(response, 400, { error: integrityError });
       if (body.feedback) {
-        const reference = resolveInteractionFeedback(report, body.feedback.feedbackId);
-        const suppliedSession = donation?.sessions?.[0]?.sessionId;
-        if (!reference || donation?.sessions?.length !== 1 || suppliedSession !== reference.sessionId) return json(response, 400, { error: "Classifier feedback must contain only its original session." });
-        const availableCatalog = await catalogForRequest();
-        if (!availableCatalog.index.has(reference.sessionId)) return json(response, 404, { error: "The source session is no longer available on this device." });
-        const records = await chosenRecords([reference.sessionId], {}, availableCatalog);
         const trusted = resolveInteractionFeedback(report, body.feedback.feedbackId, new Map(records.map((session) => [session.sessionId, session.records])));
         const classifierFeedback = sanitizeInteractionFeedbackSubmission(body.feedback, trusted);
         if (!classifierFeedback) return json(response, 400, { error: "Choose a valid corrected classification before donating." });

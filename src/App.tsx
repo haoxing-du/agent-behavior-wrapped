@@ -22,7 +22,7 @@ type TopicStat = { topic: string; tokens: number; percentage: number };
 type StockPhraseStat = { phrase: string; count: number };
 type WorkaroundCard = { count: number; models: { name: string; count: number }[]; example?: string };
 type Report = { stats: { sessions: number; activeDays: number; durationMinutes: number; prompts: number; toolCalls: number; interruptions: number; interruptionsByModel?: ModelCount[]; tokens: number; tokenBreakdown?: TokenBreakdown; agentWords?: number; userWords?: number; agentUserWordRatio?: number | null; averageAgentResponseWords?: number; averageUserInputWords?: number; longestSessionTurns?: number; sessionTurnCounts?: number[]; longestUninterruptedRun?: UninterruptedRun | null; trustCurve?: TrustCurve | null; interactionTone?: InteractionTone; apologyCounts?: ApologyCounts; stockPhrases?: StockPhraseStat[]; repeatedInstructions?: RepeatedInstruction[]; outputLanguages?: LanguageStat[]; languageAnomaly?: LanguageAnomaly | null; topics?: TopicStat[]; tools: { name: string; count: number }[]; agents: AgentStat[]; models: ModelStat[]; estimatedCostUsd: number; costEstimateMethod: string }; findings: Finding[]; phraseCard?: PhraseCard | null; interactionCard?: InteractionCard | null; workaroundCard?: WorkaroundCard | null };
-type DonationMessage = { role: string; timestamp: string | null; text: string };
+type DonationMessage = { role: string; sourceIndex: number; timestamp: string | null; text: string };
 type DonationSession = { sessionId: string; label: string; summary: string; messages: DonationMessage[] };
 type RedactionContext = { before: string; match: string; after: string };
 type RedactionMatch = { id: string; value: string; truncated?: boolean; length: number; enabled: boolean; count: number; contexts: RedactionContext[] };
@@ -1423,12 +1423,6 @@ function DonationView({ reportId, mode, sessions, initialSelected, feedback, onB
     setConsent(false);
   }
 
-  function removeMessage(sessionIndex: number, messageIndex: number) {
-    if (!bundle) return;
-    setBundle({ ...bundle, sessions: bundle.sessions.map((session, currentSession) => currentSession !== sessionIndex ? session : ({ ...session, messages: session.messages.filter((_, currentMessage) => currentMessage !== messageIndex) })).filter((session) => session.messages.length) });
-    setConsent(false);
-  }
-
   async function donate() {
     if (!bundle || !consent) return;
     setLoading(true); setError("");
@@ -1438,7 +1432,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, feedback, onB
       redactionMode: mode === "advanced" ? "custom" : mode,
       createdAt: new Date().toISOString(),
       redactionSummary: { automatedDetections: bundle.detectionCount },
-      sessions: bundle.sessions.map((session) => ({ sessionId: session.sessionId, label: session.label, messages: session.messages.map((message) => ({ role: message.role, text: applyCustomRedactions(message.text, customRules), ...(includeTimestamps && message.timestamp ? { timestamp: message.timestamp } : {}) })) })),
+      sessions: bundle.sessions.map((session) => ({ sessionId: session.sessionId, label: session.label, messages: session.messages.map((message) => ({ role: message.role, sourceIndex: message.sourceIndex, text: applyCustomRedactions(message.text, customRules), ...(includeTimestamps && message.timestamp ? { timestamp: message.timestamp } : {}) })) })),
       consent: { researchDonation: true, ...(feedback ? { classifierFeedback: true } : {}), ...(mode === "unredacted" ? { unredactedData: true } : {}), consentedAt: new Date().toISOString() },
     };
     try {
@@ -1507,7 +1501,7 @@ function DonationView({ reportId, mode, sessions, initialSelected, feedback, onB
         {error && <p className="error">{error}</p>}
       </section>
       <section className={`donation-preview ${bundle ? "ready" : ""}`}>
-        <div className="donation-step"><span>2</span><div><h2>{unredacted ? "Review every unredacted line" : mode === "advanced" ? "Review every line" : "Review the summary"}</h2><p>{unredacted ? "Nothing is hidden automatically. Read, edit, or exclude anything you do not want to share." : mode === "advanced" ? "Automated detection is imperfect. Edit or remove any message directly." : "The standard bundle contains redacted user and assistant prose from the selected sessions."}</p></div></div>
+        <div className="donation-step"><span>2</span><div><h2>{unredacted ? "Review every unredacted line" : mode === "advanced" ? "Review every line" : "Review the summary"}</h2><p>{unredacted ? "Nothing is hidden automatically. Read and edit each message, or exclude the whole session if you do not want to share it." : mode === "advanced" ? "Automated detection is imperfect. Edit or redact text directly; every message in an included session remains in sequence." : "The standard bundle contains redacted user and assistant prose from the selected sessions."}</p></div></div>
         {!bundle ? <div className="preview-placeholder" role="status" aria-live="polite"><i className="redaction-spinner" aria-hidden="true" /><p>{unredacted ? "Preparing your unredacted donation locally." : "Scanning every selected conversation for sensitive information…"}</p></div> : <>
           {unredacted ? <div className="unredacted-warning"><strong>No automatic redactions</strong><span>This preview may expose passwords, API keys, names, email addresses, private code, URLs, and local file paths.</span></div> : <><div className="redaction-banner"><strong>{bundle.detectionCount} likely sensitive item{bundle.detectionCount === 1 ? "" : "s"} removed</strong><span>High-confidence API keys and secrets, plus personal details</span></div><AutomaticRedactionReview redactions={bundle.redactions || []} onToggle={mode === "advanced" ? toggleAutomaticRedaction : undefined} onToggleMatch={mode === "advanced" ? toggleAutomaticMatch : undefined} loading={loading} /></>}
           {detailedReview && <>
@@ -1525,14 +1519,14 @@ function DonationView({ reportId, mode, sessions, initialSelected, feedback, onB
             </section>
             </>}
             <label className="leader-check"><input type="checkbox" checked={includeTimestamps} onChange={(event) => { setIncludeTimestamps(event.target.checked); setConsent(false); }} /><span>Include message timestamps in the donation.</span></label>
-            <div className="final-preview-heading"><strong>Final conversation preview</strong><span>{unredacted ? "Nothing is automatically hidden. Edit or exclude any message." : "Highlighted text is redacted. Edit or exclude any message."}</span></div>
+            <div className="final-preview-heading"><strong>Final conversation preview</strong><span>{unredacted ? "Nothing is automatically hidden. Every message is preserved, and its text can be edited." : "Highlighted text is redacted. Every message is preserved, and its text can be edited."}</span></div>
             <div className="bundle-preview">{reviewSessions.map((listedSession, reviewIndex) => {
               const sessionIndex = bundle.sessions.findIndex((session) => session.sessionId === listedSession.sessionId);
               const included = chosen.has(listedSession.sessionId) && sessionIndex >= 0;
               const session = included ? bundle.sessions[sessionIndex] : listedSession;
               return <div className={`bundle-session ${included ? "" : "excluded"}`} key={session.sessionId}>
                 <div className="bundle-session-heading">{feedback ? <div className="bundle-session-include"><span><strong>{session.label}</strong><small>{session.summary}</small></span></div> : <label className="bundle-session-include"><input type="checkbox" checked={included} disabled={loading} onChange={() => toggleDonationSession(session.sessionId)} /><span><strong>{session.label}</strong><small>{session.summary}</small></span></label>}<span className="bundle-session-count">{included ? `${session.messages.length} messages` : "Excluded"}</span><button type="button" disabled={!included} onClick={() => setOpenSession(openSession === reviewIndex ? null : reviewIndex)}>{included ? openSession === reviewIndex ? "Hide" : "Review" : "Re-include to review"}</button></div>
-                {included && openSession === reviewIndex && <div className="bundle-chat">{session.messages.map((message, messageIndex) => <div className={`donation-message-row ${message.role === "assistant" ? "assistant" : "user"}`} key={messageIndex}><DonationMessageEditor message={message} rules={customRules} onChange={(text) => editMessage(sessionIndex, messageIndex, text)} /><button className="remove-message" onClick={() => removeMessage(sessionIndex, messageIndex)}>Exclude</button></div>)}</div>}
+                {included && openSession === reviewIndex && <div className="bundle-chat">{session.messages.map((message, messageIndex) => <div className={`donation-message-row ${message.role === "assistant" ? "assistant" : "user"}`} key={message.sourceIndex}><DonationMessageEditor message={message} rules={customRules} onChange={(text) => editMessage(sessionIndex, messageIndex, text)} /></div>)}</div>}
               </div>;
             })}</div>
           </>}

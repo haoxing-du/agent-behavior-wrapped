@@ -13,7 +13,7 @@ function fixture(overrides = {}) {
     redactionMode: "standard",
     createdAt: "2026-08-06T12:00:00.000Z",
     redactionSummary: { automatedDetections: 4 },
-    sessions: [{ sessionId: "must-be-dropped", label: "Private project", messages: [{ role: "user", text: "Reviewed text" }, { role: "assistant", text: "Reviewed answer", timestamp: "2026-08-01T00:00:00.000Z" }] }],
+    sessions: [{ sessionId: "must-be-dropped", label: "Private project", messages: [{ role: "user", sourceIndex: 2, text: "Reviewed text" }, { role: "assistant", sourceIndex: 4, text: "Reviewed answer", timestamp: "2026-08-01T00:00:00.000Z" }] }],
     consent: { researchDonation: true, consentedAt: "2026-08-06T12:01:00.000Z" },
     ...overrides,
   };
@@ -39,6 +39,7 @@ test("research donation schema requires consent and removes local identifiers", 
   assert.ok(donation);
   assert.equal(donation.sessions[0].label, "Session 1");
   assert.equal("sessionId" in donation.sessions[0], false);
+  assert.equal("sourceIndex" in donation.sessions[0].messages[0], false);
   assert.equal(donation.purpose, "general_research");
   assert.equal(sanitizeResearchDonation(fixture({ purpose: "unexpected" })), null);
   assert.equal(donation.consent.statement, "I consent for this reviewed data to be transmitted to the Susan Calvin Project and used for research under the data policy.");

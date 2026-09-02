@@ -219,7 +219,7 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .bundle-session h3 { gap: 12px; min-width: 0; margin-bottom: 16px; }
 .bundle-session h3 small { flex: none; }
 .bundle-chat { display: flex; flex-direction: column; min-width: 0; }
-.donation-message-row { padding-right: 72px; }
+.donation-message-row { width: 100%; }
 .bundle-message { display: flex; flex-direction: column; width: min(86%, 620px); min-width: 0; margin-bottom: 13px; }
 .bundle-message.assistant { align-self: flex-start; align-items: flex-start; }
 .bundle-message.user { align-self: flex-end; align-items: flex-end; }
@@ -578,7 +578,6 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .bundle-session-toggle span { display:grid; gap:3px; font-weight:850; }
 .bundle-session-toggle small { color:#81798a; font-weight:600; }
 .bundle-session-toggle b { color:#6f43d6; }
-.remove-message { position:absolute; top:10px; right:10px; border:1px solid #493d55; border-radius:999px; padding:6px 10px; background:#1a1520; color:#c7bfce; cursor:pointer; }
 .landing-page { min-height: 100vh; padding: 24px 24px 28px; display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 20px; place-items: center; background: radial-gradient(circle at 72% -12%, #e9ddf5 0, #f2ecf2 24%, #f7f4ed 58%); color: #19151e; text-align: center; }
 .landing-page > div { width: min(860px, 100%); }
 .landing-page h1 { margin: 0 0 22px; font-size: clamp(58px, 10vw, 132px); line-height: .82; letter-spacing: -.075em; text-wrap: balance; }
@@ -667,7 +666,6 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .redaction-mode-toggle button.active, .custom-redaction-fields button { background: #19151e; }
 .bundle-session-toggle b, .bundle-bubble button { color: #754ba8; }
 .bundle-message.user .bundle-bubble { border-color: #d4c2e5; background: #eee5f4; }
-.remove-message { border-color: #c7bdca; background: #fffdf8; color: #875068; }
 .consent-step { border-color: #d6cfd8; }
 .donation-preview .consent { border: 1px solid #ddd6df; background: #f0ebf1; color: #4f4854; }
 .donation-preview .consent.unredacted-consent { border-color: #d8a08f; background: #fff0ea; color: #713321; }
@@ -707,10 +705,9 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .bundle-session.excluded .bundle-session-include strong, .bundle-session.excluded .bundle-session-include small { color: #928a96; }
 .bundle-session-heading > button:disabled { border-color: transparent; background: transparent; color: #9b949f; cursor: default; }
 .bundle-chat { padding: 16px; border-top: 1px solid #e1dbe3; }
-.donation-message-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; width: 100%; padding-right: 0; }
-.donation-message-row.assistant .bundle-message { justify-self: start; }
-.donation-message-row.user .bundle-message { justify-self: end; }
-.donation-message-row .remove-message { position: static; grid-column: 2; grid-row: 1; align-self: start; margin-top: 20px; }
+.donation-message-row { display: flex; width: 100%; }
+.donation-message-row.assistant { justify-content: flex-start; }
+.donation-message-row.user { justify-content: flex-end; }
 .bundle-final-text, .bundle-bubble textarea { font-size: 12px; }
 .workaround-evidence-page, .interaction-evidence-page { width: min(900px, calc(100% - 40px)); margin: 0 auto; padding: 34px 0 90px; }
 .workaround-back-link { display: inline-block; color: #6d4c7d; font-size: 12px; font-weight: 800; text-decoration: none; }
@@ -1103,8 +1100,6 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
   .bundle-session-count { display: none; }
   .bundle-session-heading > button { padding-inline: 8px; }
   .bundle-chat { padding: 13px 10px; }
-  .donation-message-row { gap: 6px; }
-  .donation-message-row .remove-message { padding-inline: 8px; }
   .donation-success-page { padding-block: 28px; }
   .donation-success { padding: 30px 20px; border-radius: 22px; }
   .donation-success-actions { align-items: stretch; flex-direction: column; }

@@ -651,7 +651,7 @@ function donationSessionSummary(messages, suppliedSummary) {
 export function makeDonationPreview(sessionRecords, metadataById, { disabledRedactions = [], disabledMatches = [], unredacted = false } = {}) {
   const detections = [];
   const sessions = sessionRecords.map(({ sessionId, records }) => {
-    const messages = records.flatMap((record) => {
+    const messages = records.flatMap((record, sourceIndex) => {
       if (record.type !== "user" && record.type !== "assistant") return [];
       const value = visibleText(record);
       if (!value) return [];
@@ -659,7 +659,7 @@ export function makeDonationPreview(sessionRecords, metadataById, { disabledReda
         ? { text: value, detections: [] }
         : redactText(value, [], { disabledKinds: disabledRedactions, disabledMatches, includeHeuristicSecrets: false });
       detections.push(...redacted.detections);
-      return [{ role: record.type, timestamp: record.timestamp || null, text: redacted.text }];
+      return [{ role: record.type, sourceIndex, timestamp: record.timestamp || null, text: redacted.text }];
     });
     const metadata = metadataById.get(sessionId);
     return { sessionId, label: metadata?.label || `Session ${sessionId.slice(0, 6)}`, summary: donationSessionSummary(messages, metadata?.summary), messages };
