@@ -1,6 +1,8 @@
 import { redactAggregateText } from "./privacy.mjs";
 import { judgeError, judgeRequestDetails, judgeResponseDetails } from "./judge-debug.mjs";
 import { BEHAVIOR_WRAPPED_ORIGIN } from "./origins.mjs";
+import { displayModelName } from "./model-names.mjs";
+import { validatePhraseModels } from "./phrase-models.mjs";
 
 export const OPENROUTER_MODEL = "openai/gpt-5.6-luna";
 export const PHRASE_JUDGE_NAME = "GPT-5.6 Luna";
@@ -56,6 +58,9 @@ export function buildPhraseCandidates(sessionRecords, { maximumCandidates = MAX_
       if (record.type !== "assistant" || record.isApiErrorMessage || record?.message?.model === "<synthetic>") continue;
       const prose = cleanText(visibleText(record));
       if (!prose.trim()) continue;
+      const rawModel = record?.message?.model || record?.model;
+      const modelName = displayModelName(typeof rawModel === "string" ? rawModel.replace(/^(?:openai|anthropic)\//i, "") : "Unknown model");
+      const model = /^[\p{L}\p{N} ._+-]{1,80}$/u.test(modelName) && !/^(?:Codex|Claude|Cowork|Unknown) model$/i.test(modelName) ? modelName : "Unknown model";
       let clauseIndex = 0;
       for (const part of segmenter.segment(prose)) {
         const clauses = part.segment.split(/(?:[;:—–]|\n+|,(?=\s+(?:and|but|or|so|yet)\b))/i);
@@ -68,8 +73,10 @@ export function buildPhraseCandidates(sessionRecords, { maximumCandidates = MAX_
               if (slice.filter((token) => !stopwords.has(token)).length < 2) continue;
               const phrase = slice.join(" ");
               let item = counts.get(phrase);
-              if (!item) counts.set(phrase, item = { phrase, occurrences: 0, sessions: new Set(), openingOccurrences: 0, startBoundaryOccurrences: 0, endBoundaryOccurrences: 0, previousTokens: new Map(), nextTokens: new Map() });
+              if (!item) counts.set(phrase, item = { phrase, occurrences: 0, models: new Map(), sessions: new Set(), openingOccurrences: 0, startBoundaryOccurrences: 0, endBoundaryOccurrences: 0, previousTokens: new Map(), nextTokens: new Map() });
               item.occurrences++;
+              const sourceModel = item.models.has(model) || item.models.size < 49 ? model : "Unknown model";
+              item.models.set(sourceModel, (item.models.get(sourceModel) || 0) + 1);
               item.sessions.add(sessionIndex);
               if (clauseIndex === 0 && offset === 0) item.openingOccurrences++;
               if (offset === 0) item.startBoundaryOccurrences++;
@@ -114,6 +121,7 @@ export function buildPhraseCandidates(sessionRecords, { maximumCandidates = MAX_
     phrase: item.phrase,
     occurrences: item.occurrences,
     distinct_sessions: item.sessions.size,
+    sourceModels: [...item.models].map(([model, count]) => ({ model, count })).sort((left, right) => right.count - left.count || left.model.localeCompare(right.model)),
     opening_rate: Number((item.openingOccurrences / item.occurrences).toFixed(4)),
     start_boundary_rate: Number((item.startBoundaryOccurrences / item.occurrences).toFixed(4)),
     end_boundary_rate: Number((item.endBoundaryOccurrences / item.occurrences).toFixed(4)),
@@ -151,7 +159,7 @@ export function extractCandidateId(body, candidates) {
 }
 
 export function buildOpenRouterJudgeRequest(candidates, model = OPENROUTER_MODEL) {
-  const payload = JSON.stringify(candidates);
+  const payload = JSON.stringify(candidates.map(({ sourceModels, ...candidate }) => candidate));
   assertSafePayload(payload);
   return {
     model,
@@ -188,6 +196,7 @@ function phraseCardFromSelection(candidates, candidateId, { model, provider, lat
     phrase: selected.phrase,
     occurrences: selected.occurrences,
     distinctSessions: selected.distinct_sessions,
+    sourceModels: validatePhraseModels(selected.sourceModels, selected.occurrences) || [],
     model,
     provider,
     latencyMs,
@@ -254,7 +263,8 @@ export async function judgePhraseCard(candidates, apiKey, { fetchImpl = fetch, m
 
 export async function judgePhraseCardViaRelay(candidates, { fetchImpl = fetch, endpoint = PHRASE_JUDGE_RELAY_URL, clientId, timeoutMs = PHRASE_JUDGE_TIMEOUT_MS } = {}) {
   if (!candidates.length) throw new Error("Not enough repeated, share-safe phrases were found for a phrase card.");
-  const payload = JSON.stringify(candidates);
+  const judgeCandidates = candidates.map(({ sourceModels, ...candidate }) => candidate);
+  const payload = JSON.stringify(judgeCandidates);
   assertSafePayload(payload);
   const startedAt = Date.now();
   const debug = judgeRequestDetails("favorite-phrase", "relay", endpoint, candidates);
@@ -268,7 +278,7 @@ export async function judgePhraseCardViaRelay(candidates, { fetchImpl = fetch, e
         ...(clientId ? { "x-behavior-wrapped-client": clientId } : {}),
       },
       signal: AbortSignal.timeout(timeoutMs),
-      body: JSON.stringify({ candidates }),
+      body: JSON.stringify({ candidates: judgeCandidates }),
     });
   } catch (error) {
     const wrapped = timeoutMessage(error, timeoutMs);

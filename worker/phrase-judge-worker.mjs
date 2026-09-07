@@ -6,6 +6,7 @@ import { buildOpenRouterWorkaroundRequest, extractWorkaroundSelection, validateW
 import { BEHAVIOR_WRAPPED_HOST, BEHAVIOR_WRAPPED_WWW_HOST, LEGACY_BEHAVIOR_WRAPPED_HOST } from "../server/origins.mjs";
 import { sanitizePublicReport } from "../server/public-report-schema.mjs";
 import { MAX_ENCRYPTED_DONATION_BYTES, sanitizeEncryptedDonationEnvelope } from "../server/encrypted-donation-schema.mjs";
+import { validatePhraseModels, parsePhraseModels } from "../server/phrase-models.mjs";
 import { buildSessionLengthDistribution, parseSessionLengthDistribution } from "../server/session-length-distribution.mjs";
 export { sanitizePublicReport } from "../server/public-report-schema.mjs";
 
@@ -15,7 +16,7 @@ const JUDGE_ATTEMPTS = 2;
 const JUDGE_ATTEMPT_TIMEOUT_MS = 25_000;
 const ZULIP_NOTIFICATION_TIMEOUT_MS = 5_000;
 const candidateKeys = ["candidate_id", "distinct_sessions", "end_boundary_rate", "occurrences", "opening_rate", "phrase", "start_boundary_rate"];
-const leaderboardAggregateKeys = ["agent_words", "favorite_phrase", "frustrated_messages", "grateful_messages", "instrumental_workarounds", "instrumental_workarounds_by_model", "phrase_occurrences", "phrase_sessions", "session_turn_counts", "tokens", "user_words", "word_ratio"];
+const leaderboardAggregateKeys = ["agent_words", "favorite_phrase", "frustrated_messages", "grateful_messages", "instrumental_workarounds", "instrumental_workarounds_by_model", "phrase_occurrences", "phrase_sessions", "phrase_models", "session_turn_counts", "tokens", "user_words", "word_ratio"];
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -212,6 +213,13 @@ export function validateLeaderboardAggregate(value) {
   if (aggregate.favorite_phrase !== null && (typeof aggregate.favorite_phrase !== "string" || !/^[a-z]+(?:'[a-z]+)?(?: [a-z]+(?:'[a-z]+)?){3,9}$/.test(aggregate.favorite_phrase))) return null;
   if (!Number.isInteger(aggregate.phrase_occurrences) || !finiteBetween(aggregate.phrase_occurrences, 0, 10_000_000)) return null;
   if (!Number.isInteger(aggregate.phrase_sessions) || !finiteBetween(aggregate.phrase_sessions, 0, aggregate.phrase_occurrences)) return null;
+  if (aggregate.phrase_models !== undefined) {
+    const models = validatePhraseModels(aggregate.phrase_models, aggregate.favorite_phrase ? aggregate.phrase_occurrences : 0);
+    if (!models) return null;
+    aggregate.phrase_models = models;
+  } else {
+    delete aggregate.phrase_models;
+  }
   if (!Array.isArray(aggregate.session_turn_counts) || aggregate.session_turn_counts.length > 2_000 || aggregate.session_turn_counts.some((turns) => !Number.isInteger(turns) || !finiteBetween(turns, 1, 1_000_000))) return null;
   return aggregate;
 }
@@ -283,10 +291,33 @@ async function refreshSessionLengthDistribution(env) {
   return distribution;
 }
 
+export function buildPhraseWall(rows) {
+  const valid = rows.filter((row) => typeof row.favorite_phrase === "string" && /^[a-z]+(?:'[a-z]+)?(?: [a-z]+(?:'[a-z]+)?){3,9}$/.test(row.favorite_phrase));
+  const groups = new Map();
+  for (const row of valid) {
+    let group = groups.get(row.favorite_phrase);
+    if (!group) groups.set(row.favorite_phrase, group = { phrase: row.favorite_phrase, participants: 0, occurrences: 0 });
+    group.participants++;
+    group.occurrences += Math.round(safeNumber(row.phrase_occurrences, 10_000_000));
+  }
+  return {
+    entries: [...valid].sort((left, right) => String(right.phrase_changed_at || "").localeCompare(String(left.phrase_changed_at || "")) || Number(right.participant_id) - Number(left.participant_id))
+      .slice(0, 200).map((row) => ({
+        participant_id: Number(row.participant_id), phrase: row.favorite_phrase,
+        occurrences: Math.round(safeNumber(row.phrase_occurrences, 10_000_000)),
+        sessions: Math.round(safeNumber(row.phrase_sessions, 1_000_000)),
+        models: parsePhraseModels(row.phrase_models_json, Number(row.phrase_occurrences)),
+        participants: groups.get(row.favorite_phrase).participants,
+      })),
+    common: [...groups.values()].filter((group) => group.participants > 1)
+      .sort((left, right) => right.participants - left.participants || right.occurrences - left.occurrences || left.phrase.localeCompare(right.phrase)).slice(0, 5),
+  };
+}
+
 async function leaderboardSnapshot(env, aggregate, hash) {
   if (!env.LEADERBOARD_DB) throw new Error("Leaderboard storage is not configured.");
   const [values, participation, modelTotals, storedDistribution] = await Promise.all([
-    env.LEADERBOARD_DB.prepare("SELECT rowid AS participant_id, tokens, word_ratio, grateful_messages, frustrated_messages, instrumental_workarounds, favorite_phrase, phrase_occurrences, phrase_sessions, phrase_changed_at FROM leaderboard_entries ORDER BY rowid").all(),
+    env.LEADERBOARD_DB.prepare("SELECT rowid AS participant_id, tokens, word_ratio, grateful_messages, frustrated_messages, instrumental_workarounds, favorite_phrase, phrase_occurrences, phrase_sessions, phrase_changed_at, phrase_models_json FROM leaderboard_entries ORDER BY rowid").all(),
     hash ? env.LEADERBOARD_DB.prepare("SELECT rowid AS participant_id, display_name, public_ranked, favorite_phrase IS NOT NULL AS shares_phrase FROM leaderboard_entries WHERE client_hash = ?").bind(hash).first() : Promise.resolve(null),
     env.LEADERBOARD_DB.prepare("SELECT model, SUM(detected_instances) AS detected_instances FROM leaderboard_model_workarounds GROUP BY model ORDER BY detected_instances DESC, model ASC LIMIT 50").all(),
     env.LEADERBOARD_DB.prepare("SELECT distribution_json FROM leaderboard_session_length_distribution WHERE id = 1").first(),
@@ -333,12 +364,7 @@ async function leaderboardSnapshot(env, aggregate, hash) {
       values: publicView ? [] : aggregate.session_turn_counts,
       distribution: sessionLengthDistribution,
     },
-    phrases: {
-      entries: [...rows].sort((left, right) => String(right.phrase_changed_at || "").localeCompare(String(left.phrase_changed_at || "")) || Number(right.participant_id) - Number(left.participant_id))
-        .flatMap((row) => typeof row.favorite_phrase === "string" && /^[a-z]+(?:'[a-z]+)?(?: [a-z]+(?:'[a-z]+)?){3,9}$/.test(row.favorite_phrase)
-        ? [{ participant_id: Number(row.participant_id), phrase: row.favorite_phrase, occurrences: Math.round(safeNumber(row.phrase_occurrences, 10_000_000)), sessions: Math.round(safeNumber(row.phrase_sessions, 1_000_000)) }]
-        : []).slice(0, 200),
-    },
+    phrases: buildPhraseWall(rows),
     participation: participation ? { joined: true, participant_id: Number(participation.participant_id), display_name: participation.display_name, public_ranked: Boolean(participation.public_ranked), shares_phrase: Boolean(participation.shares_phrase) } : { joined: false },
   };
 }
@@ -353,6 +379,7 @@ function aggregateFromPublicReport(report) {
     instrumental_workarounds: Math.round(safeNumber(report.workaroundCard?.count, 1_000_000)),
     instrumental_workarounds_by_model: Array.isArray(report.workaroundCard?.models) ? report.workaroundCard.models.map((item) => ({ model: item.name, count: item.count })) : [],
     phrase_occurrences: Math.round(safeNumber(report.phraseCard?.occurrences, 10_000_000)), phrase_sessions: Math.round(safeNumber(report.phraseCard?.distinctSessions, 1_000_000)),
+    phrase_models: report.phraseCard?.sourceModels || [],
     session_turn_counts: Array.isArray(stats.sessionTurnCounts) ? stats.sessionTurnCounts : [],
   });
 }
@@ -374,18 +401,19 @@ async function leaderboardOptedOut(env, hash) {
 
 async function upsertAnonymousLeaderboardEntry(env, hash, aggregate) {
   await env.LEADERBOARD_DB.prepare(`INSERT INTO leaderboard_entries
-    (client_hash, display_name, public_ranked, tokens, agent_words, user_words, word_ratio, grateful_messages, frustrated_messages, instrumental_workarounds, favorite_phrase, phrase_occurrences, phrase_sessions, session_turn_counts, updated_at, phrase_changed_at)
-    VALUES (?, 'Anonymous', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), strftime('%Y-%m-%d %H:%M:%f', 'now'))
+    (client_hash, display_name, public_ranked, tokens, agent_words, user_words, word_ratio, grateful_messages, frustrated_messages, instrumental_workarounds, favorite_phrase, phrase_occurrences, phrase_sessions, session_turn_counts, updated_at, phrase_changed_at, phrase_models_json)
+    VALUES (?, 'Anonymous', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), strftime('%Y-%m-%d %H:%M:%f', 'now'), ?)
     ON CONFLICT(client_hash) DO UPDATE SET display_name='Anonymous', public_ranked=0,
     tokens=excluded.tokens, agent_words=excluded.agent_words, user_words=excluded.user_words, word_ratio=excluded.word_ratio,
     grateful_messages=excluded.grateful_messages, frustrated_messages=excluded.frustrated_messages, instrumental_workarounds=excluded.instrumental_workarounds,
+    phrase_models_json=excluded.phrase_models_json,
     phrase_changed_at=CASE WHEN leaderboard_entries.favorite_phrase IS NOT excluded.favorite_phrase THEN excluded.phrase_changed_at ELSE leaderboard_entries.phrase_changed_at END,
     favorite_phrase=excluded.favorite_phrase, phrase_occurrences=excluded.phrase_occurrences, phrase_sessions=excluded.phrase_sessions,
     session_turn_counts=excluded.session_turn_counts, updated_at=datetime('now')`).bind(
       hash, aggregate.tokens, aggregate.agent_words, aggregate.user_words, aggregate.word_ratio,
       aggregate.grateful_messages, aggregate.frustrated_messages, aggregate.instrumental_workarounds,
       aggregate.favorite_phrase, aggregate.favorite_phrase ? aggregate.phrase_occurrences : 0,
-      aggregate.favorite_phrase ? aggregate.phrase_sessions : 0, JSON.stringify(aggregate.session_turn_counts),
+      aggregate.favorite_phrase ? aggregate.phrase_sessions : 0, JSON.stringify(aggregate.session_turn_counts), JSON.stringify(aggregate.favorite_phrase ? aggregate.phrase_models || [] : []),
     ).run();
   await replaceLeaderboardModelWorkarounds(env, hash, aggregate.instrumental_workarounds_by_model);
   await refreshSessionLengthDistribution(env);
@@ -467,17 +495,18 @@ async function handleLeaderboard(request, env) {
   if (!env.LEADERBOARD_DB) return json({ error: "Leaderboard storage is not configured." }, 503);
   const phrase = body.include_phrase ? aggregate.favorite_phrase : null;
   await env.LEADERBOARD_DB.prepare(`INSERT INTO leaderboard_entries
-    (client_hash, display_name, public_ranked, tokens, agent_words, user_words, word_ratio, grateful_messages, frustrated_messages, instrumental_workarounds, favorite_phrase, phrase_occurrences, phrase_sessions, session_turn_counts, updated_at, phrase_changed_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), strftime('%Y-%m-%d %H:%M:%f', 'now'))
+    (client_hash, display_name, public_ranked, tokens, agent_words, user_words, word_ratio, grateful_messages, frustrated_messages, instrumental_workarounds, favorite_phrase, phrase_occurrences, phrase_sessions, session_turn_counts, updated_at, phrase_changed_at, phrase_models_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), strftime('%Y-%m-%d %H:%M:%f', 'now'), ?)
     ON CONFLICT(client_hash) DO UPDATE SET display_name=excluded.display_name, public_ranked=excluded.public_ranked,
     tokens=excluded.tokens, agent_words=excluded.agent_words, user_words=excluded.user_words, word_ratio=excluded.word_ratio,
     grateful_messages=excluded.grateful_messages, frustrated_messages=excluded.frustrated_messages, instrumental_workarounds=excluded.instrumental_workarounds,
+    phrase_models_json=excluded.phrase_models_json,
     phrase_changed_at=CASE WHEN leaderboard_entries.favorite_phrase IS NOT excluded.favorite_phrase THEN excluded.phrase_changed_at ELSE leaderboard_entries.phrase_changed_at END,
     favorite_phrase=excluded.favorite_phrase, phrase_occurrences=excluded.phrase_occurrences,
     phrase_sessions=excluded.phrase_sessions, session_turn_counts=excluded.session_turn_counts, updated_at=datetime('now')`).bind(
       hash, name, body.public_ranked ? 1 : 0, aggregate.tokens, aggregate.agent_words, aggregate.user_words, aggregate.word_ratio,
       aggregate.grateful_messages, aggregate.frustrated_messages, aggregate.instrumental_workarounds,
-      phrase, phrase ? aggregate.phrase_occurrences : 0, phrase ? aggregate.phrase_sessions : 0, JSON.stringify(aggregate.session_turn_counts),
+      phrase, phrase ? aggregate.phrase_occurrences : 0, phrase ? aggregate.phrase_sessions : 0, JSON.stringify(aggregate.session_turn_counts), JSON.stringify(phrase ? aggregate.phrase_models || [] : []),
     ).run();
   await replaceLeaderboardModelWorkarounds(env, hash, aggregate.instrumental_workarounds_by_model);
   await refreshSessionLengthDistribution(env);

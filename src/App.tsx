@@ -5,7 +5,8 @@ type Project = { id: string; name: string; sessionCount: number; latestAt: strin
 type Session = { id: string; agent: "claude" | "cowork" | "codex"; agentName: string; projectId: string; projectName: string; startedAt: string; endedAt: string; promptCount: number; recordCount: number; sizeBytes: number; synthetic: boolean; label: string };
 type Catalog = { rootAvailable: boolean; demo: boolean; agentNames: string[]; projects: Project[]; sessions: Session[]; defaultRange: { from: string; to: string; days: number }; privacy: { canonicalDirectories: string[]; networkRequests: string }; phraseJudge?: { available: boolean; model: string; name: string; provider: string; requiredOnAnalysis: boolean; freeEndpointDataNotice: boolean } };
 type Finding = { id: string; kind: string; title: string; summary: string; method: string; confidence: { score: number; label: string }; evidence: { id: string; sessionId: string; lines: { role: string; text: string }[] } };
-type PhraseCard = { phrase: string; occurrences: number; distinctSessions: number; model: string; provider: string; latencyMs: number; method: string; candidateCount: number };
+type PhraseSourceModel = { model: string; count: number };
+type PhraseCard = { sourceModels?: PhraseSourceModel[]; phrase: string; occurrences: number; distinctSessions: number; model: string; provider: string; latencyMs: number; method: string; candidateCount: number };
 type AgentStat = { agent: "claude" | "cowork" | "codex"; name: string; count: number; percentage: number };
 type ModelStat = { model: string; name: string; tokens: number; percentage: number };
 type RepeatedInstruction = { instruction: string; occurrences: number; distinctSessions: number };
@@ -43,7 +44,8 @@ type ClassifierFeedbackContext = { id: string; originalLabel: "yelling" | "thank
 type ClassifierFeedbackLabel = "yelling" | "thanking" | "neither" | "unsure";
 type ParticipantSample = { participant_id: number; value: number };
 type SessionLengthDistribution = { session_count: number; median_turns: number; min_turns: number; max_turns: number; points: { turns: number; density: number }[] };
-type PhraseWallEntry = { participant_id: number; phrase: string; occurrences: number; sessions: number };
+type PhraseWallEntry = { participant_id: number; phrase: string; occurrences: number; sessions: number; models?: PhraseSourceModel[]; participants?: number };
+type CommonPhrase = { phrase: string; participants: number; occurrences: number };
 type RelationshipPoint = { participant_id: number; yap_ratio: number; appreciation_index: number };
 type PlotTooltipState = { x: number; y: number; text: string } | null;
 type LeaderboardSnapshot = {
@@ -55,7 +57,7 @@ type LeaderboardSnapshot = {
   relationship: { points: RelationshipPoint[] };
   instrumental_workarounds: { value: number; percentile: number | null; samples: ParticipantSample[]; by_model?: { model: string; count: number }[] };
   session_lengths: { values: number[]; distribution: SessionLengthDistribution };
-  phrases: { entries: PhraseWallEntry[] };
+  phrases: { entries: PhraseWallEntry[]; common?: CommonPhrase[] };
   participation: { joined: boolean; participant_id?: number; display_name?: string; public_ranked?: boolean; shares_phrase?: boolean };
   can_manage?: boolean;
   opted_out?: boolean;
@@ -368,7 +370,7 @@ function SharedWrapped({ id }: { id: string }) {
       { label: "You apologized to your agent", highlight: "apologized", accent: "user-apology" as const, value: (apologyCounts?.user || 0).toLocaleString(), suffix: `time${apologyCounts?.user === 1 ? "" : "s"}` },
     ] }] : []),
     ...(sortedStockPhrases ? [{ kicker: "Models love these phrases", headline: "Did yours?", detail: "Here’s how often they showed up.", tone: "stock", rows: sortedStockPhrases.map((item) => ({ label: `“${item.phrase.toLocaleLowerCase()}”`, value: item.count.toLocaleString() })) }] : []),
-    ...(report.phraseCard ? [{ kicker: "Beyond those common phrases, your agent’s favorite was", headline: `“${report.phraseCard.phrase}”`, detail: `It said this ${report.phraseCard.occurrences} time${report.phraseCard.occurrences === 1 ? "" : "s"} across ${report.phraseCard.distinctSessions} session${report.phraseCard.distinctSessions === 1 ? "" : "s"}.`, tone: "quote" }] : []),
+    ...(report.phraseCard ? [{ kicker: "Beyond those common phrases, your agent’s favorite was", headline: `“${report.phraseCard.phrase}”`, detail: `It said this ${report.phraseCard.occurrences} time${report.phraseCard.occurrences === 1 ? "" : "s"} across ${report.phraseCard.distinctSessions} session${report.phraseCard.distinctSessions === 1 ? "" : "s"}. ${phraseAttribution(report.phraseCard.sourceModels)}`, tone: "quote" }] : []),
     ...(repeatedInstructions.length ? [{ kicker: "Your most repeated instructions", headline: "You really meant it.", detail: "Exact instructions you gave more than once.", tone: "stock", rows: repeatedInstructions.map((item) => ({ label: `“${item.instruction}”`, value: `${item.occurrences}×` })) }] : []),
     ...(report.workaroundCard ? [{ kicker: "", headline: report.workaroundCard.count === 0 ? "Your agent took no for an answer." : "Your agent wouldn’t take no for an answer.", detail: report.workaroundCard.count === 0 ? "No confirmed blocked-route detours were detected." : "When one method was blocked, it tried another way to reach the same outcome.", example: report.workaroundCard.example, workaround: true, workaroundCount: report.workaroundCard.count, evidenceHref: report.workaroundCard.count > 0 ? localWorkaroundEvidenceUrl(report) : undefined, tone: "topics", rows: report.workaroundCard.models.map((item) => ({ label: item.name, value: `${item.count}` })) }] : []),
     ...(!sharedViewer ? [{
@@ -674,13 +676,28 @@ function WorkaroundFigure({ metric, participantId, included, publicView = false 
   </section>;
 }
 
-function PhraseWallFigure({ entries, participantId }: { entries: PhraseWallEntry[]; participantId?: number }) {
+function phraseAttribution(models: PhraseSourceModel[] = []) {
+  if (!models.length || models.every((item) => item.model === "Unknown model")) return "Model not recorded.";
+  if (models.length === 1) return `Said by ${models[0].model}.`;
+  return `Said by ${models.slice(0, 2).map((item) => item.model).join(" and ")}${models.length > 2 ? `, plus ${models.length - 2} more` : ""}.`;
+}
+
+function PhraseAttribution({ models = [] }: { models?: PhraseSourceModel[] }) {
+  if (models.length < 2) return <p className="phrase-attribution">{phraseAttribution(models)}</p>;
+  return <details className="phrase-attribution"><summary>Model breakdown</summary><ul>{models.map((item) => <li key={item.model}><span>{item.model}</span><span>{item.count.toLocaleString()} time{item.count === 1 ? "" : "s"}</span></li>)}</ul></details>;
+}
+
+function PhraseWallFigure({ entries, common = [], participantId }: { entries: PhraseWallEntry[]; common?: CommonPhrase[]; participantId?: number }) {
   return <section className="leader-figure leader-phrase-figure">
     <div className="leader-figure-head"><div><span>05 · Favorite phrase wall</span><h2>What do everyone’s agents keep saying?</h2></div><div className="leader-result"><strong>{entries.length.toLocaleString()}</strong><small>phrases shared</small></div></div>
+    {!!common.length && <div className="leader-common-phrases"><h3>Common phrases</h3><p>The same favorite, across different participants.</p><ol>{common.map((item) => <li key={item.phrase}><strong>{item.participants.toLocaleString()} <span>participants</span></strong><blockquote>“{item.phrase}”</blockquote></li>)}</ol></div>}
+    {!!entries.length && <p className="leader-phrase-order">Latest phrase changes</p>}
     {entries.length ? <div className="leader-phrase-wall">{entries.map((entry) => <article className={entry.participant_id === participantId ? "is-you" : ""} key={`${entry.participant_id}-${entry.phrase}`}>
       {entry.participant_id === participantId && <b>Yours</b>}
       <blockquote>“{entry.phrase}”</blockquote>
       <p>{entry.occurrences.toLocaleString()} time{entry.occurrences === 1 ? "" : "s"} · {entry.sessions.toLocaleString()} session{entry.sessions === 1 ? "" : "s"}</p>
+      <PhraseAttribution models={entry.models} />
+      {(entry.participants || 0) > 1 && <span className="phrase-shared-badge">Shared by {entry.participants!.toLocaleString()} participants</span>}
     </article>)}</div> : <div className="leader-empty-wall"><strong>The wall is waiting for its first phrase.</strong><span>Favorite phrases from participating public Wrapped reports will appear here anonymously.</span></div>}
   </section>;
 }
@@ -730,7 +747,7 @@ function LeaderboardFigures({ snapshot, publicView = false }: { snapshot: Leader
     <RelationshipFigure ratio={snapshot.word_ratio.value} appreciation={snapshot.good_human_score.value} points={snapshot.relationship.points} participantId={participantId} included={included} publicView={publicView} />
     <WorkaroundFigure metric={snapshot.instrumental_workarounds} participantId={participantId} included={included} publicView={publicView} />
     <SessionLengthFigure metric={snapshot.session_lengths} included={included} publicView={publicView} />
-    <PhraseWallFigure entries={snapshot.phrases.entries} participantId={publicView ? undefined : participantId} />
+    <PhraseWallFigure entries={snapshot.phrases.entries} common={snapshot.phrases.common} participantId={publicView ? undefined : participantId} />
   </div>;
 }
 
@@ -1122,7 +1139,7 @@ function ReportView({ report, onEvidence, onDonate }: { report: Report; onEviden
     </section>
 
     {report.phraseCard && <section className="wrapped-card catchphrase-card">
-      <div><span className="card-kicker">Your agent’s favorite phrase is</span><h2>“{report.phraseCard.phrase}”</h2><p>It said this {report.phraseCard.occurrences} time{report.phraseCard.occurrences === 1 ? "" : "s"} across {report.phraseCard.distinctSessions} session{report.phraseCard.distinctSessions === 1 ? "" : "s"}. {report.phraseCard.method}</p></div>
+      <div><span className="card-kicker">Your agent’s favorite phrase is</span><h2>“{report.phraseCard.phrase}”</h2><p>It said this {report.phraseCard.occurrences} time{report.phraseCard.occurrences === 1 ? "" : "s"} across {report.phraseCard.distinctSessions} session{report.phraseCard.distinctSessions === 1 ? "" : "s"}. {report.phraseCard.method}</p><PhraseAttribution models={report.phraseCard.sourceModels} /></div>
     </section>}
 
     {!!report.stats.repeatedInstructions?.length && <section className="wrapped-card catchphrase-card">

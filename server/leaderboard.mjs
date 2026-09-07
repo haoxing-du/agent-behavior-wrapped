@@ -1,5 +1,6 @@
 import { BEHAVIOR_WRAPPED_ORIGIN } from "./origins.mjs";
 import { buildSessionLengthDistribution } from "./session-length-distribution.mjs";
+import { validatePhraseModels } from "./phrase-models.mjs";
 export const LEADERBOARD_RELAY_ORIGIN = BEHAVIOR_WRAPPED_ORIGIN;
 const REQUEST_TIMEOUT_MS = 15_000;
 const demoTokens = [820_000, 2_400_000, 8_900_000, 14_300_000, 31_000_000, 47_500_000, 83_000_000, 126_000_000, 210_000_000, 380_000_000, 620_000_000, 940_000_000];
@@ -56,6 +57,7 @@ export function leaderboardAggregateFromReport(report) {
     favorite_phrase: typeof phrase === "string" && /^[a-z]+(?:'[a-z]+)?(?: [a-z]+(?:'[a-z]+)?){3,9}$/.test(phrase) ? phrase : null,
     phrase_occurrences: Math.round(finiteNonNegative(report?.phraseCard?.occurrences)),
     phrase_sessions: Math.round(finiteNonNegative(report?.phraseCard?.distinctSessions)),
+    phrase_models: validatePhraseModels(report?.phraseCard?.sourceModels, Math.round(finiteNonNegative(report?.phraseCard?.occurrences))) || [],
     session_turn_counts: sessionTurnCounts(stats.sessionTurnCounts),
   };
 }
@@ -92,7 +94,8 @@ export function syntheticLeaderboardSnapshot(aggregate, participation = null) {
       distribution: buildSessionLengthDistribution(demoSessionTurnCounts.flat()),
     },
     phrases: {
-      entries: aggregate.favorite_phrase ? [{ participant_id: 1, phrase: aggregate.favorite_phrase, occurrences: aggregate.phrase_occurrences, sessions: aggregate.phrase_sessions }] : [],
+      entries: aggregate.favorite_phrase ? [{ participant_id: 1, phrase: aggregate.favorite_phrase, occurrences: aggregate.phrase_occurrences, sessions: aggregate.phrase_sessions, models: aggregate.phrase_models || [], participants: 1 }] : [],
+      common: [],
     },
     participation: participation || { joined: false },
   };

@@ -1,5 +1,6 @@
 import { isShareSafeFrustrationQuote } from "./frustration-card.mjs";
 import { safeWorkaroundSummary } from "./instrumental-workarounds.mjs";
+import { validatePhraseModels } from "./phrase-models.mjs";
 
 function safeNumber(value, maximum = 10_000_000_000_000) {
   const number = Number(value);
@@ -101,6 +102,7 @@ export function sanitizePublicReport(value) {
     phrase,
     occurrences: Math.round(safeNumber(value.phraseCard.occurrences, 10_000_000)),
     distinctSessions: Math.round(safeNumber(value.phraseCard.distinctSessions, 1_000_000)),
+    sourceModels: validatePhraseModels(value.phraseCard.sourceModels, Math.round(safeNumber(value.phraseCard.occurrences, 10_000_000))) || [],
   } : null;
   const frustrationQuote = value.interactionCard?.frustrationQuote || value.interactionCard?.quote;
   const allowedLanguages = new Set(["English", "Spanish", "French", "German", "Portuguese", "Italian", "Japanese", "Korean", "Chinese", "Arabic", "Hebrew", "Hindi", "Thai", "Cyrillic"]);

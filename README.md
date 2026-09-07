@@ -26,7 +26,8 @@ The CLI discovers sessions from Claude Code and Codex automatically. On macOS it
 
 - Usage cards for tokens, estimated cost, models, platforms, response length, session length, languages, and topics.
 - Behavioral cards for repeated instructions, gratitude and frustration, admitted mistakes, interruptions, autonomy, and workarounds after tool restrictions.
-- A favorite phrase selected from exact, locally counted repetitions.
+- A favorite phrase selected from exact, locally counted repetitions, with counts for the models that said it.
+- A public phrase wall highlighting favorites shared by multiple participants.
 - An optional shareable slideshow and image exports containing only allowlisted aggregates and sanitized findings.
 - Private, localhost-only evidence views for findings that benefit from reviewing the original context.
 

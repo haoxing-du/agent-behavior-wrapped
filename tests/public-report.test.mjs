@@ -95,3 +95,15 @@ test("the local publisher strips private session IDs before upload", async () =>
   assert.equal(result.public_url, "https://example.test/w/shareSafe1234");
   assert.equal(result.management_url, `https://example.test/w/shareSafe1234#manage=${"c".repeat(64)}`);
 });
+
+
+test("hosted favorite phrases retain speaker counts without private model metadata", () => {
+  const report = reportFixture();
+  report.phraseCard.sourceModels = [{ model: "GPT-6 Astra", count: 7, sessionId: "private" }];
+  const safe = sanitizePublicReport(report);
+  assert.deepEqual(safe.phraseCard.sourceModels, [{ model: "GPT-6 Astra", count: 7 }]);
+  report.phraseCard.sourceModels[0].count = 8;
+  assert.deepEqual(sanitizePublicReport(report).phraseCard.sourceModels, []);
+  delete report.phraseCard.sourceModels;
+  assert.deepEqual(sanitizePublicReport(report).phraseCard.sourceModels, []);
+});

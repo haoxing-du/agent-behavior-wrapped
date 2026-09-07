@@ -2066,3 +2066,23 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
   .shared-page .story-comparison-four .story-comparison p b { font-size: 11px; }
   .shared-page .story-comparison-four .story-comparison-wrap blockquote { margin-top: 7px; padding-top: 6px; font-size: 10px; }
 }
+
+/* Shared favorites and the models that said each phrase. */
+.leader-common-phrases { margin-bottom: 32px; }
+.leader-common-phrases h3 { margin: 0 0 6px; color: #352a3c; font-size: 21px; letter-spacing: -.025em; }
+.leader-common-phrases > p, .leader-phrase-order { color: #6b5b73; font-size: 12px; line-height: 1.5; }
+.leader-common-phrases > p { margin: 0 0 16px; }
+.leader-common-phrases ol { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
+.leader-common-phrases li { min-width: 0; padding: 20px; border: 1px solid #d7c7dd; border-radius: 16px; background: linear-gradient(135deg, #eee3f3, #faf6ef); }
+.leader-common-phrases strong { color: #674379; font-size: 26px; }
+.leader-common-phrases strong span { font-size: 11px; font-weight: 650; }
+.leader-common-phrases blockquote { margin: 13px 0 0; color: #352a3c; font-size: 18px; font-weight: 650; line-height: 1.25; overflow-wrap: anywhere; }
+.leader-phrase-order { margin: 0 0 14px; font-weight: 700; }
+.phrase-attribution, .leader-phrase-wall p.phrase-attribution { margin: 10px 0 0; color: #66566f; font-size: 11px; line-height: 1.5; }
+.phrase-attribution summary { cursor: pointer; padding: 5px 0; font-weight: 650; }
+.phrase-attribution summary:focus-visible { outline: 2px solid #754ba8; outline-offset: 3px; border-radius: 3px; }
+.phrase-attribution ul { margin: 5px 0 0; padding: 0; list-style: none; }
+.phrase-attribution li { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; }
+.phrase-attribution li span:first-child { overflow-wrap: anywhere; }
+.phrase-attribution li span:last-child { flex-shrink: 0; }
+.phrase-shared-badge { display: inline-block; margin-top: 14px; padding: 5px 9px; border-radius: 7px; background: #ece1f3; color: #684578; font-size: 10px; font-weight: 750; line-height: 1.5; }

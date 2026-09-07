@@ -103,6 +103,8 @@ test("resolves the judge's candidate ID locally instead of accepting invented wo
     }), { status: 200, headers: { "content-type": "application/json" } });
   };
   const result = await judgePhraseCard([candidate], "test-key-never-serialized", { fetchImpl });
+  assert.deepEqual(result.sourceModels, candidate.sourceModels);
+  assert.equal(JSON.stringify(outbound).includes("sourceModels"), false);
   assert.equal(result.phrase, candidate.phrase);
   assert.equal(result.occurrences, candidate.occurrences);
   assert.equal(result.distinctSessions, candidate.distinct_sessions);
@@ -166,7 +168,9 @@ test("relay returns only a candidate ID and the client resolves exact local text
     clientId: "0123456789abcdef0123456789abcdef",
     fetchImpl,
   });
-  assert.deepEqual(outbound, { candidates: [candidate] });
+  const { sourceModels, ...judgeCandidate } = candidate;
+  assert.deepEqual(outbound, { candidates: [judgeCandidate] });
+  assert.deepEqual(result.sourceModels, sourceModels);
   assert.equal(headers["x-behavior-wrapped-protocol"], "1");
   assert.equal(headers["x-behavior-wrapped-client"], "0123456789abcdef0123456789abcdef");
   assert.equal(result.phrase, candidate.phrase);
@@ -184,4 +188,21 @@ test("relay errors do not expose an OpenRouter credential", async () => {
   assert.equal(details.http_status, 502);
   assert.deepEqual(details.relay_diagnostic, { code: "upstream_http", status: 429 });
   assert.equal(JSON.stringify(details).includes(candidate.phrase), false);
+});
+
+
+test("attributes one selected phrase to actual message models across switches and sessions", () => {
+  const message = (model) => ({ type: "assistant", message: { model, content: "Read only investigation complete." } });
+  const candidates = buildPhraseCandidates([
+    { records: [message("gpt-6-astra"), message("openai/gpt-6-astra"), message("claude-opus-4-8")] },
+    { records: [message("gpt-6-astra"), message(undefined), message("<synthetic>")] },
+  ]);
+  const card = buildLocalPhraseCard(candidates);
+  assert.equal(card.phrase, "read only investigation complete");
+  assert.equal(card.occurrences, 5);
+  assert.equal(card.distinctSessions, 2);
+  assert.deepEqual(card.sourceModels, [
+    { model: "GPT-6 Astra", count: 3 }, { model: "Claude Opus 4.8", count: 1 }, { model: "Unknown model", count: 1 },
+  ]);
+  assert.equal(card.model, "Local deterministic selection");
 });

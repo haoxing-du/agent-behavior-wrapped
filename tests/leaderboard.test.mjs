@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { leaderboardAggregateFromReport, syntheticLeaderboardSnapshot } from "../server/leaderboard.mjs";
 import { buildSessionLengthDistribution, parseSessionLengthDistribution } from "../server/session-length-distribution.mjs";
-import { handleRequest, validateLeaderboardAggregate } from "../worker/phrase-judge-worker.mjs";
+import { handleRequest, validateLeaderboardAggregate, buildPhraseWall } from "../worker/phrase-judge-worker.mjs";
 
 const aggregate = {
   tokens: 12_500_000,
@@ -16,13 +16,14 @@ const aggregate = {
   favorite_phrase: "you are right to push back",
   phrase_occurrences: 12,
   phrase_sessions: 5,
+  phrase_models: [{ model: "GPT-6 Astra", count: 12 }],
   session_turn_counts: [3, 18, 42],
 };
 
 const publicReport = {
   id: "leaderReport123",
   stats: { tokens: aggregate.tokens, agentWords: aggregate.agent_words, userWords: aggregate.user_words, agentUserWordRatio: aggregate.word_ratio, sessionTurnCounts: aggregate.session_turn_counts, interactionTone: { gratefulMessages: aggregate.grateful_messages, frustratedMessages: aggregate.frustrated_messages } },
-  phraseCard: { phrase: aggregate.favorite_phrase, occurrences: aggregate.phrase_occurrences, distinctSessions: aggregate.phrase_sessions },
+  phraseCard: { phrase: aggregate.favorite_phrase, occurrences: aggregate.phrase_occurrences, distinctSessions: aggregate.phrase_sessions, sourceModels: aggregate.phrase_models },
   workaroundCard: { count: aggregate.instrumental_workarounds, models: aggregate.instrumental_workarounds_by_model.map(({ model, count }) => ({ name: model, count })) },
 };
 
@@ -55,13 +56,13 @@ function leaderboardDatabase(managementTokenHash) {
         },
         async all() {
           if (sql.includes("SELECT session_turn_counts FROM leaderboard_entries")) return { results: entry ? [{ session_turn_counts: entry.sessionTurnCounts }] : [] };
-          if (sql.includes("tokens, word_ratio, grateful_messages")) return { results: entry ? [{ participant_id: 1, tokens: entry.tokens, word_ratio: entry.wordRatio, grateful_messages: entry.gratefulMessages, frustrated_messages: entry.frustratedMessages, instrumental_workarounds: entry.workarounds, favorite_phrase: entry.phrase, phrase_occurrences: entry.phraseOccurrences, phrase_sessions: entry.phraseSessions, session_turn_counts: entry.sessionTurnCounts }] : [] };
+          if (sql.includes("tokens, word_ratio, grateful_messages")) return { results: entry ? [{ participant_id: 1, tokens: entry.tokens, word_ratio: entry.wordRatio, grateful_messages: entry.gratefulMessages, frustrated_messages: entry.frustratedMessages, instrumental_workarounds: entry.workarounds, favorite_phrase: entry.phrase, phrase_occurrences: entry.phraseOccurrences, phrase_sessions: entry.phraseSessions, session_turn_counts: entry.sessionTurnCounts, phrase_models_json: entry.phraseModels }] : [] };
           if (sql.includes("FROM leaderboard_model_workarounds")) return { results: [...modelEntries].map(([model, count]) => ({ model, detected_instances: count })).sort((left, right) => right.detected_instances - left.detected_instances || left.model.localeCompare(right.model)) };
           return { results: [] };
         },
         async run() {
-          if (sql.startsWith("INSERT INTO leaderboard_entries") && sql.includes("'Anonymous'")) entry = { ownerHash: values[0], displayName: "Anonymous", publicRanked: 0, tokens: values[1], wordRatio: values[4], gratefulMessages: values[5], frustratedMessages: values[6], workarounds: values[7], phrase: values[8], phraseOccurrences: values[9], phraseSessions: values[10], sessionTurnCounts: values[11], sharesPhrase: Boolean(values[8]) };
-          else if (sql.startsWith("INSERT INTO leaderboard_entries")) entry = { ownerHash: values[0], displayName: values[1], publicRanked: values[2], tokens: values[3], wordRatio: values[6], gratefulMessages: values[7], frustratedMessages: values[8], workarounds: values[9], phrase: values[10], phraseOccurrences: values[11], phraseSessions: values[12], sessionTurnCounts: values[13], sharesPhrase: Boolean(values[10]) };
+          if (sql.startsWith("INSERT INTO leaderboard_entries") && sql.includes("'Anonymous'")) entry = { ownerHash: values[0], displayName: "Anonymous", publicRanked: 0, tokens: values[1], wordRatio: values[4], gratefulMessages: values[5], frustratedMessages: values[6], workarounds: values[7], phrase: values[8], phraseOccurrences: values[9], phraseSessions: values[10], sessionTurnCounts: values[11], phraseModels: values[12], sharesPhrase: Boolean(values[8]) };
+          else if (sql.startsWith("INSERT INTO leaderboard_entries")) entry = { ownerHash: values[0], displayName: values[1], publicRanked: values[2], tokens: values[3], wordRatio: values[6], gratefulMessages: values[7], frustratedMessages: values[8], workarounds: values[9], phrase: values[10], phraseOccurrences: values[11], phraseSessions: values[12], sessionTurnCounts: values[13], phraseModels: values[14], sharesPhrase: Boolean(values[10]) };
           if (sql.startsWith("INSERT INTO leaderboard_opt_outs")) optedOut = true;
           if (sql.startsWith("DELETE FROM leaderboard_opt_outs")) optedOut = false;
           if (sql.startsWith("DELETE FROM leaderboard_entries")) entry = null;
@@ -78,7 +79,7 @@ function leaderboardDatabase(managementTokenHash) {
 test("builds a narrow leaderboard aggregate from a saved report", () => {
   const value = leaderboardAggregateFromReport({
     stats: { tokens: 12_500_000, agentWords: 8_000, userWords: 2_000, sessionTurnCounts: [3, 18, 42], interactionTone: { gratefulMessages: 7, frustratedMessages: 3 } },
-    phraseCard: { phrase: "you are right to push back", occurrences: 12, distinctSessions: 5 },
+    phraseCard: { phrase: "you are right to push back", occurrences: 12, distinctSessions: 5, sourceModels: aggregate.phrase_models },
     workaroundCard: { count: 4, models: [{ name: "GPT-5.6 Sol", count: 3 }, { name: "Claude Opus 4.8", count: 1 }] },
   });
   assert.deepEqual(value, aggregate);
@@ -229,7 +230,7 @@ test("the creator can persistently opt out and later add anonymous stats back", 
   assert.equal(snapshot.session_lengths.distribution.session_count, 3);
   assert.equal(snapshot.session_lengths.distribution.median_turns, 18);
   assert.equal("samples" in snapshot.session_lengths, false);
-  assert.deepEqual(snapshot.phrases.entries, [{ participant_id: 1, phrase: aggregate.favorite_phrase, occurrences: 12, sessions: 5 }]);
+  assert.deepEqual(snapshot.phrases.entries, [{ participant_id: 1, phrase: aggregate.favorite_phrase, occurrences: 12, sessions: 5, models: aggregate.phrase_models, participants: 1 }]);
   assert.equal(database.entry.ownerHash, "owner-hash");
   assert.equal(database.entry.sharesPhrase, true);
   assert.deepEqual([...database.modelEntries], aggregate.instrumental_workarounds_by_model.map(({ model, count }) => [model, count]));
@@ -257,4 +258,44 @@ test("the creator can persistently opt out and later add anonymous stats back", 
   assert.equal((await included.json()).participation.joined, true);
   assert.equal(database.optedOut, false);
   assert.equal(database.entry.displayName, "Anonymous");
+});
+
+
+test("common phrases rank participants above repetitions and count beyond the visible wall", () => {
+  const rows = Array.from({ length: 205 }, (_, index) => ({
+    participant_id: index + 1, favorite_phrase: index < 3 ? "say the word if you want" : "read only investigation complete",
+    phrase_occurrences: index < 3 ? 10000 : 1, phrase_sessions: 1, phrase_changed_at: "2026-09-07 00:00:00",
+  }));
+  const wall = buildPhraseWall(rows);
+  assert.equal(wall.entries.length, 200);
+  assert.deepEqual(wall.common, [
+    { phrase: "read only investigation complete", participants: 202, occurrences: 202 },
+    { phrase: "say the word if you want", participants: 3, occurrences: 30000 },
+  ]);
+  assert.equal(wall.entries[0].participants, 202);
+  assert.deepEqual(buildPhraseWall(rows.slice(0, 1)).common, []);
+});
+
+test("phrase attribution validates counts and accepts older clients without it", () => {
+  assert.deepEqual(validateLeaderboardAggregate(aggregate).phrase_models, aggregate.phrase_models);
+  for (const models of [null, [{ model: "GPT-6 Astra", count: 11 }], [{ model: "secret@example.com", count: 12 }], [{ model: "GPT-6 Astra", count: 6 }, { model: "GPT-6 Astra", count: 6 }]]) {
+    assert.equal(validateLeaderboardAggregate({ ...aggregate, phrase_models: models }), null);
+  }
+  const { phrase_models, ...legacy } = aggregate;
+  assert.deepEqual(validateLeaderboardAggregate(legacy), legacy);
+});
+
+test("explicit leaderboard joins persist model attribution and hiding a phrase clears it", async () => {
+  const database = leaderboardDatabase();
+  const env = { LEADERBOARD_DB: database, CLIENT_RATE_LIMITER: { limit: async () => ({ success: true }) } };
+  for (const include of [true, false]) {
+    const response = await handleRequest(new Request("https://example.com/v1/leaderboard/entry", {
+      method: "POST", headers: { "content-type": "application/json", "x-behavior-wrapped-protocol": "1", "x-behavior-wrapped-client": "a".repeat(32) },
+      body: JSON.stringify({ ...aggregate, consent: true, public_ranked: false, include_phrase: include }),
+    }), env);
+    assert.equal(response.status, 200);
+    const snapshot = await response.json();
+    assert.deepEqual(JSON.parse(database.entry.phraseModels), include ? aggregate.phrase_models : []);
+    assert.deepEqual(snapshot.phrases.entries[0]?.models || [], include ? aggregate.phrase_models : []);
+  }
 });
