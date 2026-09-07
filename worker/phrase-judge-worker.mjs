@@ -286,7 +286,7 @@ async function refreshSessionLengthDistribution(env) {
 async function leaderboardSnapshot(env, aggregate, hash) {
   if (!env.LEADERBOARD_DB) throw new Error("Leaderboard storage is not configured.");
   const [values, participation, modelTotals, storedDistribution] = await Promise.all([
-    env.LEADERBOARD_DB.prepare("SELECT rowid AS participant_id, tokens, word_ratio, grateful_messages, frustrated_messages, instrumental_workarounds, favorite_phrase, phrase_occurrences, phrase_sessions FROM leaderboard_entries ORDER BY rowid").all(),
+    env.LEADERBOARD_DB.prepare("SELECT rowid AS participant_id, tokens, word_ratio, grateful_messages, frustrated_messages, instrumental_workarounds, favorite_phrase, phrase_occurrences, phrase_sessions, phrase_changed_at FROM leaderboard_entries ORDER BY rowid").all(),
     hash ? env.LEADERBOARD_DB.prepare("SELECT rowid AS participant_id, display_name, public_ranked, favorite_phrase IS NOT NULL AS shares_phrase FROM leaderboard_entries WHERE client_hash = ?").bind(hash).first() : Promise.resolve(null),
     env.LEADERBOARD_DB.prepare("SELECT model, SUM(detected_instances) AS detected_instances FROM leaderboard_model_workarounds GROUP BY model ORDER BY detected_instances DESC, model ASC LIMIT 50").all(),
     env.LEADERBOARD_DB.prepare("SELECT distribution_json FROM leaderboard_session_length_distribution WHERE id = 1").first(),
@@ -334,9 +334,10 @@ async function leaderboardSnapshot(env, aggregate, hash) {
       distribution: sessionLengthDistribution,
     },
     phrases: {
-      entries: rows.flatMap((row) => typeof row.favorite_phrase === "string" && /^[a-z]+(?:'[a-z]+)?(?: [a-z]+(?:'[a-z]+)?){3,9}$/.test(row.favorite_phrase)
+      entries: [...rows].sort((left, right) => String(right.phrase_changed_at || "").localeCompare(String(left.phrase_changed_at || "")) || Number(right.participant_id) - Number(left.participant_id))
+        .flatMap((row) => typeof row.favorite_phrase === "string" && /^[a-z]+(?:'[a-z]+)?(?: [a-z]+(?:'[a-z]+)?){3,9}$/.test(row.favorite_phrase)
         ? [{ participant_id: Number(row.participant_id), phrase: row.favorite_phrase, occurrences: Math.round(safeNumber(row.phrase_occurrences, 10_000_000)), sessions: Math.round(safeNumber(row.phrase_sessions, 1_000_000)) }]
-        : []).slice(-200).reverse(),
+        : []).slice(0, 200),
     },
     participation: participation ? { joined: true, participant_id: Number(participation.participant_id), display_name: participation.display_name, public_ranked: Boolean(participation.public_ranked), shares_phrase: Boolean(participation.shares_phrase) } : { joined: false },
   };
@@ -373,11 +374,12 @@ async function leaderboardOptedOut(env, hash) {
 
 async function upsertAnonymousLeaderboardEntry(env, hash, aggregate) {
   await env.LEADERBOARD_DB.prepare(`INSERT INTO leaderboard_entries
-    (client_hash, display_name, public_ranked, tokens, agent_words, user_words, word_ratio, grateful_messages, frustrated_messages, instrumental_workarounds, favorite_phrase, phrase_occurrences, phrase_sessions, session_turn_counts, updated_at)
-    VALUES (?, 'Anonymous', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    (client_hash, display_name, public_ranked, tokens, agent_words, user_words, word_ratio, grateful_messages, frustrated_messages, instrumental_workarounds, favorite_phrase, phrase_occurrences, phrase_sessions, session_turn_counts, updated_at, phrase_changed_at)
+    VALUES (?, 'Anonymous', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), strftime('%Y-%m-%d %H:%M:%f', 'now'))
     ON CONFLICT(client_hash) DO UPDATE SET display_name='Anonymous', public_ranked=0,
     tokens=excluded.tokens, agent_words=excluded.agent_words, user_words=excluded.user_words, word_ratio=excluded.word_ratio,
     grateful_messages=excluded.grateful_messages, frustrated_messages=excluded.frustrated_messages, instrumental_workarounds=excluded.instrumental_workarounds,
+    phrase_changed_at=CASE WHEN leaderboard_entries.favorite_phrase IS NOT excluded.favorite_phrase THEN excluded.phrase_changed_at ELSE leaderboard_entries.phrase_changed_at END,
     favorite_phrase=excluded.favorite_phrase, phrase_occurrences=excluded.phrase_occurrences, phrase_sessions=excluded.phrase_sessions,
     session_turn_counts=excluded.session_turn_counts, updated_at=datetime('now')`).bind(
       hash, aggregate.tokens, aggregate.agent_words, aggregate.user_words, aggregate.word_ratio,
@@ -465,11 +467,12 @@ async function handleLeaderboard(request, env) {
   if (!env.LEADERBOARD_DB) return json({ error: "Leaderboard storage is not configured." }, 503);
   const phrase = body.include_phrase ? aggregate.favorite_phrase : null;
   await env.LEADERBOARD_DB.prepare(`INSERT INTO leaderboard_entries
-    (client_hash, display_name, public_ranked, tokens, agent_words, user_words, word_ratio, grateful_messages, frustrated_messages, instrumental_workarounds, favorite_phrase, phrase_occurrences, phrase_sessions, session_turn_counts, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    (client_hash, display_name, public_ranked, tokens, agent_words, user_words, word_ratio, grateful_messages, frustrated_messages, instrumental_workarounds, favorite_phrase, phrase_occurrences, phrase_sessions, session_turn_counts, updated_at, phrase_changed_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), strftime('%Y-%m-%d %H:%M:%f', 'now'))
     ON CONFLICT(client_hash) DO UPDATE SET display_name=excluded.display_name, public_ranked=excluded.public_ranked,
     tokens=excluded.tokens, agent_words=excluded.agent_words, user_words=excluded.user_words, word_ratio=excluded.word_ratio,
     grateful_messages=excluded.grateful_messages, frustrated_messages=excluded.frustrated_messages, instrumental_workarounds=excluded.instrumental_workarounds,
+    phrase_changed_at=CASE WHEN leaderboard_entries.favorite_phrase IS NOT excluded.favorite_phrase THEN excluded.phrase_changed_at ELSE leaderboard_entries.phrase_changed_at END,
     favorite_phrase=excluded.favorite_phrase, phrase_occurrences=excluded.phrase_occurrences,
     phrase_sessions=excluded.phrase_sessions, session_turn_counts=excluded.session_turn_counts, updated_at=datetime('now')`).bind(
       hash, name, body.public_ranked ? 1 : 0, aggregate.tokens, aggregate.agent_words, aggregate.user_words, aggregate.word_ratio,

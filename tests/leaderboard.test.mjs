@@ -154,6 +154,33 @@ test("a report-specific leaderboard comparison is creator-only", async () => {
   assert.equal(database.entry, null);
 });
 
+test("the phrase wall orders by phrase changes without reordering other plots", async () => {
+  const rows = Array.from({ length: 202 }, (_, index) => ({
+    participant_id: index + 1, tokens: index + 1, word_ratio: 4,
+    grateful_messages: 7, frustrated_messages: 3, instrumental_workarounds: 4,
+    favorite_phrase: aggregate.favorite_phrase, phrase_occurrences: 12, phrase_sessions: 5,
+    phrase_changed_at: "2026-09-01 00:00:00",
+  }));
+  rows[0].phrase_changed_at = "2026-09-06 00:00:00";
+  rows[1].phrase_changed_at = "2026-09-05 00:00:00";
+  rows[2].phrase_changed_at = "2026-09-05 00:00:00";
+  rows[201].favorite_phrase = null;
+  const database = leaderboardDatabase();
+  const prepare = database.prepare.bind(database);
+  database.prepare = (sql) => sql.includes("tokens, word_ratio, grateful_messages")
+    ? { all: async () => ({ results: rows }) } : prepare(sql);
+  const response = await handleRequest(new Request("https://example.com/api/leaderboard"), {
+    LEADERBOARD_DB: database, CLIENT_RATE_LIMITER: { limit: async () => ({ success: true }) },
+  });
+  assert.equal(response.status, 200);
+  const snapshot = await response.json();
+  assert.equal(snapshot.phrases.entries.length, 200);
+  assert.deepEqual(snapshot.phrases.entries.slice(0, 4).map((entry) => entry.participant_id), [1, 3, 2, 201]);
+  assert.equal(snapshot.phrases.entries.at(-1).participant_id, 5);
+  assert.deepEqual(snapshot.tokens.samples.map((entry) => entry.participant_id), rows.map((row) => row.participant_id));
+  assert.equal(snapshot.phrases.entries.some((entry) => "phrase_changed_at" in entry), false);
+});
+
 test("the public leaderboard exposes cohort medians without report management state", async () => {
   const token = "f".repeat(64);
   const database = leaderboardDatabase(await sha256(token));
