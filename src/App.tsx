@@ -455,7 +455,7 @@ function ordinal(value: number) {
   return `${value}${value % 10 === 1 ? "st" : value % 10 === 2 ? "nd" : value % 10 === 3 ? "rd" : "th"}`;
 }
 
-function percentileCopy(value: number | null, empty = "No cohort signal yet") {
+function percentileCopy(value: number | null, empty = "Not enough data yet") {
   if (value === null) return empty;
   return value === 0 ? "Below the 1st percentile" : `${ordinal(value)} percentile`;
 }
@@ -573,21 +573,21 @@ function TokenUsageFigure({ metric, participantId, included, publicView = false 
   const ticks = compactLogTicks(10 ** minimum, 10 ** maximum, width);
   const median = quantile(values, .5);
   return <section className="leader-figure leader-token-figure">
-    <div className="leader-figure-head"><div><span>01 · Token usage</span><h2>{publicView ? "How many tokens do agents process?" : "How many tokens did your agents process?"}</h2></div><div className="leader-result"><strong>{fmtCompact(metric.value)}</strong><small>{publicView ? "cohort median" : percentileCopy(metric.percentile)}</small></div></div>
+    <div className="leader-figure-head"><div><span>01 · Token usage</span><h2>{publicView ? "How many tokens do agents process?" : "How many tokens did your agents process?"}</h2></div><div className="leader-result"><strong>{fmtCompact(metric.value)}</strong><small>{publicView ? "Median" : percentileCopy(metric.percentile)}</small></div></div>
     <div className="leader-plot" ref={ref}>
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Token usage distribution for ${values.length} anonymous participants on a logarithmic axis.${publicView ? "" : ` Your value is ${fmtCompact(metric.value)} tokens.`}`}>
         <rect className="leader-chart-frame" x={left} y="38" width={right - left} height="180" />
         {values.length > 0 && <path className="leader-violin" d={violinPath(logSamples, minimum, maximum, left, right, 127, 67)} />}
         {median > 0 && <line className="leader-median" x1={xFor(median)} x2={xFor(median)} y1="48" y2="206"><title>Median: {fmtCompact(median)} tokens</title></line>}
         {dots.points.map((point) => { const label = `Participant #${samples[point.index].participant_id}: ${point.value.toLocaleString()} tokens`; return <InteractivePlotPoint key={samples[point.index].participant_id} className="leader-dot" cx={point.x} cy={point.y} radius={dots.radius} label={label} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} />; })}
-        {!publicView && <><InteractivePlotPoint className="leader-you-dot" cx={xFor(metric.value)} cy={127} radius={5} ring optedOut={!included} label={`${included ? `You${participantId ? ` · Participant #${participantId}` : ""}` : "Your report · not in cohort"}: ${metric.value.toLocaleString()} tokens`} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} /><text className="leader-you-label" x={Math.min(right - 4, xFor(metric.value) + 11)} y="112" textAnchor={xFor(metric.value) > right - 70 ? "end" : "start"}>YOU</text></>}
+        {!publicView && <><InteractivePlotPoint className="leader-you-dot" cx={xFor(metric.value)} cy={127} radius={5} ring optedOut={!included} label={`${included ? `You${participantId ? ` · Participant #${participantId}` : ""}` : "Your report · not on the leaderboard"}: ${metric.value.toLocaleString()} tokens`} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} /><text className="leader-you-label" x={Math.min(right - 4, xFor(metric.value) + 11)} y="112" textAnchor={xFor(metric.value) > right - 70 ? "end" : "start"}>YOU</text></>}
         <line className="leader-axis" x1={left} x2={right} y1="230" y2="230" />
         {ticks.map((tick) => <g key={tick}><line className="leader-tick" x1={xFor(tick)} x2={xFor(tick)} y1="230" y2="236" /><text className="leader-tick-label" x={xFor(tick)} y="252" textAnchor="middle">{fmtAxisCompact(tick)}</text></g>)}
         <text className="leader-axis-title" x={(left + right) / 2} y="281" textAnchor="middle">Tokens used · log scale</text>
       </svg>
       <PlotTooltip value={tooltip} />
     </div>
-    <p className="leader-figure-note">Dashed line = median.</p>
+    <p className="leader-figure-note">The dashed line marks the median.</p>
   </section>;
 }
 
@@ -609,7 +609,7 @@ function RelationshipFigure({ ratio, appreciation, points, participantId, includ
   const yMiddle = yFor(50);
   const xTicks = [.1, .25, .5, 1, 2, 5, 10, 25, 50, 100].filter((tick) => tick >= 10 ** minimum && tick <= 10 ** maximum);
   return <section className="leader-figure leader-relationship-figure">
-    <div className="leader-figure-head"><div><span>02 · Yap Ratio × Agent Appreciation Index</span><h2>{publicView ? "What do human-agent relationships look like?" : "What kind of relationship do you have with your agents?"}</h2></div><div className="leader-result leader-result-pair"><strong>{ratio.toFixed(1)}×</strong><small>{publicView ? "Median Yap Ratio" : "Yap Ratio"}</small><strong>{appreciation === null ? "—" : `${appreciation.toFixed(0)}%`}</strong><small>{publicView ? "Median appreciation" : "Appreciation"}</small></div></div>
+    <div className="leader-figure-head"><div><span>02 · Yap Ratio × Agent Appreciation Index</span><h2>{publicView ? "How do people interact with their agents?" : "How do you interact with your agents?"}</h2></div><div className="leader-result leader-result-pair"><strong>{ratio.toFixed(1)}×</strong><small>{publicView ? "Median Yap Ratio" : "Yap Ratio"}</small><strong>{appreciation === null ? "—" : `${appreciation.toFixed(0)}%`}</strong><small>{publicView ? "Median appreciation" : "Appreciation"}</small></div></div>
     <div className="leader-plot" ref={ref}>
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Relationship plot comparing Yap Ratio and Agent Appreciation Index for ${usable.length} anonymous participants.`}>
         <rect className="leader-quadrant leader-quadrant-kind" x={left} y={top} width={xMiddle - left} height={yMiddle - top} />
@@ -620,19 +620,19 @@ function RelationshipFigure({ ratio, appreciation, points, participantId, includ
         <line className="leader-grid-line" x1={xMiddle} x2={xMiddle} y1={top} y2={bottom} />
         <line className="leader-grid-line" x1={left} x2={right} y1={yMiddle} y2={yMiddle} />
         {usable.map((point) => { const label = `Participant #${point.participant_id}: ${point.yap_ratio.toFixed(1)}× Yap Ratio · ${point.appreciation_index.toFixed(0)}% appreciation`; return <InteractivePlotPoint key={point.participant_id} className="leader-dot relationship-dot" cx={xFor(point.yap_ratio)} cy={yFor(point.appreciation_index)} radius={3.5} label={label} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} />; })}
-        {!publicView && appreciation !== null && <><InteractivePlotPoint className="leader-you-dot" cx={xFor(ratio)} cy={yFor(appreciation)} radius={5} ring optedOut={!included} label={`${included ? `You${participantId ? ` · Participant #${participantId}` : ""}` : "Your report · not in cohort"}: ${ratio.toFixed(1)}× Yap Ratio · ${appreciation.toFixed(0)}% appreciation`} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} /><text className="leader-you-label" x={Math.min(right - 4, xFor(ratio) + 12)} y={Math.max(top + 14, yFor(appreciation) - 10)} textAnchor={xFor(ratio) > right - 70 ? "end" : "start"}>YOU</text></>}
+        {!publicView && appreciation !== null && <><InteractivePlotPoint className="leader-you-dot" cx={xFor(ratio)} cy={yFor(appreciation)} radius={5} ring optedOut={!included} label={`${included ? `You${participantId ? ` · Participant #${participantId}` : ""}` : "Your report · not on the leaderboard"}: ${ratio.toFixed(1)}× Yap Ratio · ${appreciation.toFixed(0)}% appreciation`} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} /><text className="leader-you-label" x={Math.min(right - 4, xFor(ratio) + 12)} y={Math.max(top + 14, yFor(appreciation) - 10)} textAnchor={xFor(ratio) > right - 70 ? "end" : "start"}>YOU</text></>}
         {[0, 25, 50, 75, 100].map((tick) => <g key={tick}><line className="leader-tick" x1={left - 6} x2={left} y1={yFor(tick)} y2={yFor(tick)} /><text className="leader-tick-label" x={left - 10} y={yFor(tick) + 4} textAnchor="end">{tick}%</text></g>)}
         {xTicks.map((tick) => <g key={tick}><line className="leader-tick" x1={xFor(tick)} x2={xFor(tick)} y1={bottom} y2={bottom + 6} /><text className="leader-tick-label" x={xFor(tick)} y={bottom + 21} textAnchor="middle">{tick}×</text></g>)}
         <g className="leader-edge-pill" transform={`translate(${(left + right) / 2} ${top})`}><rect x="-71" y="-11" width="142" height="22" rx="11" /><text y="4" textAnchor="middle">More appreciation</text></g>
         <g className="leader-edge-pill" transform={`translate(${(left + right) / 2} ${bottom})`}><rect x="-67" y="-11" width="134" height="22" rx="11" /><text y="4" textAnchor="middle">More frustration</text></g>
         <g className="leader-edge-pill" transform={`translate(${left} ${(top + bottom) / 2}) rotate(-90)`}><rect x="-57" y="-11" width="114" height="22" rx="11" /><text y="4" textAnchor="middle">You talk more</text></g>
         <g className="leader-edge-pill" transform={`translate(${right} ${(top + bottom) / 2}) rotate(90)`}><rect x="-65" y="-11" width="130" height="22" rx="11" /><text y="4" textAnchor="middle">Agent talks more</text></g>
-        <text className="leader-axis-title" x={(left + right) / 2} y={height - 9} textAnchor="middle">Yap Ratio = agent words / your words</text>
-        <text className="leader-axis-title" transform={`translate(14 ${(top + bottom) / 2}) rotate(-90)`} textAnchor="middle">Agent Appreciation Index = thanks ÷ thanks or scolds</text>
+        <text className="leader-axis-title" x={(left + right) / 2} y={height - 9} textAnchor="middle">Yap Ratio = agent words ÷ human words</text>
+        <text className="leader-axis-title" transform={`translate(14 ${(top + bottom) / 2}) rotate(-90)`} textAnchor="middle">Appreciation = thanks ÷ (thanks + frustration)</text>
       </svg>
       <PlotTooltip value={tooltip} />
     </div>
-    {!publicView && appreciation === null && <p className="leader-figure-note">Your report had no thank-or-scold moments, so your point cannot be placed vertically yet.</p>}
+    {!publicView && appreciation === null && <p className="leader-figure-note">No messages expressing thanks or frustration were found in this report, so it has no point on this chart.</p>}
   </section>;
 }
 
@@ -659,20 +659,20 @@ function WorkaroundFigure({ metric, participantId, included, publicView = false 
   const dots = swarm(values, xFor, 103, 54);
   const median = quantile(values, .5);
   return <section className="leader-figure leader-workaround-figure">
-    <div className="leader-figure-head"><div><span>03 · Persistence through blockers</span><h2>{publicView ? "How often do agents persist through blockers?" : "How often did your agents persist through blockers?"}</h2></div><div className="leader-result"><strong>{metric.value.toLocaleString()}</strong><small>{publicView ? "cohort median" : percentileCopy(metric.percentile)}</small></div></div>
+    <div className="leader-figure-head"><div><span>03 · Workarounds</span><h2>{publicView ? "How often do agents work around blockers?" : "How often did your agents work around blockers?"}</h2></div><div className="leader-result"><strong>{metric.value.toLocaleString()}</strong><small>{publicView ? "Median" : percentileCopy(metric.percentile)}</small></div></div>
     <div className="leader-plot" ref={ref}>
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Distribution of persistence-through-blocker counts for ${values.length} anonymous participants.${publicView ? "" : ` Your value is ${metric.value}.`}`}>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Workarounds detected for ${values.length} anonymous participants.${publicView ? "" : ` Your value is ${metric.value}.`}`}>
         <rect className="leader-chart-frame" x={left} y="30" width={right - left} height="142" />
-        {values.length > 0 && <line className="leader-median" x1={xFor(median)} x2={xFor(median)} y1="38" y2="164"><title>Median: {median.toFixed(1)} instances of persistence through blockers</title></line>}
-        {dots.points.map((point) => { const label = `Participant #${samples[point.index].participant_id}: ${point.value} instance${point.value === 1 ? "" : "s"} of persistence through blockers`; return <InteractivePlotPoint key={samples[point.index].participant_id} className="leader-dot workaround-dot" cx={point.x} cy={point.y} radius={dots.radius} label={label} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} />; })}
-        {!publicView && <><InteractivePlotPoint className="leader-you-dot" cx={xFor(metric.value)} cy={103} radius={5} ring optedOut={!included} label={`${included ? `You${participantId ? ` · Participant #${participantId}` : ""}` : "Your report · not in cohort"}: ${metric.value} instance${metric.value === 1 ? "" : "s"} of persistence through blockers`} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} /><text className="leader-you-label" x={Math.min(right - 4, xFor(metric.value) + 11)} y="88" textAnchor={xFor(metric.value) > right - 70 ? "end" : "start"}>YOU</text></>}
+        {values.length > 0 && <line className="leader-median" x1={xFor(median)} x2={xFor(median)} y1="38" y2="164"><title>Median: {median.toFixed(1)} workarounds</title></line>}
+        {dots.points.map((point) => { const label = `Participant #${samples[point.index].participant_id}: ${point.value} workaround${point.value === 1 ? "" : "s"}`; return <InteractivePlotPoint key={samples[point.index].participant_id} className="leader-dot workaround-dot" cx={point.x} cy={point.y} radius={dots.radius} label={label} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} />; })}
+        {!publicView && <><InteractivePlotPoint className="leader-you-dot" cx={xFor(metric.value)} cy={103} radius={5} ring optedOut={!included} label={`${included ? `You${participantId ? ` · Participant #${participantId}` : ""}` : "Your report · not on the leaderboard"}: ${metric.value} workaround${metric.value === 1 ? "" : "s"}`} onPointer={(x, y, text) => setTooltip(pointerTooltip(ref.current, x, y, text))} onFocus={(element, text) => setTooltip(focusedTooltip(ref.current, element, text))} onLeave={() => setTooltip(null)} /><text className="leader-you-label" x={Math.min(right - 4, xFor(metric.value) + 11)} y="88" textAnchor={xFor(metric.value) > right - 70 ? "end" : "start"}>YOU</text></>}
         <line className="leader-axis" x1={left} x2={right} y1="184" y2="184" />
         {ticks.map((tick) => <g key={tick}><line className="leader-tick" x1={xFor(tick)} x2={xFor(tick)} y1="184" y2="190" /><text className="leader-tick-label" x={xFor(tick)} y="207" textAnchor="middle">{tick.toLocaleString()}</text></g>)}
-        <text className="leader-axis-title" x={(left + right) / 2} y="237" textAnchor="middle">Instances of persistence through blockers</text>
+        <text className="leader-axis-title" x={(left + right) / 2} y="237" textAnchor="middle">Workarounds detected</text>
       </svg>
       <PlotTooltip value={tooltip} />
     </div>
-    {!!metric.by_model?.length && <div className="leader-model-totals"><span>Detected instances by model</span>{metric.by_model.map((item) => <div key={item.model}><strong>{item.model}</strong><b>{item.count.toLocaleString()}</b></div>)}<small>Descriptive totals only · not adjusted for model usage</small></div>}
+    {!!metric.by_model?.length && <div className="leader-model-totals"><span>Workarounds by model</span>{metric.by_model.map((item) => <div key={item.model}><strong>{item.model}</strong><b>{item.count.toLocaleString()}</b></div>)}<small>Totals depend on how much each model was used.</small></div>}
   </section>;
 }
 
@@ -691,14 +691,13 @@ function PhraseAttribution({ models = [], metadata }: { models?: PhraseSourceMod
 
 function PhraseWallFigure({ entries, common = [], participantId }: { entries: PhraseWallEntry[]; common?: CommonPhrase[]; participantId?: number }) {
   return <section className="leader-figure leader-phrase-figure">
-    <div className="leader-figure-head"><div><span>05 · Favorite phrase wall</span><h2>What do everyone’s agents keep saying?</h2></div><div className="leader-result"><strong>{entries.length.toLocaleString()}</strong><small>phrases shared</small></div></div>
-    {!!common.length && <div className="leader-common-phrases"><h3>Common phrases</h3><p>The same favorite, across different participants.</p><ol>{common.map((item) => <li key={item.phrase}><strong>{item.participants.toLocaleString()} <span>participants</span></strong><blockquote>“{item.phrase}”</blockquote></li>)}</ol></div>}
-    {!!entries.length && <p className="leader-phrase-order">Latest phrase changes</p>}
+    <div className="leader-figure-head"><div><span>05 · Favorite phrase wall</span><h2>What agents keep saying</h2></div><div className="leader-result"><strong>{entries.length.toLocaleString()}</strong><small>favorites</small></div></div>
+    {!!common.length && <div className="leader-common-phrases"><h3>Common phrases</h3><p>Favorites shared by the most participants.</p><ol>{common.map((item) => <li key={item.phrase}><strong>{item.participants.toLocaleString()} <span>participants</span></strong><blockquote>“{item.phrase}”</blockquote></li>)}</ol></div>}
     {entries.length ? <div className="leader-phrase-wall">{entries.map((entry) => <article className={entry.participant_id === participantId ? "is-you" : ""} key={`${entry.participant_id}-${entry.phrase}`}>
       {entry.participant_id === participantId && <b>Yours</b>}
       <blockquote>“{entry.phrase}”</blockquote>
       <PhraseAttribution models={entry.models} metadata={`${entry.occurrences.toLocaleString()} time${entry.occurrences === 1 ? "" : "s"} · ${entry.sessions.toLocaleString()} session${entry.sessions === 1 ? "" : "s"}`} />
-    </article>)}</div> : <div className="leader-empty-wall"><strong>The wall is waiting for its first phrase.</strong><span>Favorite phrases from participating public Wrapped reports will appear here anonymously.</span></div>}
+    </article>)}</div> : <div className="leader-empty-wall"><strong>No favorite phrases yet</strong><span>Create a Wrapped to add a phrase to the wall.</span><a href="/">Create a Wrapped</a></div>}
   </section>;
 }
 
@@ -722,20 +721,20 @@ function SessionLengthFigure({ metric, included, publicView = false }: { metric:
   const currentMedian = quantile(currentValues, .5);
   const longest = Math.max(0, ...currentValues);
   return <section className="leader-figure leader-session-figure">
-    <div className="leader-figure-head"><div><span>04 · Session lengths</span><h2>How long does everyone keep the conversation going?</h2></div><div className="leader-result"><strong>{publicView ? fmtCompact(distribution.session_count) : longest.toLocaleString()}</strong><small>{publicView ? "sessions in contour" : "your longest · turns"}</small></div></div>
-    <div className="leader-session-legend"><span><i className="contour" />Cohort density</span>{!publicView && currentMedian > 0 && <span><i className="you" />Your median</span>}</div>
+    <div className="leader-figure-head"><div><span>04 · Session lengths</span><h2>How long do conversations last?</h2></div><div className="leader-result"><strong>{publicView ? fmtCompact(distribution.session_count) : longest.toLocaleString()}</strong><small>{publicView ? "sessions" : "turns in your longest session"}</small></div></div>
+    <div className="leader-session-legend"><span><i className="contour" />All participants</span>{!publicView && currentMedian > 0 && <span><i className="you" />Your median</span>}</div>
     <div className="leader-plot" ref={ref}>
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Precomputed session length density contour for ${distribution.session_count} sessions.${publicView || !currentValues.length ? "" : ` Your median session length is ${currentMedian.toFixed(1)} turns.`}`}>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Session length distribution across ${distribution.session_count} sessions.${publicView || !currentValues.length ? "" : ` Your median session length is ${currentMedian.toFixed(1)} turns.`}`}>
         <rect className="leader-chart-frame" x={left} y="28" width={right - left} height="178" />
-        {contourPath && <path className="leader-session-violin" d={contourPath}><title>Density contour for {distribution.session_count.toLocaleString()} sessions</title></path>}
-        {distribution.median_turns > 0 && <line className="leader-median" x1={xFor(distribution.median_turns)} x2={xFor(distribution.median_turns)} y1="38" y2="196"><title>Cohort median: {distribution.median_turns.toFixed(1)} turns</title></line>}
+        {contourPath && <path className="leader-session-violin" d={contourPath}><title>Session length distribution across {distribution.session_count.toLocaleString()} sessions</title></path>}
+        {distribution.median_turns > 0 && <line className="leader-median" x1={xFor(distribution.median_turns)} x2={xFor(distribution.median_turns)} y1="38" y2="196"><title>Median: {distribution.median_turns.toFixed(1)} turns</title></line>}
         {!publicView && currentMedian > 0 && <><line className={`leader-session-you-median ${included ? "" : "is-opted-out"}`} x1={xFor(currentMedian)} x2={xFor(currentMedian)} y1="48" y2="186"><title>Your median: {currentMedian.toFixed(1)} turns</title></line><text className="leader-you-label" x={Math.min(right - 4, xFor(currentMedian) + 10)} y="43" textAnchor={xFor(currentMedian) > right - 80 ? "end" : "start"}>YOUR MEDIAN</text></>}
         <line className="leader-axis" x1={left} x2={right} y1="218" y2="218" />
         {ticks.map((tick) => <g key={tick}><line className="leader-tick" x1={xFor(tick)} x2={xFor(tick)} y1="218" y2="224" /><text className="leader-tick-label" x={xFor(tick)} y="241" textAnchor="middle">{fmtAxisCompact(tick)}</text></g>)}
         <text className="leader-axis-title" x={(left + right) / 2} y="274" textAnchor="middle">Turns per session · log scale</text>
       </svg>
     </div>
-    <p className="leader-figure-note">One turn is one human message. The violin contour is precomputed when cohort data changes; no individual cohort sessions are sent to this page. Dashed line = cohort median.{!publicView && !included ? " Your median is shown for comparison but is not included in the cohort." : ""}</p>
+    <p className="leader-figure-note">One turn is one human message. Wider sections show more sessions. The dashed line marks the median.{!publicView && !included ? " Your report is shown for comparison but is not included in these totals." : ""}</p>
   </section>;
 }
 
@@ -756,19 +755,19 @@ function PublicLeaderboardView() {
   const [error, setError] = useState("");
   useEffect(() => {
     fetch("/api/leaderboard").then(async (response) => {
-      if (!response.ok) throw new Error((await response.json()).error || "Could not load the public leaderboard.");
+      if (!response.ok) throw new Error(response.status === 429 ? "Too many requests. Wait a minute, then reload the leaderboard." : "Could not load the leaderboard. Reload the page to try again.");
       return response.json();
-    }).then(setSnapshot).catch((caught) => setError(caught instanceof Error ? caught.message : "Could not load the public leaderboard."));
+    }).then(setSnapshot).catch((caught) => setError(caught instanceof Error && !(caught instanceof TypeError) ? caught.message : "Could not load the leaderboard. Check your connection and reload the page."));
   }, []);
-  if (error) return <main className="shared-error"><h1>Leaderboard unavailable</h1><p>{error}</p><a href="/">Back to Behavior Wrapped</a></main>;
-  if (!snapshot) return <main className="shared-loading"><div className="orb" /><p>Opening the public leaderboard…</p></main>;
+  if (error) return <main className="shared-error"><h1>Leaderboard unavailable</h1><p>{error}</p><a href="/leaderboard">Reload leaderboard</a></main>;
+  if (!snapshot) return <main className="shared-loading"><div className="orb" /><p>Loading the leaderboard…</p></main>;
   return <main className="leaderboard-page public-leaderboard-page">
     <div className="page-chrome leader-chrome">
       <a className="leader-back" href="/">← Behavior Wrapped</a>
       <div className="page-wordmark" aria-label="Behavior Wrapped"><strong><span>Behavior</span><span>Wrapped</span></strong></div>
       <span className="page-status">Public</span>
     </div>
-    <header className="leader-hero"><div><span className="eyebrow">The public leaderboard · Last 30 days</span><h1>How agents compare</h1></div><p><strong>{snapshot.cohort_size.toLocaleString()}</strong><span>participant{snapshot.cohort_size === 1 ? "" : "s"}<br />in the cohort</span></p></header>
+    <header className="leader-hero"><div><span className="eyebrow">Public leaderboard</span><h1>How agents compare</h1></div><p><strong>{snapshot.cohort_size.toLocaleString()}</strong><span>{snapshot.cohort_size === 1 ? "participant" : "participants"}</span></p></header>
     <LeaderboardFigures snapshot={snapshot} publicView />
     <footer className="leader-footer"><SusanCalvinCredit /></footer>
   </main>;
@@ -788,27 +787,27 @@ function LeaderboardView({ id }: { id: string }) {
 
   async function loadSnapshot() {
     const response = await fetch(`/api/reports/${id}/leaderboard`, { method: "POST", headers: { "Content-Type": "application/json", ...managementHeaders() }, body: JSON.stringify({ action: "snapshot" }) });
-    if (!response.ok) throw new Error((await response.json()).error || "Could not load the leaderboards.");
+    if (!response.ok) throw new Error((await response.json()).error || "Could not load the leaderboard. Reload the page to try again.");
     const next = await response.json() as LeaderboardSnapshot;
-    if (!next.can_manage) throw new Error("This private leaderboard link is missing or invalid.");
+    if (!next.can_manage) throw new Error("This comparison link is missing or invalid. Open the leaderboard from your Wrapped report.");
     setSnapshot(next);
   }
 
   useEffect(() => {
     if (!managementToken) { window.location.replace("/leaderboard"); return; }
     Promise.all([
-      fetch(`/api/reports/${id}`).then(async (response) => { if (!response.ok) throw new Error("This local Wrapped was not found."); return response.json(); }),
+      fetch(`/api/reports/${id}`).then(async (response) => { if (!response.ok) throw new Error("This Wrapped report was not found. Check that you opened the correct report link."); return response.json(); }),
       loadSnapshot(),
-    ]).then(([saved]) => setReport(saved)).catch((caught) => setError(caught.message)).finally(() => setLoading(false));
+    ]).then(([saved]) => setReport(saved)).catch((caught) => setError(caught instanceof Error && !(caught instanceof TypeError) ? caught.message : "Could not load your comparison. Check your connection and reload the page.")).finally(() => setLoading(false));
   }, [id]);
 
   async function include() {
     setSaving(true); setError("");
     try {
       const response = await fetch(`/api/reports/${id}/leaderboard`, { method: "POST", headers: { "Content-Type": "application/json", ...managementHeaders() }, body: JSON.stringify({ action: "include" }) });
-      if (!response.ok) throw new Error((await response.json()).error || "Could not add your anonymous stats.");
+      if (!response.ok) throw new Error((await response.json()).error || "Could not add your report. Try again.");
       setSnapshot(await response.json());
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not add your anonymous stats."); }
+    } catch (caught) { setError(caught instanceof Error && !(caught instanceof TypeError) ? caught.message : "Could not add your report. Check your connection and try again."); }
     finally { setSaving(false); }
   }
 
@@ -817,15 +816,15 @@ function LeaderboardView({ id }: { id: string }) {
     setSaving(true); setError("");
     try {
       const response = await fetch(`/api/reports/${id}/leaderboard`, { method: "DELETE", headers: managementHeaders() });
-      if (!response.ok) throw new Error((await response.json()).error || "Could not remove your entry.");
+      if (!response.ok) throw new Error((await response.json()).error || "Could not remove your report. Try again.");
       await loadSnapshot();
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not remove your entry."); }
+    } catch (caught) { setError(caught instanceof Error && !(caught instanceof TypeError) ? caught.message : "Could not remove your report. Check your connection and try again."); }
     finally { setSaving(false); }
   }
 
-  if (loading) return <main className="shared-loading"><div className="orb" /><p>Finding your place in the cohort…</p></main>;
+  if (loading) return <main className="shared-loading"><div className="orb" /><p>Loading your comparison…</p></main>;
   if (error && (!report || !snapshot)) return <main className="shared-error"><h1>Leaderboard unavailable</h1><p>{error}</p><a href={`/w/${id}`}>Back to your Wrapped</a></main>;
-  if (!managementToken) return <main className="shared-loading"><div className="orb" /><p>Opening the public leaderboard…</p></main>;
+  if (!managementToken) return <main className="shared-loading"><div className="orb" /><p>Loading the leaderboard…</p></main>;
   if (!report || !snapshot) return null;
 
   return <main className="leaderboard-page">
@@ -834,12 +833,12 @@ function LeaderboardView({ id }: { id: string }) {
       <div className="page-wordmark" aria-label="Behavior Wrapped"><strong><span>Behavior</span><span>Wrapped</span></strong></div>
       <span className="page-status"></span>
     </div>
-    <header className="leader-hero"><div><span className="eyebrow">The leaderboard · Last 30 days</span><h1>How you compare</h1></div><p><strong>{snapshot.cohort_size.toLocaleString()}</strong><span>participant{snapshot.cohort_size === 1 ? "" : "s"}<br />in the cohort</span></p></header>
+    <header className="leader-hero"><div><span className="eyebrow">Leaderboard</span><h1>How you compare</h1></div><p><strong>{snapshot.cohort_size.toLocaleString()}</strong><span>{snapshot.cohort_size === 1 ? "participant" : "participants"}</span></p></header>
     <LeaderboardFigures snapshot={snapshot} />
-    {snapshot.can_manage && <section className="leader-donation"><div><span className="eyebrow">Optional research donation</span><h2>Will you contribute your transcripts to research?</h2><p>Separate from the anonymous leaderboard, you can contribute your agent transcripts to the research corpus at the <a href={SUSAN_CALVIN_PROJECT_URL} target="_blank" rel="noreferrer">Susan Calvin Project</a>. You’ll review the redactions and explicitly consent before any transcript data is sent.</p></div><a className="primary" href={`${report.donationHelperUrl || `http://localhost:4317/donate/${report.id}`}?mode=standard`} target="_blank" rel="noreferrer">Review and donate your data <span>→</span></a></section>}
+    {snapshot.can_manage && <section className="leader-donation"><div><span className="eyebrow">Optional research donation</span><h2>Contribute to agent research</h2><p>You can also donate agent transcripts to the <a href={SUSAN_CALVIN_PROJECT_URL} target="_blank" rel="noreferrer">Susan Calvin Project</a>. You’ll review the transcripts and redactions before choosing what to share. Donation is optional.</p></div><a className="primary" href={`${report.donationHelperUrl || `http://localhost:4317/donate/${report.id}`}?mode=standard`} target="_blank" rel="noreferrer">Review transcripts for donation <span>→</span></a></section>}
     <section className="leader-opt-out" id="join-leaderboard">
-      <div><p>{snapshot.participation.joined ? "Don’t want your data to show up on the leaderboard?" : "Your data is currently opted out of the leaderboard."}</p>{error && <span className="error" role="alert">{error}</span>}</div>
-      {snapshot.participation.joined ? <button className="leader-remove" disabled={saving} onClick={leave}>{saving ? "Opting out…" : "Click here to opt out"}</button> : <button className="primary" disabled={saving} onClick={include}>{saving ? "Adding…" : "Add my anonymous stats back"}<span>→</span></button>}
+      <div><p>{snapshot.participation.joined ? "Your report is included in the leaderboard." : "Your report is not included in the leaderboard."}</p>{error && <span className="error" role="alert">{error}</span>}</div>
+      {snapshot.participation.joined ? <button className="leader-remove" disabled={saving} onClick={leave}>{saving ? "Removing…" : "Remove from leaderboard"}</button> : <button className="primary" disabled={saving} onClick={include}>{saving ? "Adding…" : "Add to leaderboard"}<span>→</span></button>}
     </section>
     <footer className="leader-footer"><SusanCalvinCredit /></footer>
   </main>;
