@@ -682,9 +682,11 @@ function phraseAttribution(models: PhraseSourceModel[] = []) {
   return `Said by ${models.slice(0, 2).map((item) => item.model).join(" and ")}${models.length > 2 ? `, plus ${models.length - 2} more` : ""}.`;
 }
 
-function PhraseAttribution({ models = [] }: { models?: PhraseSourceModel[] }) {
-  if (models.length < 2) return <p className="phrase-attribution">{phraseAttribution(models)}</p>;
-  return <details className="phrase-attribution"><summary>Model breakdown</summary><ul>{models.map((item) => <li key={item.model}><span>{item.model}</span><span>{item.count.toLocaleString()} time{item.count === 1 ? "" : "s"}</span></li>)}</ul></details>;
+function PhraseAttribution({ models = [], metadata }: { models?: PhraseSourceModel[]; metadata?: string }) {
+  const label = metadata ? `${metadata} · ${models.map((item) => item.model).join(", ") || "Model not recorded"}` : phraseAttribution(models);
+  const className = metadata ? "phrase-attribution phrase-metadata" : "phrase-attribution";
+  if (models.length < 2) return <p className={className}>{label}</p>;
+  return <details className={className}><summary>{metadata ? label : "Model breakdown"}</summary><ul>{models.map((item) => <li key={item.model}><span>{item.model}</span><span>{item.count.toLocaleString()} time{item.count === 1 ? "" : "s"}</span></li>)}</ul></details>;
 }
 
 function PhraseWallFigure({ entries, common = [], participantId }: { entries: PhraseWallEntry[]; common?: CommonPhrase[]; participantId?: number }) {
@@ -695,9 +697,7 @@ function PhraseWallFigure({ entries, common = [], participantId }: { entries: Ph
     {entries.length ? <div className="leader-phrase-wall">{entries.map((entry) => <article className={entry.participant_id === participantId ? "is-you" : ""} key={`${entry.participant_id}-${entry.phrase}`}>
       {entry.participant_id === participantId && <b>Yours</b>}
       <blockquote>“{entry.phrase}”</blockquote>
-      <p>{entry.occurrences.toLocaleString()} time{entry.occurrences === 1 ? "" : "s"} · {entry.sessions.toLocaleString()} session{entry.sessions === 1 ? "" : "s"}</p>
-      <PhraseAttribution models={entry.models} />
-      {(entry.participants || 0) > 1 && <span className="phrase-shared-badge">Shared by {entry.participants!.toLocaleString()} participants</span>}
+      <PhraseAttribution models={entry.models} metadata={`${entry.occurrences.toLocaleString()} time${entry.occurrences === 1 ? "" : "s"} · ${entry.sessions.toLocaleString()} session${entry.sessions === 1 ? "" : "s"}`} />
     </article>)}</div> : <div className="leader-empty-wall"><strong>The wall is waiting for its first phrase.</strong><span>Favorite phrases from participating public Wrapped reports will appear here anonymously.</span></div>}
   </section>;
 }
