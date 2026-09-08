@@ -28,9 +28,9 @@ Local-only reports omit AI-judged interaction tone, topics, and workarounds. The
 
 Confirmed workaround cards can link to a localhost-only evidence page. Interaction-tone cards can likewise show the exact locally reconstructed yelling, thanking, and apology excerpts. These excerpts do not enter the public report, share-card export, or remote payload merely by opening the page.
 
-Yelling and thanking occurrences include an optional **Is this inaccurate?** path. It resolves the occurrence to its original session on localhost and opens the normal research-donation review restricted to that one session. The user chooses a corrected label, can edit text and customize redactions, then provides purpose-specific consent. Every message remains in its original sequence. Clicking the feedback link alone transmits nothing.
+Yelling and thanking occurrences include an optional **Is this inaccurate?** path. It resolves the occurrence to its original session on localhost and opens Share with Susan Calvin restricted to that one session. There, the user chooses a corrected label, customizes redactions, reviews the correction, then provides purpose-specific consent. Transcript messages are read-only except for supported redactions. Every message remains in its original sequence. Clicking the feedback link alone transmits nothing.
 
-Accepted classifier feedback receives the same local encryption, private ciphertext storage, deletion receipt, and deletion controls as an ordinary research donation. Its encrypted contents include the reviewed session, original verdict, correction, judged excerpt, judge version, and optional note. Public reports, leaderboard payloads, share-card exports, and operational notifications never include this material.
+Susan handles local encryption, private ciphertext storage, deletion receipts, and deletion controls for both classifier feedback and ordinary donations. Its encrypted contents include the reviewed session, original verdict, correction, judged excerpt, judge version, and optional note. Public reports, leaderboard payloads, share-card exports, and operational notifications never include this material.
 
 ## Boundaries
 
@@ -38,3 +38,5 @@ Accepted classifier feedback receives the same local encryption, private ciphert
 - Hosted reports currently rely on unguessable URLs and installation-scoped management tokens rather than user accounts.
 - Heuristic coverage can be incomplete; uncertain findings are labeled with confidence.
 - The public data-use and storage policy is available at [susancalvin.org/data-policy](https://susancalvin.org/data-policy).
+
+Ordinary donation invitations open Susan's own recent-session picker without transferring report data or selection. It obtains fresh consent, includes available message timestamps, and transmits only its reviewed snapshot. Existing Wrapped receipts can be managed with Susan's list/delete commands. Historical donations retain their original storage and consent, with deletion forwarded through the original URL.

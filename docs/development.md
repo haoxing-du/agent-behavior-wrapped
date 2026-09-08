@@ -7,11 +7,11 @@ npm install
 npm run wrapped -- --demo
 ```
 
-The normal CLI scans local session sources, creates a report, starts the donation-only localhost helper, and opens the report. Add `--no-open` to leave the browser closed or `--days=N` to change the rolling window.
+The normal CLI scans local session sources, creates a report, starts the localhost evidence helper, and opens the report. Add `--no-open` to leave the browser closed or `--days=N` to change the rolling window.
 
 For fast formatting work, use `npm run wrapped -- --test`. Test mode skips consent and all LLM calls, uses deterministic local fallbacks, keeps the report on localhost, and does not publish it. `--no-llm` is an alias for `--test`.
 
-Use `npm run dev` for hosted-page UI development. Run `npm start -- --no-open` to develop the loopback donation helper directly. Before publishing, run:
+Use `npm run dev` for hosted-page UI development. Run `npm start -- --no-open` to develop the loopback evidence and sharing helper directly. Before publishing, run:
 
 ```bash
 npm run check
@@ -32,3 +32,5 @@ npm run analyze:phrases -- ~/.claude/projects analysis-output/local-phrase-famil
 ```
 
 Use `--limit=100` to retain more than the default 50 families. The miner uses rare token-shingle postings, bounded token edit distance, and union-find clustering. Its versioned output contains aggregate phrases and benchmark data, never raw transcripts or tool output. The gitignored `analysis-output` directory is created with private file permissions.
+
+Donation collection lives in the pinned `share-with-susan-calvin` dependency. Its public integration entry point starts the independent local review app. Tests use synthetic fixture roots and never transmit demo donations.

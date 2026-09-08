@@ -1,18 +1,15 @@
 #!/usr/bin/env node
+import { launchReview } from "share-with-susan-calvin/integration";
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { discoverAllSessionsAsync, readRecordsAsync, defaultDateRange, DEFAULT_WINDOW_DAYS } from "./discovery.mjs";
-import { makeDonationPreview } from "./analysis.mjs";
-import { deleteDonationReceipt, getOrCreateClientId, loadDonationReceipt, loadReport, saveDonationReceipt } from "./store.mjs";
-import { deleteResearchDonation, RESEARCH_DONATION_URL, submitResearchDonation } from "./research-donation.mjs";
-import { MAX_DONATION_BYTES } from "./research-donation-schema.mjs";
+import { loadReport } from "./store.mjs";
 import { APP_VERSION, LOCAL_DONATION_PROTOCOL } from "./runtime-version.mjs";
 import { makeWorkaroundEvidencePreview } from "./workaround-evidence.mjs";
 import { makeInteractionEvidencePreview } from "./interaction-evidence.mjs";
-import { publicInteractionFeedback, resolveInteractionFeedback, sanitizeInteractionFeedbackSubmission } from "./interaction-feedback.mjs";
-import { donationSessionIntegrityError } from "./donation-session-integrity.mjs";
+import { publicInteractionFeedback, resolveInteractionFeedback } from "./interaction-feedback.mjs";
 import { createIdleShutdownController } from "./local-helper-runtime.mjs";
 import { canonicalSessionDirectoryLabels, openExternalUrl, supportedAgentNames } from "./platform.mjs";
 
@@ -31,6 +28,7 @@ const configuredTestCatalogDelayMs = process.env.NODE_ENV === "test" ? Number(pr
 const testCatalogDelayMs = Number.isFinite(configuredTestCatalogDelayMs) && configuredTestCatalogDelayMs > 0 ? configuredTestCatalogDelayMs : 0;
 let catalog = null;
 let catalogPromise = null;
+const susanLaunches = new Map();
 
 async function loadCatalog() {
   if (testCatalogDelayMs) await new Promise((resolve) => setTimeout(resolve, testCatalogDelayMs));
@@ -177,71 +175,34 @@ const server = http.createServer(async (request, response) => {
       const trusted = resolveInteractionFeedback(report, feedbackId, new Map(records.map((session) => [session.sessionId, session.records])));
       return json(response, 200, { sessionIds: [reference.sessionId], feedback: publicInteractionFeedback(trusted), localPrivateSelection: true });
     }
-    if (request.method === "POST" && url.pathname === "/api/donation-preview") {
-      const body = await readBody(request);
-      const report = loadReport(body.reportId);
-      if (!report) return json(response, 404, { error: "Saved report not found" });
-      const availableCatalog = await catalogForRequest();
-      const feedback = body.feedbackId ? resolveInteractionFeedback(report, body.feedbackId) : null;
-      if (body.feedbackId && !feedback) return json(response, 400, { error: "Invalid classifier-feedback selection." });
-      const allowed = new Set(report.sessionIds || []);
-      const ids = feedback
-        ? [feedback.sessionId].filter((id) => availableCatalog.index.has(id))
-        : Array.isArray(body.sessionIds) ? body.sessionIds.filter((id) => allowed.has(id) && availableCatalog.index.has(id)).slice(0, 250) : [];
-      const records = await chosenRecords(ids, {}, availableCatalog);
-      if (!records.length) return json(response, 400, { error: "Choose at least one available session." });
-      const labels = new Map(publicCatalog(availableCatalog).sessions.map((session) => [session.id, session]));
-      const disabledRedactions = Array.isArray(body.disabledRedactions) ? body.disabledRedactions.filter((kind) => typeof kind === "string" && /^[a-z0-9-]{1,64}$/.test(kind)).slice(0, 20) : [];
-      const disabledMatches = Array.isArray(body.disabledMatches) ? body.disabledMatches.filter((id) => typeof id === "string" && /^[a-f0-9]{24}$/.test(id)).slice(0, 5_000) : [];
-      const unredacted = body.previewMode === "unredacted";
-      return json(response, 200, makeDonationPreview(records, labels, { disabledRedactions, disabledMatches, unredacted }));
+    if (request.method === "POST" && url.pathname === "/api/share-with-susan") {
+      if (!new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`]).has(request.headers.origin || "")) return json(response, 403, { error: "Open sharing from the local app." });
+      const body = await readBody(request, 2_000);
+      let feedback = null;
+      if (body.feedbackId) {
+        const report = loadReport(body.reportId);
+        const reference = resolveInteractionFeedback(report, body.feedbackId);
+        if (!reference) return json(response, 404, { error: "That classification is no longer available. Reopen the local evidence page." });
+        const available = await catalogForRequest();
+        if (!available.index.has(reference.sessionId)) return json(response, 404, { error: "The original session is no longer available on this device." });
+        const records = await chosenRecords([reference.sessionId], {}, available);
+        feedback = resolveInteractionFeedback(report, body.feedbackId, new Map(records.map(session => [session.sessionId, session.records])));
+      }
+      const key = feedback ? `${body.reportId}:${body.feedbackId}` : "general";
+      let pending = susanLaunches.get(key);
+      if (pending) {
+        const previous = await pending;
+        const alive = await fetch(`${previous.url}/api/health`, { signal: AbortSignal.timeout(500) }).then(async result => result.ok && (await result.json()).app === "share-with-susan-calvin").catch(() => false);
+        if (!alive) { susanLaunches.delete(key); pending = null; }
+      }
+      if (!pending) {
+        pending = launchReview({ demo, feedback, ...(demo ? { demoRoots: { claudeRoot: fixtureRoot, coworkRoot: coworkFixtureRoot, codexRoots: [codexFixtureRoot] } } : {}) });
+        susanLaunches.set(key, pending);
+        pending.catch(() => { if (susanLaunches.get(key) === pending) susanLaunches.delete(key); });
+      }
+      return json(response, 200, await pending);
     }
-    if (request.method === "POST" && url.pathname === "/api/research-donations") {
-      const body = await readBody(request, MAX_DONATION_BYTES + 1_000_000);
-      const report = loadReport(body?.donation?.reportId);
-      if (!report) return json(response, 404, { error: "Saved report not found" });
-      let donation = body.donation;
-      const suppliedSessions = Array.isArray(donation?.sessions) ? donation.sessions : [];
-      const suppliedIds = suppliedSessions.map((session) => session?.sessionId);
-      const allowed = new Set(report.sessionIds || []);
-      const uniqueIds = new Set(suppliedIds);
-      if (!suppliedIds.length || uniqueIds.size !== suppliedIds.length || suppliedIds.some((id) => !allowed.has(id))) return json(response, 400, { error: "Donated sessions must come from this report." });
-      const feedbackReference = body.feedback ? resolveInteractionFeedback(report, body.feedback.feedbackId) : null;
-      if (body.feedback && (!feedbackReference || suppliedSessions.length !== 1 || suppliedIds[0] !== feedbackReference.sessionId)) return json(response, 400, { error: "Classifier feedback must contain only its original session." });
-      const availableCatalog = await catalogForRequest();
-      if (suppliedIds.some((id) => !availableCatalog.index.has(id))) return json(response, 404, { error: "A selected source session is no longer available on this device." });
-      const records = await chosenRecords(suppliedIds, {}, availableCatalog);
-      const sourceSessions = makeDonationPreview(records, new Map(), { unredacted: true }).sessions;
-      const integrityError = donationSessionIntegrityError(suppliedSessions, sourceSessions);
-      if (integrityError) return json(response, 400, { error: integrityError });
-      if (body.feedback) {
-        const trusted = resolveInteractionFeedback(report, body.feedback.feedbackId, new Map(records.map((session) => [session.sessionId, session.records])));
-        const classifierFeedback = sanitizeInteractionFeedbackSubmission(body.feedback, trusted);
-        if (!classifierFeedback) return json(response, 400, { error: "Choose a valid corrected classification before donating." });
-        donation = {
-          ...donation,
-          purpose: "classifier_feedback",
-          classifierFeedback,
-          consent: { ...donation.consent, classifierFeedback: true },
-        };
-      } else donation = { ...donation, purpose: "general_research", classifierFeedback: undefined };
-      if (demo) return json(response, 201, { accepted: true, donation_id: "demo-not-transmitted", demo: true });
-      const result = await submitResearchDonation(donation, {
-        clientId: getOrCreateClientId(),
-        endpoint: process.env.BEHAVIOR_WRAPPED_DONATION_URL || RESEARCH_DONATION_URL,
-      });
-      saveDonationReceipt(result);
-      return json(response, 201, { accepted: true, donation_id: result.donation_id, encrypted: true });
-    }
-    const donationMatch = url.pathname.match(/^\/api\/research-donations\/([0-9a-f-]{36})$/);
-    if (request.method === "DELETE" && donationMatch) {
-      const receipt = loadDonationReceipt(donationMatch[1]);
-      if (!receipt) return json(response, 404, { error: "Local deletion receipt not found." });
-      if (demo) { deleteDonationReceipt(donationMatch[1]); return json(response, 200, { deleted: true, demo: true }); }
-      const result = await deleteResearchDonation(receipt.donationId, receipt.deletionToken, { endpoint: process.env.BEHAVIOR_WRAPPED_DONATION_URL || RESEARCH_DONATION_URL });
-      deleteDonationReceipt(donationMatch[1]);
-      return json(response, 200, result);
-    }
+    if (request.method === "POST" && ["/api/donation-preview", "/api/research-donations"].includes(url.pathname)) return json(response, 410, { error: "Donation review has moved. Run npx behavior-wrapped@latest or npx share-with-susan-calvin@latest." });
     if (request.method !== "GET" && request.method !== "HEAD") return json(response, 405, { error: "Method not allowed" });
     const requested = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
     let file = path.resolve(dist, requested);
@@ -262,8 +223,8 @@ const idleShutdown = createIdleShutdownController({
 
 server.listen(port, "127.0.0.1", () => {
   const url = `http://localhost:${port}`;
-  console.log(`Behavior Wrapped donation helper is ready at ${url}`);
+  console.log(`Behavior Wrapped local helper is ready at ${url}`);
   const sessionDirectories = canonicalSessionDirectoryLabels().join(", ");
-  console.log(demo ? "Using synthetic demo sessions." : `Donation review reads selected sessions locally from ${sessionDirectories}.`);
+  console.log(demo ? "Using synthetic demo sessions." : `Private evidence reads selected sessions locally from ${sessionDirectories}.`);
   if (!process.argv.includes("--no-open") && process.env.NODE_ENV !== "test") openExternalUrl(url);
 });

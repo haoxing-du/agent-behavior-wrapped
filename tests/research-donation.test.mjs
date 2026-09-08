@@ -4,7 +4,6 @@ import crypto from "node:crypto";
 import { sanitizeEncryptedDonationEnvelope } from "../server/encrypted-donation-schema.mjs";
 import { decryptResearchDonation, encryptResearchDonation } from "../server/research-donation-crypto.mjs";
 import { sanitizeResearchDonation } from "../server/research-donation-schema.mjs";
-import { submitResearchDonation } from "../server/research-donation.mjs";
 import { handleRequest } from "../worker/phrase-judge-worker.mjs";
 
 function fixture(overrides = {}) {
@@ -118,119 +117,27 @@ test("explains how to recover when a reviewed donation is genuinely too large", 
   assert.throws(() => encryptResearchDonation(fixture({ sessions: [{ messages }] }), keys().publicKey), /larger than 20 MB.*Advanced mode/i);
 });
 
-test("local submission sends only protocol-2 ciphertext", async () => {
-  let transmitted;
-  const result = await submitResearchDonation(fixture(), {
-    clientId: "a".repeat(32),
-    endpoint: "https://example.test/v1/research-donations",
-    fetchImpl: async (_url, init) => {
-      transmitted = init;
-      return new Response(JSON.stringify({ accepted: true, donation_id: "encrypted-id" }), { status: 201 });
-    },
+test("old uploads return an upgrade instruction without storing anything", async () => {
+  for (const protocol of ["1", "2"]) {
+    const response = await handleRequest(new Request("https://example.test/v1/research-donations", {
+      method: "POST", headers: { "x-behavior-wrapped-protocol": protocol }, body: "private old body",
+    }), {});
+    assert.equal(response.status, 410);
+    assert.match((await response.json()).error, /Share with Susan Calvin/);
+  }
+});
+
+test("legacy deletion forwards the original credential to Susan and preserves failures", async () => {
+  const request = () => new Request("https://example.test/v1/research-donations/11111111-1111-4111-8111-111111111111", {
+    method: "DELETE", headers: { "x-behavior-wrapped-protocol": "2", "x-behavior-wrapped-deletion-token": "e".repeat(43) },
   });
-  assert.equal(result.donation_id, "encrypted-id");
-  assert.equal(transmitted.headers["x-behavior-wrapped-protocol"], "2");
-  assert.equal(transmitted.body.includes("Reviewed text"), false);
-  assert.ok(sanitizeEncryptedDonationEnvelope(JSON.parse(transmitted.body).encryptedDonation));
-});
-
-test("worker stores ciphertext in R2 and consent metadata in a separate D1 database", async () => {
-  let storedObject = null;
-  let storedMetadata = null;
-  const bucket = {
-    async put(key, value, options) { storedObject = { key, value, options }; },
-    async delete() { throw new Error("The successful path must not delete the object."); },
-  };
-  const database = {
-    prepare() {
-      return { bind(...values) { storedMetadata = values; return { async run() { return { success: true }; } }; } };
-    },
-  };
-  const request = new Request("https://example.test/v1/research-donations", {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-behavior-wrapped-protocol": "2", "x-behavior-wrapped-client": "b".repeat(32) },
-    body: JSON.stringify({ encryptedDonation: encryptedFixture() }),
-  });
-  const response = await handleRequest(request, { RESEARCH_DB: database, RESEARCH_DONATIONS: bucket });
-  assert.equal(response.status, 201);
-  const body = await response.json();
-  assert.equal(body.encrypted, true);
-  assert.equal("retention_days" in body, false);
-  assert.match(body.deletion_token, /^[A-Za-z0-9_-]{43}$/);
-  assert.match(storedObject.key, /^donations\/general-research\/2026-08\//);
-  assert.equal(storedObject.options.customMetadata.purpose, "general-research");
-  assert.equal(storedObject.value.includes("Reviewed text"), false);
-  assert.equal(storedMetadata[3], "researchReport1");
-  assert.equal(storedMetadata[9], "standard");
-  assert.equal(storedMetadata.includes(body.deletion_token), false);
-  assert.equal(storedMetadata.some((value) => String(value).includes("Reviewed text")), false);
-});
-
-test("worker stores classifier feedback in the same private bucket under its own purpose prefix", async () => {
-  let storedObject;
-  const bucket = { async put(key, value, options) { storedObject = { key, value, options }; }, async delete() {} };
-  const database = { prepare() { return { bind() { return { async run() { return { success: true }; } }; } }; } };
-  const classifierFeedback = {
-    originalLabel: "thanking",
-    correctedLabel: "neither",
-    candidateId: "interaction-2",
-    judgedText: "No thanks, leave it alone.",
-    occurrences: 1,
-    confidence: 1,
-    judge: { model: "openai/gpt-5.6-luna", promptVersion: 1 },
-  };
-  const envelope = encryptedFixture({ purpose: "classifier_feedback", classifierFeedback, consent: { researchDonation: true, classifierFeedback: true, consentedAt: "2026-08-06T12:01:00.000Z" } });
-  const response = await handleRequest(new Request("https://example.test/v1/research-donations", {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-behavior-wrapped-protocol": "2", "x-behavior-wrapped-client": "f".repeat(32) },
-    body: JSON.stringify({ encryptedDonation: envelope }),
-  }), { RESEARCH_DB: database, RESEARCH_DONATIONS: bucket });
-  assert.equal(response.status, 201);
-  assert.match(storedObject.key, /^donations\/classifier-feedback\/2026-08\//);
-  assert.equal(storedObject.options.customMetadata.purpose, "classifier-feedback");
-  assert.equal(storedObject.value.includes(classifierFeedback.judgedText), false);
-});
-
-test("worker removes an R2 object if its metadata write fails", async () => {
-  let deleted = null;
-  const bucket = { async put() {}, async delete(key) { deleted = key; } };
-  const database = { prepare() { return { bind() { return { async run() { throw new Error("database unavailable"); } }; } }; } };
-  const request = new Request("https://example.test/v1/research-donations", {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-behavior-wrapped-protocol": "2", "x-behavior-wrapped-client": "c".repeat(32) },
-    body: JSON.stringify({ encryptedDonation: encryptedFixture() }),
-  });
-  const response = await handleRequest(request, { RESEARCH_DB: database, RESEARCH_DONATIONS: bucket });
-  assert.equal(response.status, 503);
-  assert.match(deleted, /^donations\/general-research\//);
-});
-
-test("worker rejects plaintext and protocol-1 donations", async () => {
-  const request = new Request("https://example.test/v1/research-donations", {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-behavior-wrapped-protocol": "1", "x-behavior-wrapped-client": "d".repeat(32) },
-    body: JSON.stringify({ donation: fixture() }),
-  });
-  const response = await handleRequest(request, {});
-  assert.equal(response.status, 426);
-});
-
-test("a deletion token removes both encrypted content and metadata", async () => {
-  const deleted = [];
-  const database = {
-    prepare(sql) {
-      return { bind(...values) { return {
-        async first() { assert.match(values[1], /^[a-f0-9]{64}$/); return { object_key: "donations/2026-08/example.json" }; },
-        async run() { deleted.push({ sql, values }); return { success: true }; },
-      }; } };
-    },
-  };
-  const bucket = { async delete(key) { deleted.push({ key }); } };
-  const response = await handleRequest(new Request("https://example.test/v1/research-donations/11111111-1111-4111-8111-111111111111", {
-    method: "DELETE",
-    headers: { "x-behavior-wrapped-protocol": "2", "x-behavior-wrapped-deletion-token": "e".repeat(43) },
-  }), { RESEARCH_DB: database, RESEARCH_DONATIONS: bucket });
-  assert.equal(response.status, 200);
-  assert.equal(deleted[0].key, "donations/2026-08/example.json");
-  assert.match(deleted[1].sql, /^DELETE FROM research_donations/);
+  for (const status of [200, 404, 503]) {
+    const response = await handleRequest(request(), { SUSAN_DONATIONS: { async fetch(forwarded) {
+      assert.equal(forwarded.headers.get("x-behavior-wrapped-deletion-token"), "e".repeat(43));
+      assert.equal(forwarded.method, "DELETE");
+      return Response.json({ deleted: status === 200 }, { status });
+    } } });
+    assert.equal(response.status, status);
+  }
+  assert.equal((await handleRequest(request(), {})).status, 503);
 });

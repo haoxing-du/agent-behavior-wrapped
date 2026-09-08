@@ -5,14 +5,30 @@
   "compatibility_date": "2026-08-05",
   "workers_dev": true,
   "routes": [
-    { "pattern": "behaviorwrapped.com", "custom_domain": true },
-    { "pattern": "www.behaviorwrapped.com", "custom_domain": true }
+    {
+      "pattern": "behaviorwrapped.com",
+      "custom_domain": true
+    },
+    {
+      "pattern": "www.behaviorwrapped.com",
+      "custom_domain": true
+    }
   ],
   "assets": {
     "directory": "./dist/",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/", "/data-policy", "/w/*", "/leaderboard", "/leaderboard/*", "/donate/*", "/api/*", "/v1/*", "/health"]
+    "run_worker_first": [
+      "/",
+      "/data-policy",
+      "/w/*",
+      "/leaderboard",
+      "/leaderboard/*",
+      "/donate/*",
+      "/api/*",
+      "/v1/*",
+      "/health"
+    ]
   },
   "vars": {
     "ZULIP_SITE": "https://susancalvin.zulipchat.com",
@@ -24,17 +40,6 @@
       "binding": "LEADERBOARD_DB",
       "database_name": "agent-behavior-wrapped-leaderboard",
       "database_id": "f76276d2-1749-4d27-9aa3-da58949e66cb"
-    },
-    {
-      "binding": "RESEARCH_DB",
-      "database_name": "behavior-wrapped-research-metadata",
-      "database_id": "7b299e86-fa0f-4ff9-909e-70783e7d872a"
-    }
-  ],
-  "r2_buckets": [
-    {
-      "binding": "RESEARCH_DONATIONS",
-      "bucket_name": "behavior-wrapped-research-donations"
     }
   ],
   "observability": {
@@ -52,17 +57,32 @@
     {
       "name": "CLIENT_RATE_LIMITER",
       "namespace_id": "1001",
-      "simple": { "limit": 3, "period": 60 }
+      "simple": {
+        "limit": 3,
+        "period": 60
+      }
     },
     {
       "name": "GLOBAL_RATE_LIMITER",
       "namespace_id": "1002",
-      "simple": { "limit": 20, "period": 60 }
+      "simple": {
+        "limit": 20,
+        "period": 60
+      }
     },
     {
       "name": "CORPUS_RATE_LIMITER",
       "namespace_id": "1003",
-      "simple": { "limit": 20, "period": 60 }
+      "simple": {
+        "limit": 20,
+        "period": 60
+      }
+    }
+  ],
+  "services": [
+    {
+      "binding": "SUSAN_DONATIONS",
+      "service": "call-susan-calvin-donations"
     }
   ]
 }

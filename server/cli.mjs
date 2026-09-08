@@ -118,7 +118,7 @@ async function ensureServer(demo = false) {
     catch (error) { if (error?.code !== "ESRCH") throw error; }
   }
   const reason = childFailure ? `${childFailure.message}.` : `It did not become ready within ${HELPER_START_TIMEOUT_MS / 1_000} seconds and was stopped.`;
-  throw new Error(`Could not start the local donation helper on port ${port}. ${reason} Another application may already be using that port.`);
+  throw new Error(`Could not start the local helper on port ${port}. ${reason} Another application may already be using that port.`);
 }
 
 function openUrl(url) {
@@ -148,9 +148,9 @@ async function createWrapped() {
   console.log(`\n  ${bright}behavior-wrapped${reset}  ${muted}·  the wrapped for your AI agents${reset}\n`);
   const demo = process.argv.includes("--demo");
   const testMode = process.argv.includes("--test") || process.argv.includes("--no-llm");
-  progress.start("Preparing local donation helper", `localhost:${port}`);
+  progress.start("Preparing local evidence helper", `localhost:${port}`);
   await ensureServer(demo);
-  progress.succeed("Local donation helper ready");
+  progress.succeed("Local evidence helper ready");
   const helperHeartbeat = setInterval(() => { void fetch(`${loopbackUrl}/api/health`).catch(() => {}); }, 30_000);
   helperHeartbeat.unref();
   const daysArgument = process.argv.find((argument) => argument.startsWith("--days="));

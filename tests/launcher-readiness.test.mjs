@@ -49,7 +49,7 @@ test("helper health does not wait for a slow session catalog", { timeout: 5_000 
   assert.ok(Date.now() - startedAt < 1_200);
 });
 
-test("classifier feedback preview and submission stay locked to the stored source session", { timeout: 8_000 }, async (t) => {
+test("classifier corrections launch Susan with the stored source session and survive helper exit", { timeout: 8_000 }, async (t) => {
   const port = await availablePort();
   const store = fs.mkdtempSync(path.join(os.tmpdir(), "behavior-wrapped-feedback-"));
   const child = spawn(process.execPath, [launcher, `--port=${port}`, "--demo", "--no-open"], {
@@ -86,37 +86,30 @@ test("classifier feedback preview and submission stay locked to the stored sourc
   assert.deepEqual(selection.sessionIds, [source]);
   assert.equal("sessionId" in selection.feedback, false);
 
-  const previewResponse = await fetch(`${origin}/api/donation-preview`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ reportId, feedbackId: "yelling-1", sessionIds: [other], previewMode: "redacted" }),
+  const post = (body, from = origin) => fetch(`${origin}/api/share-with-susan`, {
+    method: "POST", headers: { origin: from, "content-type": "application/json" }, body: JSON.stringify(body),
   });
-  assert.equal(previewResponse.status, 200);
-  const preview = await previewResponse.json();
-  assert.equal(preview.sessions.length, 1);
-  assert.equal(preview.sessions[0].sessionId, source);
+  assert.equal((await post({}, "https://attacker.example")).status, 403);
+  assert.equal((await post({ reportId, feedbackId: "yelling-999" })).status, 404);
+  const body = { reportId, feedbackId: "yelling-1", sessionIds: [other], correctedLabel: "thanking", judgedText: "Injected" };
+  const responses = await Promise.all([post(body), post(body)]);
+  const [local, duplicate] = await Promise.all(responses.map(r => r.json()));
+  assert.equal(local.url, duplicate.url);
+  assert.match(local.url, /^http:\/\/127\.0\.0\.1:\d+$/);
+  t.after(() => fetch(`${local.url}/api/shutdown`, { method: "POST", headers: { origin: local.url } }));
+  const susan = await (await fetch(`${local.url}/api/catalog`)).json();
+  assert.equal(susan.demo, true);
+  assert.deepEqual(susan.sessions.map(s => s.id), [source]);
+  assert.equal(susan.feedback.judgedText, "This is worse than before.");
+  assert.equal(susan.feedback.correctedLabel, undefined);
+  const general = await (await post({ reportId, sessionIds: [source] })).json();
+  t.after(() => fetch(`${general.url}/api/shutdown`, { method: "POST", headers: { origin: general.url } }));
+  const all = await (await fetch(`${general.url}/api/catalog`)).json();
+  assert.ok(all.sessions.length > 1);
+  assert.equal(all.feedback, undefined);
+  child.kill("SIGTERM");
+  assert.equal((await fetch(`${local.url}/api/health`)).status, 200);
 
-  const rejected = await fetch(`${origin}/api/research-donations`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      donation: { reportId, sessions: [{ sessionId: other, messages: [{ role: "user", text: "Reviewed text" }] }] },
-      feedback: { feedbackId: "yelling-1", correctedLabel: "neither" },
-    }),
-  });
-  assert.equal(rejected.status, 400);
-  assert.match((await rejected.json()).error, /only its original session/);
-
-  const incomplete = await fetch(`${origin}/api/research-donations`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      donation: { reportId, sessions: [{ sessionId: source, messages: preview.sessions[0].messages.slice(1) }] },
-      feedback: { feedbackId: "yelling-1", correctedLabel: "neither" },
-    }),
-  });
-  assert.equal(incomplete.status, 400);
-  assert.match((await incomplete.json()).error, /keep every original message/);
 });
 
 test("CLI explains when another application occupies the helper port", { timeout: 5_000 }, async (t) => {

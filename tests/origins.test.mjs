@@ -8,7 +8,6 @@ import { LEADERBOARD_RELAY_ORIGIN } from "../server/leaderboard.mjs";
 import { BEHAVIOR_WRAPPED_ORIGIN, canonicalBehaviorWrappedUrl } from "../server/origins.mjs";
 import { PHRASE_JUDGE_RELAY_URL } from "../server/phrase-card.mjs";
 import { PUBLIC_REPORT_ORIGIN } from "../server/public-report.mjs";
-import { RESEARCH_DONATION_URL } from "../server/research-donation.mjs";
 import { SESSION_TOPIC_RELAY_URL } from "../server/session-topics.mjs";
 
 test("all public and relay URLs use behaviorwrapped.com", () => {
@@ -21,7 +20,6 @@ test("all public and relay URLs use behaviorwrapped.com", () => {
     INTERACTION_TONE_RELAY_URL,
     SESSION_TOPIC_RELAY_URL,
     WORKAROUND_RELAY_URL,
-    RESEARCH_DONATION_URL,
   ]) assert.equal(new URL(url).origin, BEHAVIOR_WRAPPED_ORIGIN);
 });
 
