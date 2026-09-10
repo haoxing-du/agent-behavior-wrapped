@@ -1486,7 +1486,7 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
 .shared-page .story-cta-panel-copy > p a { color: #4f3c5b; font-weight: 720; text-decoration-color: rgba(79,60,91,.34); text-underline-offset: 2px; }
 .shared-page .story-cta-panel-copy > p a:hover { text-decoration-color: currentColor; }
 .shared-page .story-research.story-cta-card .story-cta-choice .story-cta { flex: none; height: auto; min-height: 52px; }
-.shared-page .story-cta-skip {
+.shared-page .story-cta-link {
   justify-self: center;
   padding: 4px 8px;
   border: 0;
@@ -1500,8 +1500,8 @@ footer { min-height: 74px; display: flex; align-items: center; justify-content: 
   text-underline-offset: 3px;
   cursor: pointer;
 }
-.shared-page .story-cta-skip:hover { color: #241b27; text-decoration-color: currentColor; }
-.shared-page .story-cta-skip:focus-visible { outline: 2px solid var(--deck-accent); outline-offset: 3px; }
+.shared-page .story-cta-link:hover { color: #241b27; text-decoration-color: currentColor; }
+.shared-page .story-cta-link:focus-visible { outline: 2px solid var(--deck-accent); outline-offset: 3px; }
 .shared-page .story-foot { font-size: 11px; }
 
 @media (min-width: 820px) and (max-width: 1120px) {
